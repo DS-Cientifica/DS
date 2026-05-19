@@ -1,0 +1,58 @@
+{% extends "admin/login.html" %}
+{% load static %}
+
+{% block extrastyle %}
+{{ block.super }}
+
+<style>
+    body.login-page {
+        background-color: #f4f6f9;
+        height: 100vh;
+    }
+
+    .login-page {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .login-box {
+        width: 420px;
+    }
+
+    .login-card-body {
+        border-radius: 10px;
+        box-shadow: 0 6px 20px rgba(0,0,0,0.15);
+        text-align: center;
+    }
+
+    .login-logo {
+        display: none;
+    }
+
+    .login-image {
+        margin-bottom: 20px;
+    }
+
+    .login-image img {
+        max-width: 220px;
+    }
+</style>
+
+{% endblock %}
+
+{% block content %}
+<div class="login-box">
+    <div class="card">
+        <div class="card-body login-card-body">
+
+            <div class="login-image">
+                <img src="{% static 'img/capa_ds.png' %}" alt="SIGMA">
+            </div>
+
+            {{ block.super }}
+
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,59 @@
+from django.contrib import admin
+from django.template.response import TemplateResponse
+from django.urls import path
+
+from .models import (
+    CategoriaFinanceira,
+    ContaPagar,
+    ContaReceber,
+    Imposto
+)
+
+from .services import resumo_financeiro
+
+
+# =========================
+# DASHBOARD FINANCEIRO
+# =========================
+class FinanceiroAdminSite(admin.AdminSite):
+    site_header = "Gestão Financeira"
+    site_title = "Financeiro"
+    index_title = "Resumo Financeiro"
+
+    def index(self, request, extra_context=None):
+        contexto = resumo_financeiro()
+        extra_context = extra_context or {}
+        extra_context.update(contexto)
+        return super().index(request, extra_context=extra_context)
+
+
+admin_site = FinanceiroAdminSite(name="financeiro_admin")
+
+
+# =========================
+# REGISTROS
+# =========================
+@admin.register(CategoriaFinanceira, site=admin_site)
+class CategoriaFinanceiraAdmin(admin.ModelAdmin):
+    list_display = ("nome",)
+
+
+@admin.register(ContaPagar, site=admin_site)
+class ContaPagarAdmin(admin.ModelAdmin):
+    list_display = ("descricao", "fornecedor", "valor", "vencimento", "status")
+    list_filter = ("status", "categoria")
+    search_fields = ("descricao", "fornecedor")
+
+
+@admin.register(ContaReceber, site=admin_site)
+class ContaReceberAdmin(admin.ModelAdmin):
+    list_display = ("cliente", "descricao", "valor", "vencimento", "status")
+    list_filter = ("status",)
+    search_fields = ("cliente", "descricao")
+
+
+@admin.register(Imposto, site=admin_site)
+class ImpostoAdmin(admin.ModelAdmin):
+    list_display = ("nome", "competencia", "valor", "vencimento", "pago")
+    list_filter = ("pago",)
+

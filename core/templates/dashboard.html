@@ -1,0 +1,992 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AXION | Dashboard</title>
+    <style>
+        :root {
+            --bg: #f5f7fb;
+            --surface: #ffffff;
+            --surface-soft: #eef3f7;
+            --border: #dce4ec;
+            --text: #17202a;
+            --muted: #667085;
+            --navy: #17324d;
+            --teal: #0f766e;
+            --blue: #2563eb;
+            --amber: #b45309;
+            --green: #15803d;
+            --indigo: #4f46e5;
+            --red: #b42318;
+            --shadow: 0 12px 28px rgba(23, 32, 42, 0.08);
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            background: var(--bg);
+            color: var(--text);
+            font-family: Arial, Helvetica, sans-serif;
+            line-height: 1.45;
+        }
+
+        a {
+            color: inherit;
+            text-decoration: none;
+        }
+
+        h1,
+        h2,
+        h3,
+        p {
+            margin: 0;
+        }
+
+        .topbar {
+            background: var(--surface);
+            border-bottom: 1px solid var(--border);
+            position: sticky;
+            top: 0;
+            z-index: 10;
+        }
+
+        .topbar-inner {
+            align-items: center;
+            display: flex;
+            gap: 18px;
+            justify-content: space-between;
+            margin: 0 auto;
+            max-width: 1320px;
+            padding: 12px 24px;
+        }
+
+        .brand {
+            align-items: center;
+            display: flex;
+            gap: 12px;
+            min-width: 0;
+        }
+
+        .brand img {
+            height: 38px;
+            width: auto;
+        }
+
+        .brand-title {
+            display: block;
+            font-size: 16px;
+            font-weight: 800;
+            white-space: nowrap;
+        }
+
+        .brand-subtitle {
+            color: var(--muted);
+            display: block;
+            font-size: 12px;
+        }
+
+        .top-actions {
+            align-items: center;
+            display: flex;
+            gap: 8px;
+            white-space: nowrap;
+        }
+
+        .btn {
+            align-items: center;
+            background: var(--navy);
+            border: 1px solid var(--navy);
+            border-radius: 8px;
+            color: #fff;
+            display: inline-flex;
+            font-size: 14px;
+            font-weight: 700;
+            gap: 8px;
+            min-height: 36px;
+            padding: 8px 12px;
+        }
+
+        .btn.secondary {
+            background: #fff;
+            border-color: var(--border);
+            color: var(--text);
+        }
+
+        .btn-symbol,
+        .icon-badge {
+            align-items: center;
+            border-radius: 7px;
+            display: inline-flex;
+            flex: 0 0 auto;
+            font-size: 11px;
+            font-weight: 900;
+            height: 26px;
+            justify-content: center;
+            width: 30px;
+        }
+
+        .btn-symbol {
+            background: rgba(255, 255, 255, 0.14);
+        }
+
+        .secondary .btn-symbol {
+            background: var(--surface-soft);
+        }
+
+        .page {
+            margin: 0 auto;
+            max-width: 1320px;
+            padding: 28px 24px 40px;
+        }
+
+        .headline {
+            align-items: end;
+            display: grid;
+            gap: 18px;
+            grid-template-columns: minmax(0, 1fr) auto;
+            margin-bottom: 16px;
+        }
+
+        h1 {
+            font-size: 28px;
+            line-height: 1.2;
+        }
+
+        .headline p,
+        .section-title p,
+        .small {
+            color: var(--muted);
+            font-size: 13px;
+        }
+
+        .period-line {
+            align-items: center;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            justify-content: space-between;
+            margin-bottom: 18px;
+        }
+
+        .period-tabs {
+            align-items: center;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            display: inline-flex;
+            flex-wrap: wrap;
+            gap: 4px;
+            padding: 4px;
+        }
+
+        .period-tab {
+            border-radius: 7px;
+            color: var(--muted);
+            font-size: 13px;
+            font-weight: 800;
+            padding: 8px 10px;
+        }
+
+        .period-tab.active {
+            background: var(--navy);
+            color: #fff;
+        }
+
+        .cashline {
+            align-items: center;
+            background: var(--navy);
+            border-radius: 8px;
+            color: #fff;
+            display: flex;
+            gap: 18px;
+            justify-content: space-between;
+            min-width: 330px;
+            padding: 16px 18px;
+        }
+
+        .cashline strong {
+            display: block;
+            font-size: 22px;
+            line-height: 1.1;
+            margin-top: 4px;
+        }
+
+        .alerts-grid,
+        .metrics-grid,
+        .charts-grid,
+        .tables {
+            display: grid;
+            gap: 14px;
+        }
+
+        .alerts-grid {
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            margin-bottom: 18px;
+        }
+
+        .alert-card {
+            align-items: center;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-left: 5px solid var(--amber);
+            border-radius: 8px;
+            box-shadow: var(--shadow);
+            display: grid;
+            gap: 12px;
+            grid-template-columns: auto 1fr auto;
+            min-height: 82px;
+            padding: 14px;
+        }
+
+        .alert-card[data-type="danger"] {
+            border-left-color: var(--red);
+        }
+
+        .alert-card[data-type="ok"] {
+            border-left-color: var(--green);
+        }
+
+        .alert-count {
+            font-size: 24px;
+            font-weight: 900;
+        }
+
+        .alert-clear {
+            grid-column: 1 / -1;
+        }
+
+        .metrics-grid {
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            margin-bottom: 18px;
+        }
+
+        .metric-card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-left: 5px solid var(--navy);
+            border-radius: 8px;
+            box-shadow: var(--shadow);
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            min-height: 142px;
+            padding: 18px;
+        }
+
+        .metric-card[data-tone="teal"],
+        .metric-card[data-tone="teal"] .icon-badge {
+            border-left-color: var(--teal);
+            color: var(--teal);
+        }
+
+        .metric-card[data-tone="blue"],
+        .metric-card[data-tone="blue"] .icon-badge {
+            border-left-color: var(--blue);
+            color: var(--blue);
+        }
+
+        .metric-card[data-tone="amber"],
+        .metric-card[data-tone="amber"] .icon-badge {
+            border-left-color: var(--amber);
+            color: var(--amber);
+        }
+
+        .metric-card[data-tone="green"],
+        .metric-card[data-tone="green"] .icon-badge {
+            border-left-color: var(--green);
+            color: var(--green);
+        }
+
+        .metric-card[data-tone="indigo"],
+        .metric-card[data-tone="indigo"] .icon-badge {
+            border-left-color: var(--indigo);
+            color: var(--indigo);
+        }
+
+        .metric-card[data-tone="red"],
+        .metric-card[data-tone="red"] .icon-badge {
+            border-left-color: var(--red);
+            color: var(--red);
+        }
+
+        .metric-head {
+            align-items: center;
+            display: flex;
+            gap: 10px;
+            justify-content: space-between;
+        }
+
+        .icon-badge {
+            background: var(--surface-soft);
+            border: 1px solid var(--border);
+        }
+
+        .metric-label {
+            color: var(--muted);
+            font-size: 13px;
+            font-weight: 800;
+        }
+
+        .metric-value {
+            font-size: 26px;
+            font-weight: 900;
+            line-height: 1.1;
+            overflow-wrap: anywhere;
+        }
+
+        .metric-footer {
+            align-items: center;
+            color: var(--muted);
+            display: flex;
+            font-size: 13px;
+            justify-content: space-between;
+            margin-top: auto;
+        }
+
+        .charts-grid {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            margin-bottom: 18px;
+        }
+
+        .panel {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            box-shadow: var(--shadow);
+            min-width: 0;
+            padding: 18px;
+        }
+
+        .panel.wide {
+            grid-column: 1 / -1;
+        }
+
+        .section-title {
+            align-items: center;
+            display: flex;
+            gap: 12px;
+            justify-content: space-between;
+            margin-bottom: 14px;
+        }
+
+        .section-title h2 {
+            font-size: 18px;
+        }
+
+        .chart-list {
+            display: grid;
+            gap: 12px;
+        }
+
+        .chart-row {
+            align-items: center;
+            display: grid;
+            gap: 10px;
+            grid-template-columns: minmax(95px, 1fr) minmax(120px, 2fr) auto;
+        }
+
+        .chart-track {
+            background: var(--surface-soft);
+            border-radius: 999px;
+            height: 10px;
+            overflow: hidden;
+        }
+
+        .chart-fill {
+            background: var(--teal);
+            display: block;
+            height: 100%;
+            width: 0;
+        }
+
+        .chart-fill.green {
+            background: var(--green);
+        }
+
+        .chart-fill.indigo {
+            background: var(--indigo);
+        }
+
+        .finance-chart {
+            display: grid;
+            gap: 12px;
+        }
+
+        .month-row {
+            display: grid;
+            gap: 8px;
+            grid-template-columns: 72px minmax(0, 1fr);
+        }
+
+        .dual-bars {
+            display: grid;
+            gap: 6px;
+        }
+
+        .money-bar {
+            align-items: center;
+            display: grid;
+            gap: 8px;
+            grid-template-columns: 72px minmax(0, 1fr) 112px;
+        }
+
+        .layout {
+            display: grid;
+            gap: 18px;
+            grid-template-columns: minmax(0, 1.35fr) minmax(320px, 0.65fr);
+        }
+
+        .shortcut-grid {
+            display: grid;
+            gap: 10px;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+        }
+
+        .shortcut {
+            align-items: center;
+            background: var(--surface-soft);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            display: flex;
+            font-size: 14px;
+            font-weight: 800;
+            justify-content: space-between;
+            min-height: 48px;
+            padding: 12px;
+        }
+
+        .shortcut span:first-child {
+            align-items: center;
+            display: flex;
+            gap: 9px;
+            min-width: 0;
+        }
+
+        .tables {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            margin-top: 18px;
+        }
+
+        .list {
+            display: grid;
+            gap: 10px;
+        }
+
+        .list-row {
+            border-bottom: 1px solid var(--border);
+            display: grid;
+            gap: 4px;
+            padding: 0 0 10px;
+        }
+
+        .list-row:last-child {
+            border-bottom: 0;
+            padding-bottom: 0;
+        }
+
+        .row-main {
+            align-items: center;
+            display: flex;
+            gap: 12px;
+            justify-content: space-between;
+            min-width: 0;
+        }
+
+        .row-main strong {
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .tag {
+            border-radius: 999px;
+            display: inline-flex;
+            flex: 0 0 auto;
+            font-size: 12px;
+            font-weight: 800;
+            line-height: 1;
+            padding: 6px 8px;
+        }
+
+        .tag.ok {
+            background: #dcfce7;
+            color: #166534;
+        }
+
+        .tag.warn {
+            background: #fef3c7;
+            color: #92400e;
+        }
+
+        .tag.danger {
+            background: #fee2e2;
+            color: #991b1b;
+        }
+
+        .mini-grid {
+            display: grid;
+            gap: 10px;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+
+        .mini {
+            background: var(--surface-soft);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 12px;
+        }
+
+        .mini strong {
+            display: block;
+            font-size: 20px;
+            margin-top: 4px;
+        }
+
+        .empty {
+            color: var(--muted);
+            font-size: 14px;
+            padding: 8px 0;
+        }
+
+        @media (max-width: 1080px) {
+            .headline,
+            .layout,
+            .charts-grid,
+            .tables {
+                grid-template-columns: 1fr;
+            }
+
+            .panel.wide {
+                grid-column: auto;
+            }
+
+            .cashline {
+                min-width: 0;
+            }
+
+            .metrics-grid,
+            .alerts-grid {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+        }
+
+        @media (max-width: 720px) {
+            .topbar-inner {
+                gap: 10px;
+                padding: 10px 14px;
+            }
+
+            .brand img {
+                height: 32px;
+            }
+
+            .brand-subtitle {
+                display: none;
+            }
+
+            .top-actions {
+                flex: 0 0 auto;
+            }
+
+            .btn {
+                min-height: 34px;
+                padding: 7px 9px;
+            }
+
+            .page {
+                padding: 20px 14px 32px;
+            }
+
+            .period-line {
+                align-items: stretch;
+                display: grid;
+            }
+
+            .period-tabs {
+                display: grid;
+                grid-template-columns: repeat(5, minmax(0, 1fr));
+            }
+
+            .period-tab {
+                padding: 8px 4px;
+                text-align: center;
+            }
+
+            .metrics-grid,
+            .alerts-grid,
+            .shortcut-grid,
+            .mini-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .cashline {
+                align-items: flex-start;
+                display: grid;
+            }
+
+            .chart-row,
+            .month-row,
+            .money-bar {
+                grid-template-columns: 1fr;
+            }
+
+            h1 {
+                font-size: 24px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <header class="topbar">
+        <div class="topbar-inner">
+            <a class="brand" href="{% url 'dashboard' %}">
+                <img src="{% static 'img/logo_ds.png' %}" alt="DS Científica">
+                <span>
+                    <span class="brand-title">AXION</span>
+                    <span class="brand-subtitle">Gestão integrada DS Científica</span>
+                </span>
+            </a>
+
+            <nav class="top-actions" aria-label="Ações principais">
+                <a class="btn secondary" href="{{ refresh_url }}">
+                    <span class="btn-symbol" aria-hidden="true">↻</span>
+                    <span>Atualizar</span>
+                </a>
+                <a class="btn secondary" href="{{ admin_url }}">
+                    <span class="btn-symbol" aria-hidden="true">AD</span>
+                    <span>Admin</span>
+                </a>
+                <a class="btn" href="{% url 'admin:comercial_proposta_add' %}">
+                    <span class="btn-symbol" aria-hidden="true">+</span>
+                    <span>Proposta</span>
+                </a>
+            </nav>
+        </div>
+    </header>
+
+    <main class="page">
+        <section class="headline" aria-labelledby="dashboard-title">
+            <div>
+                <h1 id="dashboard-title">Dashboard operacional</h1>
+                <p>Visão geral de clientes, calibrações, comercial e financeiro em {{ hoje|date:"d/m/Y" }}.</p>
+            </div>
+
+            <div class="cashline">
+                <span>
+                    <span class="small">Saldo previsto</span>
+                    <strong>{{ saldo_previsto }}</strong>
+                </span>
+                <span class="small">Receber {{ receita_aberta }}<br>Pagar {{ despesa_aberta }}</span>
+            </div>
+        </section>
+
+        <section class="period-line" aria-label="Filtro de período">
+            <div>
+                <strong>{{ periodo_label }}</strong>
+                <span class="small">
+                    {% if periodo_inicio %}
+                        de {{ periodo_inicio|date:"d/m/Y" }} até {{ periodo_fim|date:"d/m/Y" }}
+                    {% else %}
+                        até {{ periodo_fim|date:"d/m/Y" }}
+                    {% endif %}
+                </span>
+            </div>
+
+            <nav class="period-tabs" aria-label="Períodos do dashboard">
+                {% for periodo in periodos %}
+                    <a class="period-tab{% if periodo.ativo %} active{% endif %}" href="{{ periodo.url }}">{{ periodo.label }}</a>
+                {% endfor %}
+            </nav>
+        </section>
+
+        <section class="alerts-grid" aria-label="Alertas críticos">
+            {% for alerta in alertas %}
+                <a class="alert-card" data-type="{{ alerta.tipo }}" href="{{ alerta.url }}">
+                    <span class="icon-badge" aria-hidden="true">{{ alerta.icone }}</span>
+                    <span>
+                        <strong>{{ alerta.titulo }}</strong>
+                        <span class="small">{{ alerta.texto }}</span>
+                    </span>
+                    <span class="alert-count">{{ alerta.total }}</span>
+                </a>
+            {% empty %}
+                <div class="alert-card alert-clear" data-type="ok">
+                    <span class="icon-badge" aria-hidden="true">OK</span>
+                    <span>
+                        <strong>Sem alertas críticos</strong>
+                        <span class="small">Não há vencimentos, atrasos ou tickets urgentes agora.</span>
+                    </span>
+                    <span class="alert-count">0</span>
+                </div>
+            {% endfor %}
+        </section>
+
+        <section class="metrics-grid" aria-label="Indicadores principais">
+            {% for indicador in indicadores %}
+                <a class="metric-card" data-tone="{{ indicador.tom }}" href="{{ indicador.url }}">
+                    <span class="metric-head">
+                        <span class="metric-label">{{ indicador.titulo }}</span>
+                        <span class="icon-badge" aria-hidden="true">{{ indicador.icone }}</span>
+                    </span>
+                    <span class="metric-value">{{ indicador.valor }}</span>
+                    <span class="metric-footer">
+                        <span>{{ indicador.detalhe }}</span>
+                        <span>Detalhes</span>
+                    </span>
+                </a>
+            {% endfor %}
+        </section>
+
+        <section class="charts-grid" aria-label="Gráficos do dashboard">
+            <section class="panel" aria-labelledby="status-propostas-title">
+                <div class="section-title">
+                    <div>
+                        <h2 id="status-propostas-title">Propostas por status</h2>
+                        <p>Distribuição no período selecionado.</p>
+                    </div>
+                    <a class="small" href="{% url 'admin:comercial_proposta_changelist' %}">ver todos</a>
+                </div>
+
+                <div class="chart-list">
+                    {% for item in status_propostas %}
+                        <a class="chart-row" href="{{ item.url }}">
+                            <span class="small">{{ item.rotulo }}</span>
+                            <span class="chart-track" aria-hidden="true">
+                                <span class="chart-fill green" style="width: {{ item.percentual }}%;"></span>
+                            </span>
+                            <strong>{{ item.total }}</strong>
+                        </a>
+                    {% endfor %}
+                </div>
+            </section>
+
+            <section class="panel" aria-labelledby="funil-title">
+                <div class="section-title">
+                    <div>
+                        <h2 id="funil-title">Funil CRM</h2>
+                        <p>Oportunidades por etapa.</p>
+                    </div>
+                    <a class="small" href="{% url 'admin:comercial_crmregistro_changelist' %}">ver todos</a>
+                </div>
+
+                <div class="chart-list">
+                    {% for item in funil %}
+                        <a class="chart-row" href="{{ item.url }}">
+                            <span class="small">{{ item.rotulo }}</span>
+                            <span class="chart-track" aria-hidden="true">
+                                <span class="chart-fill indigo" style="width: {{ item.percentual }}%;"></span>
+                            </span>
+                            <strong>{{ item.total }}</strong>
+                        </a>
+                    {% endfor %}
+                </div>
+            </section>
+
+            <section class="panel wide" aria-labelledby="financeiro-chart-title">
+                <div class="section-title">
+                    <div>
+                        <h2 id="financeiro-chart-title">Financeiro mensal</h2>
+                        <p>Receitas e despesas previstas por vencimento nos últimos 6 meses.</p>
+                    </div>
+                    <a class="small" href="{% url 'admin:financeiro_contareceber_changelist' %}">ver financeiro</a>
+                </div>
+
+                <div class="finance-chart">
+                    {% for item in financeiro_mensal %}
+                        <div class="month-row">
+                            <strong>{{ item.label }}</strong>
+                            <div class="dual-bars">
+                                <div class="money-bar">
+                                    <span class="small">Receber</span>
+                                    <span class="chart-track" aria-hidden="true">
+                                        <span class="chart-fill green" style="width: {{ item.receber_percentual }}%;"></span>
+                                    </span>
+                                    <span class="small">{{ item.receber_formatado }}</span>
+                                </div>
+                                <div class="money-bar">
+                                    <span class="small">Pagar</span>
+                                    <span class="chart-track" aria-hidden="true">
+                                        <span class="chart-fill" style="width: {{ item.pagar_percentual }}%;"></span>
+                                    </span>
+                                    <span class="small">{{ item.pagar_formatado }}</span>
+                                </div>
+                            </div>
+                        </div>
+                    {% endfor %}
+                </div>
+            </section>
+        </section>
+
+        <section class="layout">
+            <div>
+                <div class="panel">
+                    <div class="section-title">
+                        <div>
+                            <h2>Atalhos</h2>
+                            <p>Cadastros mais usados no dia a dia.</p>
+                        </div>
+                    </div>
+
+                    <div class="shortcut-grid">
+                        {% for atalho in atalhos %}
+                            <a class="shortcut" href="{{ atalho.url }}">
+                                <span><span class="icon-badge" aria-hidden="true">{{ atalho.icone }}</span>{{ atalho.rotulo }}</span>
+                                <span aria-hidden="true">+</span>
+                            </a>
+                        {% endfor %}
+                    </div>
+                </div>
+
+                <div class="tables">
+                    <section class="panel" aria-labelledby="calibracoes-title">
+                        <div class="section-title">
+                            <h2 id="calibracoes-title">Calibrações próximas</h2>
+                            <a class="small" href="{% url 'admin:calibracao_instrumento_changelist' %}">ver todos</a>
+                        </div>
+
+                        <div class="list">
+                            {% for item in proximas_calibracoes %}
+                                <a class="list-row" href="{% url 'admin:calibracao_instrumento_change' item.pk %}">
+                                    <span class="row-main">
+                                        <strong>{{ item.codigo }} - {{ item.descricao }}</strong>
+                                        {% if item.proxima_calibracao < hoje %}
+                                            <span class="tag danger">vencida</span>
+                                        {% else %}
+                                            <span class="tag warn">{{ item.proxima_calibracao|date:"d/m" }}</span>
+                                        {% endif %}
+                                    </span>
+                                    <span class="small">{{ item.cliente.razao_social }}</span>
+                                </a>
+                            {% empty %}
+                                <p class="empty">Nenhuma calibração crítica encontrada.</p>
+                            {% endfor %}
+                        </div>
+                    </section>
+
+                    <section class="panel" aria-labelledby="padroes-title">
+                        <div class="section-title">
+                            <h2 id="padroes-title">Padrões e certificados</h2>
+                            <a class="small" href="{% url 'admin:calibracao_padrao_changelist' %}">ver todos</a>
+                        </div>
+
+                        <div class="list">
+                            {% for item in padroes_vencendo %}
+                                <a class="list-row" href="{% url 'admin:calibracao_padrao_change' item.pk %}">
+                                    <span class="row-main">
+                                        <strong>{{ item.codigo }} - {{ item.descricao }}</strong>
+                                        {% if item.vencimento < hoje %}
+                                            <span class="tag danger">vencido</span>
+                                        {% else %}
+                                            <span class="tag warn">{{ item.vencimento|date:"d/m" }}</span>
+                                        {% endif %}
+                                    </span>
+                                    <span class="small">{{ item.get_status_display }}</span>
+                                </a>
+                            {% empty %}
+                                <p class="empty">Nenhum padrão com vencimento próximo.</p>
+                            {% endfor %}
+                        </div>
+                    </section>
+
+                    <section class="panel" aria-labelledby="propostas-title">
+                        <div class="section-title">
+                            <h2 id="propostas-title">Propostas recentes</h2>
+                            <a class="small" href="{% url 'admin:comercial_proposta_changelist' %}">ver todos</a>
+                        </div>
+
+                        <div class="list">
+                            {% for item in propostas_recentes %}
+                                <a class="list-row" href="{% url 'admin:comercial_proposta_change' item.pk %}">
+                                    <span class="row-main">
+                                        <strong>{{ item.codigo }}</strong>
+                                        <span class="tag ok">{{ item.get_status_display }}</span>
+                                    </span>
+                                    <span class="small">{{ item.cliente.razao_social }} - R$ {{ item.total|floatformat:2 }}</span>
+                                </a>
+                            {% empty %}
+                                <p class="empty">Nenhuma proposta cadastrada.</p>
+                            {% endfor %}
+                        </div>
+                    </section>
+
+                    <section class="panel" aria-labelledby="tickets-title">
+                        <div class="section-title">
+                            <h2 id="tickets-title">Tickets prioritários</h2>
+                            <a class="small" href="{% url 'admin:comercial_crmticket_changelist' %}">ver todos</a>
+                        </div>
+
+                        <div class="list">
+                            {% for item in tickets_prioridade %}
+                                <a class="list-row" href="{% url 'admin:comercial_crmticket_change' item.pk %}">
+                                    <span class="row-main">
+                                        <strong>{{ item.titulo }}</strong>
+                                        <span class="tag danger">{{ item.get_prioridade_display }}</span>
+                                    </span>
+                                    <span class="small">{{ item.cliente.razao_social }} - {{ item.get_status_display }}</span>
+                                </a>
+                            {% empty %}
+                                <p class="empty">Sem tickets de alta prioridade.</p>
+                            {% endfor %}
+                        </div>
+                    </section>
+                </div>
+            </div>
+
+            <aside>
+                <section class="panel" aria-labelledby="financeiro-title">
+                    <div class="section-title">
+                        <h2 id="financeiro-title">Pendências financeiras</h2>
+                        <a class="small" href="{% url 'admin:financeiro_contareceber_changelist' %}">ver contas</a>
+                    </div>
+
+                    <div class="list">
+                        {% for item in contas_receber_atrasadas %}
+                            <a class="list-row" href="{% url 'admin:financeiro_contareceber_change' item.pk %}">
+                                <span class="row-main">
+                                    <strong>{{ item.descricao }}</strong>
+                                    <span class="tag danger">receber</span>
+                                </span>
+                                <span class="small">{{ item.cliente.razao_social }} - vence {{ item.vencimento|date:"d/m/Y" }}</span>
+                            </a>
+                        {% endfor %}
+
+                        {% for item in contas_pagar_atrasadas %}
+                            <a class="list-row" href="{% url 'admin:financeiro_contapagar_change' item.pk %}">
+                                <span class="row-main">
+                                    <strong>{{ item.descricao }}</strong>
+                                    <span class="tag danger">pagar</span>
+                                </span>
+                                <span class="small">{{ item.fornecedor }} - vence {{ item.vencimento|date:"d/m/Y" }}</span>
+                            </a>
+                        {% endfor %}
+
+                        {% if not contas_receber_atrasadas and not contas_pagar_atrasadas %}
+                            <p class="empty">Sem pendências financeiras atrasadas.</p>
+                        {% endif %}
+                    </div>
+                </section>
+
+                <section class="panel" aria-labelledby="resumo-title" style="margin-top: 18px;">
+                    <div class="section-title">
+                        <h2 id="resumo-title">Resumo</h2>
+                    </div>
+
+                    <div class="mini-grid">
+                        <div class="mini"><span class="small">OS</span><strong>{{ resumo_operacional.ordens_servico }}</strong></div>
+                        <div class="mini"><span class="small">Produtos</span><strong>{{ resumo_operacional.produtos_servicos }}</strong></div>
+                        <div class="mini"><span class="small">Documentos</span><strong>{{ resumo_operacional.documentos }}</strong></div>
+                        <div class="mini"><span class="small">Impostos</span><strong>{{ resumo_operacional.impostos_abertos }}</strong></div>
+                        <div class="mini"><span class="small">Oportunidades</span><strong>{{ resumo_operacional.oportunidades }}</strong></div>
+                        <div class="mini"><span class="small">Tickets</span><strong>{{ resumo_operacional.tickets }}</strong></div>
+                    </div>
+                </section>
+            </aside>
+        </section>
+    </main>
+</body>
+</html>

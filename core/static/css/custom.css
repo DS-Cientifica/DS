@@ -1,0 +1,19 @@
+/* Barra superior */
+#header {
+    background-color: #0d3b66 !important;
+}
+
+/* Logo / nome */
+#branding h1 {
+    color: #ffffff !important;
+}
+
+/* Botões */
+.button, input[type=submit] {
+    background-color: #198754 !important;
+}
+
+/* Menu lateral */
+.module h2 {
+    background-color: #0d3b66 !important;
+}
