@@ -1,5 +1,6 @@
 from pathlib import Path
 import os
+import dj_database_url
 
 # ========================
 # BASE
@@ -16,7 +17,7 @@ SECRET_KEY = os.getenv(
 
 DEBUG = True
 
-ALLOWED_HOSTS = ["*"]  # ajustar em produção
+ALLOWED_HOSTS = ["ds-c6jn.onrender.com"]  # ajustar em produção
 
 # ========================
 # APPLICATIONS
@@ -77,14 +78,9 @@ WSGI_APPLICATION = "core.wsgi.application"
 # DATABASE
 # ========================
 DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.postgresql',
-        'NAME': 'axion_db',
-        'USER': 'postgres',
-        'PASSWORD': 'DSc@1301',
-        'HOST': 'localhost',
-        'PORT': '5432',
-    }
+    'default': dj_database_url.config(
+        default=os.getenv('DATABASE_URL')
+    )
 }
 
 # ========================
