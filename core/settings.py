@@ -17,7 +17,8 @@ SECRET_KEY = os.getenv(
 
 DEBUG = True
 
-ALLOWED_HOSTS = ["ds-c6jn.onrender.com"]  # ajustar em produção
+ALLOWED_HOSTS = ["ALLOWED_HOSTS = ['127.0.0.1', 'localhost', '.onrender.com']"
+]  # ajustar em produção
 
 # ========================
 # APPLICATIONS
@@ -78,8 +79,8 @@ WSGI_APPLICATION = "core.wsgi.application"
 # DATABASE
 # ========================
 DATABASES = {
-    'default': dj_database_url.config(
-        default=os.getenv('DATABASE_URL')
+    'default': dj_database_url.parse(
+        os.environ.get("DATABASE_URL")
     )
 }
 
