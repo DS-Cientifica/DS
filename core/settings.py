@@ -17,8 +17,13 @@ SECRET_KEY = os.getenv(
 
 DEBUG = True
 
-ALLOWED_HOSTS = ["ALLOWED_HOSTS = ['127.0.0.1', 'localhost', '.onrender.com']"
-]  # ajustar em produção
+
+ALLOWED_HOSTS = [
+    '127.0.0.1',
+    'localhost',
+    '.onrender.com',
+    'ds-c6jn.onrender.com'
+] # ajustar em produção
 
 # ========================
 # APPLICATIONS
