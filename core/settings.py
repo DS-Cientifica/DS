@@ -22,7 +22,7 @@ ALLOWED_HOSTS = [
     '127.0.0.1',
     'localhost',
     '.onrender.com',
-    'ds-c6jn.onrender.com'
+    'ds-c6jn.onrender.com',
 ] # ajustar em produção
 
 # ========================
@@ -83,10 +83,16 @@ WSGI_APPLICATION = "core.wsgi.application"
 # ========================
 # DATABASE
 # ========================
+
 DATABASES = {
-    'default': dj_database_url.config(
-        default='sqlite:///db.sqlite3'
-    )
+    'default': {
+        'ENGINE': 'django.db.backends.postgresql',
+        'NAME': 'axion',
+        'USER': 'postgres',
+        'PASSWORD': 'DSC1301',
+        'HOST': 'localhost',
+        'PORT': '5432',
+    }
 }
 
 # ========================
