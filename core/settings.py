@@ -1,9 +1,12 @@
 from pathlib import Path
 import os
 import dj_database_url
-from dotenv import load_dotenv
 
-load_dotenv()
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
 
 # ========================
 # BASE
@@ -18,21 +21,28 @@ SECRET_KEY = os.getenv(
     "django-insecure-dev-key"
 )
 
-DEBUG = True
+DEBUG = os.getenv("DEBUG", "False").lower() in ("1", "true", "yes", "on")
 
 
 ALLOWED_HOSTS = [
-    '127.0.0.1',
-    'localhost',
-    '.onrender.com',
-    'ds-c6jn.onrender.com',
-] # ajustar em produção
+    host.strip()
+    for host in os.getenv("ALLOWED_HOSTS", "127.0.0.1,localhost,.onrender.com").split(",")
+    if host.strip()
+]
+
+CSRF_TRUSTED_ORIGINS = [
+    origin.strip()
+    for origin in os.getenv("CSRF_TRUSTED_ORIGINS", "https://*.onrender.com").split(",")
+    if origin.strip()
+]
+
+SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 
 # ========================
 # APPLICATIONS
 # ========================
 INSTALLED_APPS = [
-   
+    "jazzmin",
     "django.contrib.admin",
     "django.contrib.auth",
     "django.contrib.contenttypes",
@@ -53,6 +63,7 @@ INSTALLED_APPS = [
 # ========================
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
+    "whitenoise.middleware.WhiteNoiseMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
@@ -87,17 +98,26 @@ WSGI_APPLICATION = "core.wsgi.application"
 # DATABASE
 # ========================
 
-DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.postgresql',
-        'NAME': os.getenv('DB_NAME'),
-        'USER': os.getenv('DB_USER'),
-        'PASSWORD': os.getenv('DB_PASSWORD'),
-        'HOST': os.getenv('DB_HOST'),
-        'PORT': os.getenv('DB_PORT'),
-    }
-}
+DATABASE_URL = os.getenv("DATABASE_URL")
 
+if DATABASE_URL:
+    DATABASES = {
+        "default": dj_database_url.config(
+            conn_max_age=600,
+            ssl_require=not DEBUG,
+        )
+    }
+else:
+    DATABASES = {
+        "default": {
+            "ENGINE": "django.db.backends.postgresql",
+            "NAME": os.getenv("DB_NAME", "axion_db"),
+            "USER": os.getenv("DB_USER", "postgres"),
+            "PASSWORD": os.getenv("DB_PASSWORD", "DSc@1301"),
+            "HOST": os.getenv("DB_HOST", "localhost"),
+            "PORT": os.getenv("DB_PORT", "5432"),
+        }
+    }
 # ========================
 # PASSWORD VALIDATION
 # ========================
@@ -124,6 +144,14 @@ USE_TZ = True
 STATIC_URL = "/static/"
 STATICFILES_DIRS = [BASE_DIR / "static"]
 STATIC_ROOT = BASE_DIR / "staticfiles"
+STORAGES = {
+    "default": {
+        "BACKEND": "django.core.files.storage.FileSystemStorage",
+    },
+    "staticfiles": {
+        "BACKEND": "whitenoise.storage.CompressedStaticFilesStorage",
+    },
+}
 
 # ========================
 # MEDIA FILES

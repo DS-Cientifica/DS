@@ -3,7 +3,7 @@ document.addEventListener("DOMContentLoaded", function () {
     // =========================
     // CNPJ (PRINCIPAL)
     // =========================
-    alert("JS carregado");
+  
     const cnpjField = document.querySelector("#id_cnpj");
 
     if (cnpjField) {
