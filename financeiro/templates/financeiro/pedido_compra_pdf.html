@@ -1,0 +1,532 @@
+{% load static %}
+<!doctype html>
+<html lang="pt-br">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Pedido de Compra {{ pedido.numero_pedido }}</title>
+    <style>
+        :root {
+            --ink: #172033;
+            --muted: #5f6b7a;
+            --line: #b9c1cd;
+            --line-strong: #788599;
+            --paper: #ffffff;
+            --soft: #f4f6f9;
+            --primary: #283864;
+            --accent: #d32862;
+        }
+
+        * { box-sizing: border-box; }
+
+        html, body {
+            margin: 0;
+            color: var(--ink);
+            background: #e9edf3;
+            font-family: Arial, Helvetica, sans-serif;
+            font-size: 11px;
+            line-height: 1.35;
+        }
+
+        .print-toolbar {
+            position: sticky;
+            top: 0;
+            z-index: 5;
+            display: flex;
+            justify-content: center;
+            padding: 12px;
+            background: rgba(255, 255, 255, 0.96);
+            border-bottom: 1px solid #d8dde6;
+        }
+
+        .toolbar-inner {
+            width: 210mm;
+            max-width: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+        }
+
+        .toolbar-title {
+            font-size: 13px;
+            font-weight: 700;
+        }
+
+        .toolbar-actions {
+            display: flex;
+            gap: 8px;
+        }
+
+        .toolbar-actions button {
+            border: 1px solid var(--primary);
+            border-radius: 4px;
+            background: var(--primary);
+            color: #fff;
+            cursor: pointer;
+            font: inherit;
+            font-weight: 700;
+            padding: 8px 14px;
+        }
+
+        .toolbar-actions button.secondary {
+            background: #fff;
+            color: var(--primary);
+        }
+
+        .sheet-wrap {
+            padding: 18px 0 32px;
+        }
+
+        .sheet {
+            width: 210mm;
+            min-height: 297mm;
+            margin: 0 auto;
+            padding: 11mm 12mm 10mm;
+            background: var(--paper);
+            box-shadow: 0 18px 50px rgba(23, 32, 51, 0.18);
+        }
+
+        .header {
+            display: grid;
+            grid-template-columns: 30mm 1fr 58mm;
+            gap: 6mm;
+            align-items: center;
+            padding-bottom: 5mm;
+            border-bottom: 2px solid var(--primary);
+        }
+
+        .logo img {
+            width: 27mm;
+            height: 27mm;
+            object-fit: contain;
+            display: block;
+        }
+
+        .company-name {
+            margin: 0 0 3px;
+            color: var(--primary);
+            font-size: 18px;
+            font-weight: 800;
+            text-transform: uppercase;
+        }
+
+        .company-line {
+            margin: 0;
+            color: var(--muted);
+            font-size: 10.5px;
+        }
+
+        .meta {
+            width: 100%;
+            border-collapse: collapse;
+            border: 1px solid var(--line-strong);
+            table-layout: fixed;
+        }
+
+        .meta th,
+        .meta td {
+            padding: 5px 7px;
+            border-bottom: 1px solid var(--line);
+            text-align: left;
+            vertical-align: middle;
+        }
+
+        .meta th {
+            width: 42%;
+            background: var(--soft);
+            color: var(--primary);
+            font-weight: 700;
+        }
+
+        .meta tr:last-child th,
+        .meta tr:last-child td {
+            border-bottom: 0;
+        }
+
+        .title-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: end;
+            gap: 12px;
+            margin: 7mm 0 5mm;
+        }
+
+        .title-row h1 {
+            margin: 0;
+            color: var(--primary);
+            font-size: 22px;
+            font-weight: 800;
+            letter-spacing: 0;
+        }
+
+        .title-row span {
+            color: var(--muted);
+            font-size: 11px;
+        }
+
+        .section {
+            margin-top: 5mm;
+        }
+
+        .section-title {
+            margin: 0 0 2.5mm;
+            color: var(--primary);
+            font-size: 12px;
+            font-weight: 800;
+            letter-spacing: 0;
+            text-transform: uppercase;
+        }
+
+        .info-table,
+        .items-table,
+        .totals-table {
+            width: 100%;
+            border-collapse: collapse;
+            table-layout: fixed;
+        }
+
+        .info-table th,
+        .info-table td,
+        .items-table th,
+        .items-table td,
+        .totals-table th,
+        .totals-table td {
+            border: 1px solid var(--line);
+            padding: 5px 7px;
+            vertical-align: top;
+        }
+
+        .info-table th,
+        .totals-table th {
+            background: var(--soft);
+            color: var(--primary);
+            font-weight: 700;
+            text-align: left;
+            width: 24%;
+        }
+
+        .items-table thead th {
+            background: var(--primary);
+            color: #fff;
+            font-weight: 700;
+            text-align: center;
+        }
+
+        .items-table .money,
+        .totals-table td {
+            text-align: right;
+        }
+
+        .items-table .center,
+        .info-table .center {
+            text-align: center;
+        }
+
+        .items-table .desc {
+            white-space: normal;
+            word-break: break-word;
+        }
+
+        .items-table .code {
+            color: var(--muted);
+            font-size: 9px;
+            margin-top: 2px;
+        }
+
+        .items-table .empty-row {
+            text-align: center;
+            color: var(--muted);
+            padding: 10px;
+        }
+
+        .note {
+            padding: 9px 10px;
+            border: 1px solid var(--line);
+            background: #fbfcfe;
+            color: var(--muted);
+        }
+
+        .totals-layout {
+            display: grid;
+            grid-template-columns: 1fr 58mm;
+            gap: 8mm;
+            align-items: start;
+        }
+
+        .signature-area {
+            margin-top: 16mm;
+            display: flex;
+            justify-content: center;
+        }
+
+        .signature-line {
+            width: 70mm;
+            border-top: 1px solid var(--line-strong);
+            text-align: center;
+            padding-top: 5px;
+            color: var(--muted);
+            font-size: 10px;
+            letter-spacing: .3px;
+        }
+
+        .footer {
+            margin-top: 10mm;
+            padding-top: 3mm;
+            border-top: 1px solid var(--line);
+            text-align: center;
+            color: var(--muted);
+            font-size: 9.5px;
+        }
+
+        .footer .strong {
+            color: var(--ink);
+            font-weight: 700;
+        }
+
+        @page {
+            size: A4 portrait;
+            margin: 10mm 12mm 10mm 12mm;
+        }
+
+        @media print {
+            html, body {
+                background: #fff;
+            }
+
+            .print-toolbar {
+                display: none !important;
+            }
+
+            .sheet-wrap {
+                padding: 0;
+            }
+
+            .sheet {
+                width: auto;
+                min-height: auto;
+                padding: 0;
+                margin: 0;
+                box-shadow: none;
+            }
+
+            .section,
+            .header,
+            .signature-area {
+                break-inside: avoid;
+                page-break-inside: avoid;
+            }
+
+            a {
+                color: inherit;
+                text-decoration: none;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="print-toolbar no-print">
+        <div class="toolbar-inner">
+            <div class="toolbar-title">Pedido de Compra {{ pedido.numero_pedido }}</div>
+            <div class="toolbar-actions">
+                <button type="button" onclick="window.print()">Imprimir / PDF</button>
+                <button type="button" class="secondary" onclick="window.close()">Fechar</button>
+            </div>
+        </div>
+    </div>
+
+    <main class="sheet-wrap">
+        <article class="sheet">
+            <header class="header">
+                <div class="logo">
+                    <img src="{% static 'img/logo_ds.png' %}" alt="DS Científica">
+                </div>
+                <div>
+                    <p class="company-name">{{ empresa.empresa }}</p>
+                    <p class="company-line">{{ empresa.endereco }}</p>
+                    <p class="company-line">{{ empresa.cidade }} - {{ empresa.estado }} | CNPJ: {{ empresa.cnpj }}</p>
+                    <p class="company-line">{{ empresa.telefone }} | {{ empresa.email }}</p>
+                </div>
+                <table class="meta">
+                    <tbody>
+                        <tr>
+                            <th>Pedido</th>
+                            <td>{{ pedido.numero_pedido }}</td>
+                        </tr>
+                        <tr>
+                            <th>Data</th>
+                            <td>{{ pedido.data_emissao|date:"d/m/Y" }}</td>
+                        </tr>
+                        <tr>
+                            <th>Responsável</th>
+                            <td>{% if pedido.responsavel_compra %}{{ pedido.responsavel_compra.get_full_name|default:pedido.responsavel_compra.username }}{% else %}-{% endif %}</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </header>
+
+            <div class="title-row">
+                <h1>PEDIDO DE COMPRA</h1>
+                <span>Prazo de entrega: {{ pedido.prazo_entrega|date:"d/m/Y"|default:"-" }}</span>
+            </div>
+
+            <section class="section">
+                <h2 class="section-title">I. Dados do fornecedor</h2>
+                <table class="info-table">
+                    <tbody>
+                        <tr>
+                            <th>Razão social</th>
+                            <td colspan="3">{{ fornecedor.razao_social|default:"-" }}</td>
+                        </tr>
+                        <tr>
+                            <th>Nome fantasia</th>
+                            <td colspan="3">{{ fornecedor.nome_empresa|default:"-" }}</td>
+                        </tr>
+                        <tr>
+                            <th>Endereço</th>
+                            <td colspan="3">{{ endereco_fornecedor|default:"-" }}</td>
+                        </tr>
+                        <tr>
+                            <th>CNPJ</th>
+                            <td>{{ fornecedor.cnpj|default:"-" }}</td>
+                            <th>IE</th>
+                            <td>{{ fornecedor.ie|default:"-" }}</td>
+                        </tr>
+                        <tr>
+                            <th>Contato</th>
+                            <td>{% if contato %}{{ contato.nome }}{% else %}-{% endif %}</td>
+                            <th>Telefone</th>
+                            <td>{% if contato and contato.telefone %}{{ contato.telefone }}{% else %}{{ fornecedor.telefone|default:"-" }}{% endif %}</td>
+                        </tr>
+                        <tr>
+                            <th>E-mail</th>
+                            <td colspan="3">{% if contato and contato.email %}{{ contato.email }}{% else %}{{ fornecedor.email|default:"-" }}{% endif %}</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </section>
+
+            <section class="section">
+                <h2 class="section-title">II. Dados do pedido</h2>
+                <table class="info-table">
+                    <tbody>
+                        <tr>
+                            <th>Condição de pagamento</th>
+                            <td colspan="3">{{ pedido.condicao_pagamento|default:"A combinar" }}</td>
+                        </tr>
+                        <tr>
+                            <th>Prazo de entrega</th>
+                            <td>{{ pedido.prazo_entrega|date:"d/m/Y"|default:"-" }}</td>
+                            <th>Frete</th>
+                            <td>{{ frete }}</td>
+                        </tr>
+                        <tr>
+                            <th>Outros custos</th>
+                            <td>{{ outros_custos }}</td>
+                            <th>Observações</th>
+                            <td>{{ pedido.observacoes|default:"-" }}</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </section>
+
+            <section class="section">
+                <h2 class="section-title">III. Itens do pedido</h2>
+                <table class="items-table">
+                    <colgroup>
+                        <col style="width: 6%">
+                        <col style="width: 11%">
+                        <col style="width: 30%">
+                        <col style="width: 9%">
+                        <col style="width: 10%">
+                        <col style="width: 12%">
+                        <col style="width: 10%">
+                        <col style="width: 12%">
+                    </colgroup>
+                    <thead>
+                        <tr>
+                            <th>Item</th>
+                            <th>Código</th>
+                            <th>Descrição</th>
+                            <th>Qtd.</th>
+                            <th>Un.</th>
+                            <th>Valor unitário</th>
+                            <th>Desc. %</th>
+                            <th>Valor total</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for item in itens %}
+                            <tr>
+                                <td class="center">{{ item.numero }}</td>
+                                <td class="center">{{ item.obj.codigo|default:"-" }}</td>
+                                <td class="desc">
+                                    {{ item.obj.descricao|default:"-" }}
+                                    {% if item.obj.produto and item.obj.produto.codigo %}
+                                        <div class="code">{{ item.obj.produto.codigo }}</div>
+                                    {% endif %}
+                                </td>
+                                <td class="center">{{ item.obj.quantidade }}</td>
+                                <td class="center">{{ item.obj.unidade|default:"UN" }}</td>
+                                <td class="money">{{ item.valor_unitario }}</td>
+                                <td class="center">{{ item.obj.desconto }}%</td>
+                                <td class="money">{{ item.valor_total }}</td>
+                            </tr>
+                        {% empty %}
+                            <tr>
+                                <td class="empty-row" colspan="8">Nenhum item cadastrado neste pedido.</td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </section>
+
+            <section class="section">
+                <h2 class="section-title">IV. Totais</h2>
+                <div class="totals-layout">
+                    <div class="note">
+                        Os valores abaixo seguem a composição cadastrada no pedido. Altere os itens para atualizar subtotal, desconto e total.
+                    </div>
+                    <table class="totals-table">
+                        <tbody>
+                            <tr>
+                                <th>Subtotal</th>
+                                <td>{{ subtotal }}</td>
+                            </tr>
+                            <tr>
+                                <th>Desconto total</th>
+                                <td>{{ desconto_total }}</td>
+                            </tr>
+                            <tr>
+                                <th>Frete</th>
+                                <td>{{ frete }}</td>
+                            </tr>
+                            <tr>
+                                <th>Outros custos</th>
+                                <td>{{ outros_custos }}</td>
+                            </tr>
+                            <tr>
+                                <th>Total</th>
+                                <td>{{ total }}</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <section class="section">
+                <h2 class="section-title">V. Observações finais</h2>
+                <div class="note">{% if pedido.observacoes %}{{ pedido.observacoes }}{% else %}Conforme condições comerciais e de compra estabelecidas neste pedido.{% endif %}</div>
+            </section>
+
+            <div class="signature-area">
+                <div class="signature-line">ASSINATURA DO RESPONSÁVEL PELA COMPRA</div>
+            </div>
+
+            <footer class="footer">
+                <span class="strong">{{ empresa.empresa }}</span>, {{ empresa.cidade }} - {{ empresa.estado }} | CNPJ: {{ empresa.cnpj }} | {{ empresa.telefone }} | {{ empresa.email }}
+            </footer>
+        </article>
+    </main>
+</body>
+</html>

@@ -1,4 +1,4 @@
-/* Barra superior */
+﻿/* Barra superior */
 #header {
     background-color: #0d3b66 !important;
 }
@@ -16,4 +16,8 @@
 /* Menu lateral */
 .module h2 {
     background-color: #0d3b66 !important;
+}
+
+.change-form .submit-row {
+    margin-top: 1rem;
 }

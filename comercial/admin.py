@@ -131,13 +131,13 @@ class PropostaAdmin(admin.ModelAdmin):
         try:
             url = reverse("pdf_proposta", args=[obj.id])
             return format_html(
-                "<a class='button' href='{}' target='_blank'>PDF</a>",
+                "<a class='button' href='{}' target='_blank'>Imprimir/PDF</a>",
                 url
             )
         except:
             return "-"
 
-    gerar_pdf.short_description = "PDF"
+    gerar_pdf.short_description = "Impressão"
 
 
 # =========================

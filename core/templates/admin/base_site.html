@@ -1,4 +1,5 @@
-{% extends "admin/base.html" %}
+﻿{% extends "admin/base.html" %}
+{% load static %}
 
 {% block branding %}
 <h1 id="site-name" style="color: white;">
@@ -7,6 +8,8 @@
 {% endblock %}
 
 {% block extrastyle %}
+{{ block.super }}
+<link rel="stylesheet" href="{% static 'css/custom.css' %}">
 <style>
     #header {
         background-color: #1f4e5f !important;

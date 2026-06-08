@@ -117,6 +117,40 @@ def _financeiro_mensal(today):
     return rows
 
 
+def _qualidade_documental(today):
+    documentos = list(Documento.objects.all().order_by("titulo"))
+    limite_30 = today + timedelta(days=30)
+    limite_revisao = today - relativedelta(months=12)
+    limite_30_revisao = today - relativedelta(months=11)
+
+    vigentes = [doc for doc in documentos if doc.status == "vigente"]
+    obsoletos = [doc for doc in documentos if doc.status == "obsoleto"]
+    em_revisao = [doc for doc in documentos if doc.status == "em_revisao"]
+    elaboracao = [doc for doc in documentos if doc.status == "em_elaboracao"]
+    sem_codigo = [doc for doc in documentos if not doc.codigo.strip()]
+    sem_aprovacao = [doc for doc in documentos if not doc.aprovado_por.strip() or doc.status == "em_elaboracao"]
+    sem_responsavel = [doc for doc in documentos if not doc.responsavel.strip()]
+    sem_historico = [doc for doc in documentos if not doc.historico_revisoes.exists()]
+    vencendo = [doc for doc in vigentes if limite_revisao <= doc.data_ultima_revisao <= limite_30_revisao]
+    vencidos = [doc for doc in vigentes if doc.data_proxima_revisao < today]
+    proxima_revisao = [doc for doc in vigentes if today <= doc.data_proxima_revisao <= limite_30]
+
+    return {
+        "documentos": documentos,
+        "vigentes": vigentes,
+        "obsoletos": obsoletos,
+        "em_revisao": em_revisao,
+        "elaboracao": elaboracao,
+        "sem_codigo": sem_codigo,
+        "sem_aprovacao": sem_aprovacao,
+        "sem_responsavel": sem_responsavel,
+        "sem_historico": sem_historico,
+        "vencendo": vencendo,
+        "vencidos": vencidos,
+        "proxima_revisao": proxima_revisao,
+    }
+
+
 @login_required(login_url="/admin/login/")
 def dashboard(request):
     today = timezone.localdate()
@@ -185,6 +219,7 @@ def dashboard(request):
     padroes_7_dias = Padrao.objects.filter(vencimento__gte=today, vencimento__lte=next_7_days)
     impostos_vencidos = Imposto.objects.filter(pago=False, vencimento__lt=today)
     tickets_urgentes = tickets_abertos.filter(prioridade="urgente")
+    qualidade = _qualidade_documental(today)
 
     alertas_possiveis = [
         {
@@ -226,6 +261,22 @@ def dashboard(request):
             "url": reverse("admin:calibracao_instrumento_changelist"),
             "tipo": "warn",
             "icone": "7D",
+        },
+        {
+            "titulo": "Docs vencendo",
+            "texto": "Documentos com revisão chegando em 30 dias.",
+            "total": len(qualidade["proxima_revisao"]),
+            "url": reverse("admin:qualidade_documento_changelist"),
+            "tipo": "warn",
+            "icone": "QD",
+        },
+        {
+            "titulo": "Docs vencidos",
+            "texto": "Documentos que precisam ser revistos.",
+            "total": len(qualidade["vencidos"]),
+            "url": reverse("admin:qualidade_documento_changelist"),
+            "tipo": "danger",
+            "icone": "QV",
         },
         {
             "titulo": "Tickets urgentes",
@@ -270,6 +321,14 @@ def dashboard(request):
             "url": reverse("admin:comercial_proposta_changelist"),
             "tom": "green",
             "icone": "PR",
+        },
+        {
+            "titulo": "Documentos vigentes",
+            "valor": len(qualidade["vigentes"]),
+            "detalhe": f"{len(qualidade['obsoletos'])} obsoletos",
+            "url": reverse("admin:qualidade_documento_changelist"),
+            "tom": "teal",
+            "icone": "QD",
         },
         {
             "titulo": "Receber no período",
@@ -345,6 +404,7 @@ def dashboard(request):
             {"rotulo": "Conta a receber", "url": reverse("admin:financeiro_contareceber_add"), "icone": "RC"},
             {"rotulo": "Conta a pagar", "url": reverse("admin:financeiro_contapagar_add"), "icone": "PG"},
             {"rotulo": "Documento", "url": reverse("admin:qualidade_documento_add"), "icone": "DOC"},
+            {"rotulo": "Gestão documental", "url": "#qualidade-section", "icone": "QD"},
         ],
         "proximas_calibracoes": Instrumento.objects.filter(
             ativo=True,
@@ -360,6 +420,7 @@ def dashboard(request):
         ).select_related("cliente").order_by("prazo_resposta", "-data_abertura")[:6],
         "contas_receber_atrasadas": receber_atrasadas.select_related("cliente").order_by("vencimento")[:5],
         "contas_pagar_atrasadas": pagar_atrasadas.order_by("vencimento")[:5],
+        "qualidade": qualidade,
         "resumo_operacional": {
             "ordens_servico": OrdemServico.objects.count(),
             "produtos_servicos": ProdutoServico.objects.filter(ativo=True).count(),

@@ -1,5 +1,6 @@
 from django.contrib import admin
-from django.utils.html import format_html
+from django.utils.html import format_html, format_html_join
+from django.utils.safestring import mark_safe
 from django.urls import reverse
 
 from .models import (
@@ -118,11 +119,18 @@ class InstrumentoAdmin(admin.ModelAdmin):
     ]
 
     def ver_certificados_padroes(self, obj):
-        links = []
-        for p in obj.padroes.all():
-            if p.certificado:
-                links.append(f"<a href='{p.certificado.url}' target='_blank'>{p.codigo}</a>")
-        return format_html("<br>".join(links)) if links else "—"
+        links = [
+            (p.certificado.url, p.codigo)
+            for p in obj.padroes.all()
+            if p.certificado
+        ]
+        if not links:
+            return "?"
+        return format_html_join(
+            mark_safe("<br>"),
+            '<a href="{}" target="_blank">{}</a>',
+            links,
+        )
 
     ver_certificados_padroes.short_description = "Certificados dos Padrões"
 
@@ -251,13 +259,21 @@ class CalibracaoAdmin(admin.ModelAdmin):
         return "—"
 
     def ver_certificados_padroes(self, obj):
-        if obj.instrumento:
-            links = []
-            for p in obj.instrumento.padroes.all():
-                if p.certificado:
-                    links.append(f"<a href='{p.certificado.url}' target='_blank'>{p.codigo}</a>")
-            return format_html("<br>".join(links)) if links else "—"
-        return "—"
+        if not obj.instrumento:
+            return "?"
+
+        links = [
+            (p.certificado.url, p.codigo)
+            for p in obj.instrumento.padroes.all()
+            if p.certificado
+        ]
+        if not links:
+            return "?"
+        return format_html_join(
+            mark_safe("<br>"),
+            '<a href="{}" target="_blank">{}</a>',
+            links,
+        )
     
     def ver_metodo(self, obj):
 

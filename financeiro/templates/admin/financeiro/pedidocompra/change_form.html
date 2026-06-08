@@ -1,0 +1,21 @@
+{% extends "admin/change_form.html" %}
+{% load admin_urls i18n %}
+
+{% block object-tools-items %}
+    {{ block.super }}
+    {% if change and original %}
+        <li>
+            <a href="{% url 'financeiro:pedido_compra_pdf' original.pk %}" target="_blank">Gerar PDF</a>
+        </li>
+        <li>
+            <a href="{% url 'financeiro:pedido_compra_duplicar' original.pk %}">Duplicar Pedido</a>
+        </li>
+        {% if original.fornecedor and original.fornecedor.email %}
+            <li>
+                <a href="mailto:{{ original.fornecedor.email|urlencode }}?subject=Pedido%20de%20Compra%20{{ original.numero_pedido|urlencode }}">
+                    Enviar por E-mail
+                </a>
+            </li>
+        {% endif %}
+    {% endif %}
+{% endblock %}

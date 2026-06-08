@@ -661,6 +661,10 @@
                     <span class="btn-symbol" aria-hidden="true">AD</span>
                     <span>Admin</span>
                 </a>
+                <a class="btn secondary" href="#qualidade-section">
+                    <span class="btn-symbol" aria-hidden="true">QD</span>
+                    <span>Qualidade</span>
+                </a>
                 <a class="btn" href="{% url 'admin:comercial_proposta_add' %}">
                     <span class="btn-symbol" aria-hidden="true">+</span>
                     <span>Proposta</span>
@@ -931,6 +935,39 @@
                                 </a>
                             {% empty %}
                                 <p class="empty">Sem tickets de alta prioridade.</p>
+                            {% endfor %}
+                        </div>
+                    </section>
+
+                    <section class="panel" id="qualidade-section" aria-labelledby="qualidade-title">
+                        <div class="section-title">
+                            <div>
+                                <h2 id="qualidade-title">Gestão documental</h2>
+                                <p>Controle de documentos, revisões e pendências da Qualidade.</p>
+                            </div>
+                            <a class="small" href="{% url 'admin:qualidade_documento_changelist' %}">ver documentos</a>
+                        </div>
+
+                        <div class="mini-grid">
+                            <div class="mini"><span class="small">Vigentes</span><strong>{{ qualidade.vigentes|length }}</strong></div>
+                            <div class="mini"><span class="small">Obsoletos</span><strong>{{ qualidade.obsoletos|length }}</strong></div>
+                            <div class="mini"><span class="small">Em revisão</span><strong>{{ qualidade.em_revisao|length }}</strong></div>
+                            <div class="mini"><span class="small">Vencidos</span><strong>{{ qualidade.vencidos|length }}</strong></div>
+                            <div class="mini"><span class="small">Sem código</span><strong>{{ qualidade.sem_codigo|length }}</strong></div>
+                            <div class="mini"><span class="small">Sem histórico</span><strong>{{ qualidade.sem_historico|length }}</strong></div>
+                        </div>
+
+                        <div class="list" style="margin-top: 16px;">
+                            {% for doc in qualidade.proxima_revisao %}
+                                <a class="list-row" href="{% url 'admin:qualidade_documento_change' doc.pk %}">
+                                    <span class="row-main">
+                                        <strong>{% if doc.codigo %}{{ doc.codigo }} - {% endif %}{{ doc.titulo }}</strong>
+                                        <span class="tag warn">{{ doc.data_proxima_revisao|date:"d/m/Y" }}</span>
+                                    </span>
+                                    <span class="small">{{ doc.get_tipo_display }} · {{ doc.get_status_display }}</span>
+                                </a>
+                            {% empty %}
+                                <p class="empty">Nenhum documento com revisão próxima.</p>
                             {% endfor %}
                         </div>
                     </section>
