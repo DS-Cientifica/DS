@@ -2,7 +2,7 @@ from django.contrib.auth.decorators import login_required
 from django.http import FileResponse
 from django.shortcuts import get_object_or_404, render
 
-from .models import Calibracao, CalibracaoTurbidez
+from .models import Calibracao, CalibracaoTurbidez, CalibracaoColorimetro
 from .pdf import gerar_pdf_calibracao
 
 EMPRESA_CERTIFICADO = {
@@ -12,6 +12,7 @@ EMPRESA_CERTIFICADO = {
     "cnpj": "63.669.660/0001-80",
     "cidade": "Jundiaí / SP",
     "email": "contato@dscientifica.com.br",
+    "codigo_documento": "CCDS-0001 Rev.00",
 }
 
 
@@ -87,3 +88,69 @@ def pdf_calibracao_turbidez(request, pk):
         "formatar_decimal": _formatar_decimal,
     }
     return render(request, "calibracao/turbidez_pdf.html", context)
+
+
+@login_required
+def pdf_calibracao_colorimetro(request, pk):
+    calibracao = get_object_or_404(
+        CalibracaoColorimetro.objects.select_related("instrumento", "cliente").prefetch_related(
+            "padroes_utilizados",
+            "pontos_verificacao",
+            "pontos_calibracao",
+            "pontos_incerteza",
+        ),
+        pk=pk,
+    )
+
+    padroes_por_tipo = {}
+    for padrao in calibracao.padroes_utilizados.all():
+        padroes_por_tipo.setdefault(padrao.get_tipo_display(), []).append(padrao)
+
+    pontos_incerteza = list(calibracao.pontos_incerteza.all())
+    pontos_incerteza_por_ordem = {ponto.ordem: ponto for ponto in pontos_incerteza}
+    fator_k_certificado = next(
+        (ponto.fator_k for ponto in pontos_incerteza if ponto.fator_k not in (None, "")),
+        None,
+    )
+    graus_liberdade_certificado = next(
+        (ponto.graus_liberdade for ponto in pontos_incerteza if ponto.graus_liberdade not in (None, "")),
+        None,
+    )
+
+    resultados_calibracao = []
+    for ponto in calibracao.pontos_calibracao.all():
+        incerteza = pontos_incerteza_por_ordem.get(ponto.ordem)
+        resultados_calibracao.append({
+            "ordem": ponto.ordem,
+            "valor_referencia": ponto.valor_referencia,
+            "leitura_equipamento": ponto.media,
+            "erro": ponto.erro,
+            "incerteza_expandida": getattr(incerteza, "incerteza_expandida", None),
+            "fator_k": getattr(incerteza, "fator_k", None),
+            "graus_liberdade": getattr(incerteza, "graus_liberdade", None),
+            "ema": ponto.ema,
+        })
+
+    context = {
+        "empresa": {
+            **EMPRESA_CERTIFICADO,
+            "codigo_documento": calibracao.codigo_documento,
+        },
+        "calibracao": calibracao,
+        "padroes_por_tipo": padroes_por_tipo,
+        "verificacoes": calibracao.pontos_verificacao.all(),
+        "resultados_calibracao": resultados_calibracao,
+        "pontos_incerteza": pontos_incerteza,
+        "fator_k_certificado": fator_k_certificado,
+        "graus_liberdade_certificado": graus_liberdade_certificado,
+        "formatar_decimal": _formatar_decimal,
+        "document_title": "Certificado de Calibração",
+        "document_subtitle": calibracao.titulo_certificado,
+        "unit_label": calibracao.unidade_leitura or "mg/L",
+        "procedure_text": (
+            "Os padrões utilizados na calibração são preparados a partir de materiais de referência "
+            "adequados à aplicação. Todos os materiais e equipamentos utilizados são calibrados em "
+            "laboratórios acreditados ou rastreáveis à RBC."
+        ),
+    }
+    return render(request, "calibracao/colorimetro_pdf.html", context)

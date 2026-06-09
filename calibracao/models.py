@@ -60,6 +60,14 @@ def _fator_abrangencia_95(graus_liberdade):
     if veff >= 1:
         return 12.71
     return 2
+
+
+def _obter_ou_criar_responsavel_padrao():
+    responsavel, _ = ResponsavelCertificado.objects.get_or_create(
+        nome="Diego Henrique Alves Saldanha",
+        defaults={"cargo": "Responsável técnico", "ativo": True},
+    )
+    return responsavel
 
 
 # =========================
@@ -407,6 +415,22 @@ class CalibracaoAnexo(models.Model):
         return f"Anexo - {self.calibracao}"
 
 
+class ResponsavelCertificado(models.Model):
+    nome = models.CharField(max_length=255, unique=True)
+    cargo = models.CharField(max_length=255, blank=True, default="Responsável técnico")
+    ativo = models.BooleanField(default=True)
+
+    class Meta:
+        verbose_name = "Responsável de certificado"
+        verbose_name_plural = "Responsáveis de certificado"
+        ordering = ("nome",)
+
+    def __str__(self):
+        if self.cargo:
+            return f"{self.nome} - {self.cargo}"
+        return self.nome
+
+
 class PerfilIncertezaTurbidez(models.Model):
     nome = models.CharField(max_length=120, unique=True)
     instrumento = models.ForeignKey(
@@ -524,11 +548,26 @@ class CalibracaoTurbidez(models.Model):
     umidade_inicial = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
     umidade_final = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
 
+    responsavel_tecnico_ref = models.ForeignKey(
+        "ResponsavelCertificado",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="calibracoes_turbidez_como_responsavel",
+    )
+    tecnico_executante_ref = models.ForeignKey(
+        "ResponsavelCertificado",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="calibracoes_turbidez_como_executante",
+    )
     ajuste_efetuado = models.BooleanField(default=False)
     tecnico_responsavel = models.CharField(max_length=255, blank=True)
     responsavel_conferencia = models.CharField(max_length=255, blank=True)
     signatario_autorizado = models.CharField(max_length=255, blank=True)
     funcao_signatario = models.CharField(max_length=255, blank=True)
+    resultado_final = models.TextField(blank=True)
     observacoes_certificado = models.TextField(blank=True)
 
     created_at = models.DateTimeField(auto_now_add=True)
@@ -541,10 +580,13 @@ class CalibracaoTurbidez(models.Model):
 
     def _gerar_prefixo_certificado(self):
         os_token = slugify(self.ordem_servico or "", allow_unicode=False).upper().replace("-", "")
-        cliente_base = ""
+        cliente_token = "CLIENTE"
         if self.cliente_id:
-            cliente_base = slugify(self.cliente.razao_social or "", allow_unicode=False).upper().replace("-", "")
-        cliente_token = cliente_base[:10] if cliente_base else "CLIENTE"
+            primeiro_nome = (self.cliente.razao_social or "").strip().split()
+            if primeiro_nome:
+                cliente_base = slugify(primeiro_nome[0], allow_unicode=False).upper().replace("-", "")
+                if cliente_base:
+                    cliente_token = cliente_base[:10]
 
         if os_token:
             return f"TURB-{os_token}-{cliente_token}"
@@ -604,6 +646,19 @@ class CalibracaoTurbidez(models.Model):
         if self.procedimento_documento_id:
             self.procedimento_numero = self.procedimento_documento.codigo or ""
             self.procedimento_revisao = self.procedimento_documento.revisao or ""
+
+        if not self.responsavel_tecnico_ref_id:
+            self.responsavel_tecnico_ref = _obter_ou_criar_responsavel_padrao()
+        if not self.tecnico_executante_ref_id:
+            self.tecnico_executante_ref = self.responsavel_tecnico_ref or _obter_ou_criar_responsavel_padrao()
+
+        if self.responsavel_tecnico_ref_id:
+            self.tecnico_responsavel = self.responsavel_tecnico_ref.nome
+            self.signatario_autorizado = self.responsavel_tecnico_ref.nome
+            if self.responsavel_tecnico_ref.cargo:
+                self.funcao_signatario = self.responsavel_tecnico_ref.cargo
+        if self.tecnico_executante_ref_id:
+            self.responsavel_conferencia = self.tecnico_executante_ref.nome
 
         if not self.numero_certificado:
             self.numero_certificado = self._gerar_numero_certificado()
@@ -898,6 +953,587 @@ class TurbidezIncertezaPonto(models.Model):
                     ) if valor is not None
                 ])
 
+            graus_repetibilidade = max(repeticoes - 1, 0)
+            if (
+                self.repetibilidade is not None
+                and float(self.repetibilidade or 0) > 0
+                and graus_repetibilidade > 0
+                and combinada > 0
+            ):
+                parcela = (float(self.repetibilidade) ** 4) / graus_repetibilidade
+                self.graus_liberdade = Decimal(str(round((combinada ** 4) / parcela, 2))) if parcela else None
+            elif not self.graus_liberdade:
+                self.graus_liberdade = None
+
+            self.fator_k = Decimal(str(round(_fator_abrangencia_95(self.graus_liberdade), 3)))
+            self.incerteza_expandida = Decimal(str(round(combinada * float(self.fator_k or 2), 6)))
+        else:
+            self.incerteza_padrao_combinada = None
+            self.incerteza_expandida = None
+
+        super().save(*args, **kwargs)
+
+        ponto_calibracao = self.calibracao.pontos_calibracao.filter(ordem=self.ordem).first()
+        if ponto_calibracao and ponto_calibracao.erro is not None and self.incerteza_expandida is not None:
+            ponto_calibracao.ema = Decimal(str(round(float(abs(ponto_calibracao.erro)) + float(self.incerteza_expandida), 6)))
+            ponto_calibracao.save(update_fields=["ema"])
+
+    def __str__(self):
+        return f"Incerteza {self.ordem}"
+
+
+class CalibracaoColorimetro(models.Model):
+    RESULTADO_FINAL_CHOICES = (
+        ("", "---------"),
+        ("conforme", "Equipamento conforme, dentro do critério de aceitação informado"),
+        ("nao_conforme", "Equipamento não conforme, fora do critério de aceitação informado"),
+    )
+    TIPO_APLICACAO_CHOICES = (
+        ("cloro", "Cloro"),
+        ("fluor", "Flúor"),
+        ("cor", "Cor"),
+        ("fotocolorimetro", "Fotocolorímetro"),
+    )
+    DOCUMENTO_CODIGO_MAP = {
+        "cloro": "CCDS-0002 Rev.00",
+        "fluor": "CCDS-0003 Rev.00",
+        "cor": "CCDS-0004 Rev.00",
+        "fotocolorimetro": "CCDS-0005 Rev.00",
+    }
+    METODO_CODIGO_MAP = {
+        "cloro": "MDS-00043",
+        "fluor": "",
+        "cor": "",
+        "fotocolorimetro": "",
+    }
+    PREFIXO_CERTIFICADO_MAP = {
+        "cloro": "CLOR",
+        "fluor": "FLUOR",
+        "cor": "COR",
+        "fotocolorimetro": "FOTO",
+    }
+    UNIDADE_MAP = {
+        "cloro": "mg/L",
+        "fluor": "mg/L",
+        "cor": "UA",
+        "fotocolorimetro": "mg/L",
+    }
+    LOCAL_CALIBRACAO_CHOICES = CalibracaoTurbidez.LOCAL_CALIBRACAO_CHOICES
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tipo_aplicacao = models.CharField(max_length=30, choices=TIPO_APLICACAO_CHOICES, default="cloro")
+
+    instrumento = models.ForeignKey(
+        Instrumento,
+        on_delete=models.PROTECT,
+        related_name="calibracoes_colorimetro",
+    )
+    cliente = models.ForeignKey(
+        Cliente,
+        on_delete=models.PROTECT,
+        related_name="calibracoes_colorimetro",
+    )
+
+    numero_certificado = models.CharField(max_length=100, unique=True, blank=True)
+    ordem_servico = models.CharField(max_length=100, blank=True)
+    data_calibracao = models.DateField()
+    data_emissao = models.DateField(default=date.today)
+    revisao = models.CharField(max_length=20, default="00", blank=True)
+    local_calibracao = models.CharField(
+        max_length=30,
+        choices=LOCAL_CALIBRACAO_CHOICES,
+        default="ds_cientifica",
+    )
+
+    contratante = models.CharField(max_length=255, blank=True)
+    endereco_contratante = models.CharField(max_length=255, blank=True)
+    endereco_cliente = models.CharField(max_length=255, blank=True)
+
+    equipamento_calibrado = models.CharField(max_length=255, default="Colorímetro", blank=True)
+    numero_identificacao = models.CharField(max_length=100, blank=True)
+    capacidade_total = models.CharField(max_length=100, blank=True)
+    faixa_calibrada = models.CharField(max_length=100, blank=True)
+    menor_resolucao = models.DecimalField(max_digits=10, decimal_places=4, null=True, blank=True)
+    unidade_leitura = models.CharField(max_length=50, blank=True)
+
+    procedimento_documento = models.ForeignKey(
+        Documento,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="calibracoes_colorimetro",
+    )
+    procedimento_numero = models.CharField(max_length=100, blank=True)
+    procedimento_revisao = models.CharField(max_length=50, blank=True)
+
+    temperatura_inicial = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
+    temperatura_final = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
+    umidade_inicial = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
+    umidade_final = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
+
+    responsavel_tecnico_ref = models.ForeignKey(
+        "ResponsavelCertificado",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="calibracoes_colorimetro_como_responsavel",
+    )
+    tecnico_executante_ref = models.ForeignKey(
+        "ResponsavelCertificado",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="calibracoes_colorimetro_como_executante",
+    )
+    ajuste_efetuado = models.BooleanField(default=False)
+    tecnico_responsavel = models.CharField(max_length=255, blank=True)
+    responsavel_conferencia = models.CharField(max_length=255, blank=True)
+    signatario_autorizado = models.CharField(max_length=255, blank=True)
+    funcao_signatario = models.CharField(max_length=255, blank=True)
+    resultado_final_status = models.CharField(max_length=30, choices=RESULTADO_FINAL_CHOICES, blank=True)
+    resultado_final = models.TextField(blank=True)
+    observacoes_certificado = models.TextField(blank=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Calibração de Colorímetro"
+        verbose_name_plural = "Calibrações de Colorímetro"
+        ordering = ("-data_calibracao", "-created_at")
+
+    @property
+    def codigo_documento(self):
+        return self.DOCUMENTO_CODIGO_MAP.get(self.tipo_aplicacao, "CCDS-0002 Rev.00")
+
+    @property
+    def titulo_certificado(self):
+        return f"Calibração de Colorímetro - {self.get_tipo_aplicacao_display()}"
+
+    @property
+    def resultado_final_resolvido(self):
+        partes = []
+
+        status_texto = self._texto_resultado_final_status()
+        if status_texto:
+            partes.append(status_texto.rstrip("."))
+
+        if self.resultado_final:
+            partes.append(self.resultado_final.strip())
+
+        if partes:
+            return ". ".join([parte for parte in partes if parte]).strip() + "."
+
+        return self._gerar_resultado_final()
+
+    def _gerar_prefixo_certificado(self):
+        prefixo_tipo = self.PREFIXO_CERTIFICADO_MAP.get(self.tipo_aplicacao, "COLOR")
+        os_token = slugify(self.ordem_servico or "", allow_unicode=False).upper().replace("-", "")
+        cliente_token = "CLIENTE"
+        if self.cliente_id:
+            primeiro_nome = (self.cliente.razao_social or "").strip().split()
+            if primeiro_nome:
+                cliente_base = slugify(primeiro_nome[0], allow_unicode=False).upper().replace("-", "")
+                if cliente_base:
+                    cliente_token = cliente_base[:10]
+        if os_token:
+            return f"{prefixo_tipo}-{os_token}-{cliente_token}"
+        data_token = (self.data_calibracao or date.today()).strftime("%Y%m%d")
+        return f"{prefixo_tipo}-{cliente_token}-{data_token}"
+
+    def _gerar_numero_certificado(self):
+        prefixo = self._gerar_prefixo_certificado()
+        existentes = (
+            CalibracaoColorimetro.objects.exclude(pk=self.pk)
+            .filter(numero_certificado__startswith=f"{prefixo}-")
+            .values_list("numero_certificado", flat=True)
+        )
+        sufixos = set()
+        for numero in existentes:
+            try:
+                sufixos.add(int(str(numero).rsplit("-", 1)[-1]))
+            except (TypeError, ValueError):
+                continue
+        sequencia = 1
+        while sequencia in sufixos:
+            sequencia += 1
+        return f"{prefixo}-{sequencia:02d}"
+
+    def _obter_documento_metodo_padrao(self):
+        codigo = self.METODO_CODIGO_MAP.get(self.tipo_aplicacao, "")
+        queryset = Documento.objects.filter(
+            status="vigente",
+            tipo__in=("metodo", "procedimento", "instrucao"),
+        )
+
+        if codigo:
+            documento = queryset.filter(codigo__iexact=codigo).order_by("codigo", "titulo").first()
+            if documento:
+                return documento
+
+        termo_principal = self.get_tipo_aplicacao_display()
+        documento = queryset.filter(titulo__icontains=termo_principal).order_by("codigo", "titulo").first()
+        if documento:
+            return documento
+
+        return queryset.filter(titulo__icontains="color").order_by("codigo", "titulo").first()
+
+    def save(self, *args, **kwargs):
+        if isinstance(self.data_calibracao, str):
+            self.data_calibracao = date.fromisoformat(self.data_calibracao)
+
+        if not self.cliente_id and self.instrumento_id:
+            self.cliente = self.instrumento.cliente
+
+        if not self.contratante and self.cliente_id:
+            self.contratante = self.cliente.razao_social
+
+        if not self.endereco_cliente and self.cliente_id:
+            partes = [
+                getattr(self.cliente, "endereco", ""),
+                getattr(self.cliente, "numero", ""),
+                getattr(self.cliente, "bairro", ""),
+                getattr(self.cliente, "cidade", ""),
+                getattr(self.cliente, "uf", ""),
+            ]
+            self.endereco_cliente = ", ".join([parte for parte in partes if parte])
+
+        if not self.endereco_contratante:
+            self.endereco_contratante = self.endereco_cliente
+
+        if not self.numero_identificacao and self.instrumento_id:
+            self.numero_identificacao = self.instrumento.codigo
+
+        self.local_calibracao = CalibracaoTurbidez._normalizar_local_calibracao(
+            self.local_calibracao or (self.instrumento.local_instalacao if self.instrumento_id else "")
+        )
+
+        if not self.unidade_leitura:
+            self.unidade_leitura = self.UNIDADE_MAP.get(self.tipo_aplicacao, "mg/L")
+
+        documento_padrao = self._obter_documento_metodo_padrao()
+        if documento_padrao and not self.procedimento_documento_id:
+            self.procedimento_documento = documento_padrao
+
+        if self.procedimento_documento_id:
+            self.procedimento_numero = self.procedimento_documento.codigo or ""
+            self.procedimento_revisao = self.procedimento_documento.revisao or ""
+
+        if not self.responsavel_tecnico_ref_id:
+            self.responsavel_tecnico_ref = _obter_ou_criar_responsavel_padrao()
+        if not self.tecnico_executante_ref_id:
+            self.tecnico_executante_ref = self.responsavel_tecnico_ref or _obter_ou_criar_responsavel_padrao()
+
+        if self.responsavel_tecnico_ref_id:
+            self.tecnico_responsavel = self.responsavel_tecnico_ref.nome
+            self.signatario_autorizado = self.responsavel_tecnico_ref.nome
+            if self.responsavel_tecnico_ref.cargo:
+                self.funcao_signatario = self.responsavel_tecnico_ref.cargo
+        if self.tecnico_executante_ref_id:
+            self.responsavel_conferencia = self.tecnico_executante_ref.nome
+
+        if not self.numero_certificado:
+            self.numero_certificado = self._gerar_numero_certificado()
+
+        super().save(*args, **kwargs)
+
+    def _gerar_resultado_final(self):
+        status_texto = self._texto_resultado_final_status()
+        if status_texto:
+            return status_texto
+        pontos = list(self.pontos_calibracao.all())
+        if not pontos:
+            return ""
+
+        erros = [abs(ponto.erro) for ponto in pontos if ponto.erro is not None]
+        referencias = [ponto.valor_referencia for ponto in pontos if ponto.valor_referencia is not None]
+        if not erros or not referencias:
+            return ""
+
+        erro_maximo = max(erros)
+        referencia_min = min(referencias)
+        referencia_max = max(referencias)
+
+        resultados_verificacao = [
+            ponto.resultado for ponto in self.pontos_verificacao.all() if ponto.resultado
+        ]
+        conforme = all(resultado == "OK" for resultado in resultados_verificacao) if resultados_verificacao else True
+        status_texto = "encontra-se conforme" if conforme else "não se encontra conforme"
+
+        return (
+            f"O instrumento apresentou erro máximo de {erro_maximo:.4f}".replace(".", ",")
+            + f" {self.unidade_leitura or 'mg/L'} na faixa calibrada de "
+            + f"{referencia_min:.4f}".replace(".", ",")
+            + " a "
+            + f"{referencia_max:.4f}".replace(".", ",")
+            + f" {self.unidade_leitura or 'mg/L'} e {status_texto} os critérios estabelecidos."
+        )
+
+    def _texto_resultado_final_status(self):
+        if self.resultado_final_status == "conforme":
+            return "Equipamento conforme, dentro do critério de aceitação informado."
+        if self.resultado_final_status == "nao_conforme":
+            return "Equipamento não conforme, fora do critério de aceitação informado."
+        return ""
+
+    @classmethod
+    def _normalizar_local_calibracao(cls, valor):
+        valor = (valor or "").strip().lower()
+        if valor in dict(cls.LOCAL_CALIBRACAO_CHOICES):
+            return valor
+        if "in loco" in valor or "in_loco" in valor:
+            return "in_loco"
+        if "optico" in valor or "óptico" in valor:
+            return "laboratorio_optico_ds"
+        return "ds_cientifica"
+
+    def __str__(self):
+        return f"{self.numero_certificado} - {self.instrumento}"
+
+
+class ColorimetroPadraoUtilizado(models.Model):
+    TIPO_CHOICES = (
+        ("verificacao", "Padrões da verificação"),
+        ("calibracao", "Padrões da calibração"),
+        ("termometro", "Termômetro ambiente"),
+        ("higrometro", "Higrômetro ambiente"),
+    )
+
+    calibracao = models.ForeignKey(
+        CalibracaoColorimetro,
+        on_delete=models.CASCADE,
+        related_name="padroes_utilizados",
+    )
+    tipo = models.CharField(max_length=30, choices=TIPO_CHOICES)
+    ordem = models.PositiveSmallIntegerField(default=1)
+    padrao = models.ForeignKey(
+        Padrao,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="usos_colorimetro",
+    )
+    codigo = models.CharField(max_length=100, blank=True)
+    descricao = models.CharField(max_length=255, blank=True)
+    numero_certificado = models.CharField(max_length=100, blank=True)
+    laboratorio_emitente = models.CharField(max_length=150, blank=True)
+    data_calibracao = models.DateField(null=True, blank=True)
+    validade = models.DateField(null=True, blank=True)
+    resolucao = models.DecimalField(max_digits=12, decimal_places=6, null=True, blank=True)
+    rastreabilidade = models.CharField(max_length=100, blank=True)
+    incerteza = models.DecimalField(max_digits=12, decimal_places=6, null=True, blank=True)
+    fator_k = models.DecimalField(max_digits=8, decimal_places=3, null=True, blank=True)
+    graus_liberdade = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    unidade = models.CharField(max_length=30, blank=True)
+    valor_nominal = models.DecimalField(max_digits=12, decimal_places=6, null=True, blank=True)
+
+    class Meta:
+        verbose_name = "Padrão utilizado"
+        verbose_name_plural = "Padrões utilizados"
+        ordering = ("tipo", "ordem")
+
+    def save(self, *args, **kwargs):
+        if self.padrao_id:
+            if not self.codigo:
+                self.codigo = self.padrao.codigo
+            if not self.descricao:
+                self.descricao = self.padrao.descricao
+            if not self.numero_certificado:
+                self.numero_certificado = self.padrao.numero_certificado
+            if not self.laboratorio_emitente:
+                self.laboratorio_emitente = self.padrao.laboratorio_emitente
+            if not self.data_calibracao:
+                self.data_calibracao = self.padrao.data_calibracao
+            if not self.validade:
+                self.validade = self.padrao.vencimento
+            if not self.numero_certificado and self.padrao.certificado:
+                self.numero_certificado = self.padrao.certificado.name.split("/")[-1]
+            if self.resolucao is None:
+                self.resolucao = self.padrao.resolucao
+            if self.incerteza is None:
+                self.incerteza = self.padrao.incerteza
+            if self.fator_k is None:
+                self.fator_k = self.padrao.fator_k
+            if self.graus_liberdade is None:
+                self.graus_liberdade = self.padrao.graus_liberdade
+            if not self.unidade:
+                self.unidade = self.padrao.unidade
+            if self.valor_nominal is None:
+                self.valor_nominal = self.padrao.valor_nominal
+        if not self.unidade:
+            self.unidade = self.calibracao.unidade_leitura
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"{self.get_tipo_display()} - {self.codigo or self.descricao or self.ordem}"
+
+
+class ColorimetroVerificacaoPonto(models.Model):
+    CRITERIO_ORIGEM_CHOICES = (
+        ("", "---------"),
+        ("cliente", "Cliente"),
+        ("fabricante", "Fabricante"),
+    )
+    calibracao = models.ForeignKey(
+        CalibracaoColorimetro,
+        on_delete=models.CASCADE,
+        related_name="pontos_verificacao",
+    )
+    ordem = models.PositiveSmallIntegerField(default=1)
+    valor_padrao = models.DecimalField(max_digits=12, decimal_places=6, null=True, blank=True)
+    leitura = models.DecimalField(max_digits=12, decimal_places=6, null=True, blank=True)
+    erro = models.DecimalField(max_digits=12, decimal_places=6, null=True, blank=True)
+    criterio = models.CharField(max_length=120, blank=True)
+    criterio_origem = models.CharField(max_length=30, choices=CRITERIO_ORIGEM_CHOICES, blank=True)
+    criterio_referencia = models.CharField(max_length=255, blank=True)
+    resultado = models.CharField(max_length=50, blank=True)
+
+    class Meta:
+        verbose_name = "Ponto de verificação"
+        verbose_name_plural = "Pontos de verificação"
+        ordering = ("ordem",)
+
+    def save(self, *args, **kwargs):
+        if self.valor_padrao is not None and self.leitura is not None:
+            self.erro = self.leitura - self.valor_padrao
+        tolerancia = _extrair_decimal_criterio(self.criterio)
+        if tolerancia is not None and self.erro is not None:
+            self.resultado = "OK" if abs(self.erro) <= tolerancia else "NÃO OK"
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"Verificação {self.ordem}"
+
+
+class ColorimetroCalibracaoPonto(models.Model):
+    CRITERIO_ORIGEM_CHOICES = ColorimetroVerificacaoPonto.CRITERIO_ORIGEM_CHOICES
+    calibracao = models.ForeignKey(
+        CalibracaoColorimetro,
+        on_delete=models.CASCADE,
+        related_name="pontos_calibracao",
+    )
+    ordem = models.PositiveSmallIntegerField(default=1)
+    valor_referencia = models.DecimalField(max_digits=12, decimal_places=6, null=True, blank=True)
+    leitura_1 = models.DecimalField(max_digits=12, decimal_places=6, null=True, blank=True)
+    leitura_2 = models.DecimalField(max_digits=12, decimal_places=6, null=True, blank=True)
+    leitura_3 = models.DecimalField(max_digits=12, decimal_places=6, null=True, blank=True)
+    resolucao = models.DecimalField(max_digits=12, decimal_places=6, null=True, blank=True)
+    media = models.DecimalField(max_digits=12, decimal_places=6, null=True, blank=True)
+    desvio_padrao = models.DecimalField(max_digits=12, decimal_places=6, null=True, blank=True)
+    erro = models.DecimalField(max_digits=12, decimal_places=6, null=True, blank=True)
+    ema = models.DecimalField(max_digits=12, decimal_places=6, null=True, blank=True)
+    criterio = models.CharField(max_length=120, blank=True)
+    criterio_origem = models.CharField(max_length=30, choices=CRITERIO_ORIGEM_CHOICES, blank=True)
+    criterio_referencia = models.CharField(max_length=255, blank=True)
+
+    class Meta:
+        verbose_name = "Ponto de calibração"
+        verbose_name_plural = "Pontos de calibração"
+        ordering = ("ordem",)
+
+    def save(self, *args, **kwargs):
+        leituras = [valor for valor in (self.leitura_1, self.leitura_2, self.leitura_3) if valor is not None]
+        if self.resolucao is None:
+            try:
+                self.resolucao = self.calibracao.instrumento.tecnico.menor_resolucao
+            except InstrumentoTecnico.DoesNotExist:
+                self.resolucao = None
+        if leituras:
+            media = sum(leituras) / len(leituras)
+            self.media = round(media, 6)
+            if len(leituras) > 1:
+                media_float = float(media)
+                variancia = sum((float(valor) - media_float) ** 2 for valor in leituras) / (len(leituras) - 1)
+                self.desvio_padrao = round(variancia ** 0.5, 6)
+        if self.media is not None and self.valor_referencia is not None:
+            self.erro = self.media - self.valor_referencia
+        incerteza = (
+            self.calibracao.pontos_incerteza.filter(ordem=self.ordem)
+            .values_list("incerteza_expandida", flat=True)
+            .first()
+        )
+        if self.erro is not None and incerteza is not None:
+            self.ema = Decimal(str(round(float(abs(self.erro)) + float(incerteza), 6)))
+        elif self.erro is not None and self.resolucao is not None:
+            self.ema = Decimal(str(round(float(abs(self.erro)) + float(self.resolucao), 6)))
+        else:
+            self.ema = None
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"Calibração {self.ordem}"
+
+
+class ColorimetroIncertezaPonto(models.Model):
+    calibracao = models.ForeignKey(
+        CalibracaoColorimetro,
+        on_delete=models.CASCADE,
+        related_name="pontos_incerteza",
+    )
+    ordem = models.PositiveSmallIntegerField(default=1)
+    repetibilidade = models.DecimalField(max_digits=12, decimal_places=6, null=True, blank=True)
+    resolucao_instrumento = models.DecimalField(max_digits=12, decimal_places=6, null=True, blank=True)
+    incerteza_padrao = models.DecimalField(max_digits=12, decimal_places=6, null=True, blank=True)
+    resolucao_padrao = models.DecimalField(max_digits=12, decimal_places=6, null=True, blank=True)
+    incerteza_curva = models.DecimalField(max_digits=12, decimal_places=6, null=True, blank=True)
+    fator_k = models.DecimalField(max_digits=8, decimal_places=3, default=2)
+    graus_liberdade = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    incerteza_padrao_combinada = models.DecimalField(max_digits=12, decimal_places=6, null=True, blank=True)
+    incerteza_expandida = models.DecimalField(max_digits=12, decimal_places=6, null=True, blank=True)
+
+    class Meta:
+        verbose_name = "Ponto de incerteza"
+        verbose_name_plural = "Pontos de incerteza"
+        ordering = ("ordem",)
+
+    def _obter_padrao_referencia(self):
+        padroes = self.calibracao.padroes_utilizados
+        return (
+            padroes.filter(tipo="calibracao", ordem=self.ordem).first()
+            or padroes.filter(tipo="verificacao", ordem=self.ordem).first()
+        )
+
+    def save(self, *args, **kwargs):
+        ponto_calibracao = self.calibracao.pontos_calibracao.filter(ordem=self.ordem).first()
+        padrao_referencia = self._obter_padrao_referencia()
+
+        if self.repetibilidade is None and ponto_calibracao and ponto_calibracao.desvio_padrao is not None:
+            self.repetibilidade = ponto_calibracao.desvio_padrao
+        if self.resolucao_instrumento is None:
+            try:
+                self.resolucao_instrumento = self.calibracao.instrumento.tecnico.menor_resolucao
+            except InstrumentoTecnico.DoesNotExist:
+                self.resolucao_instrumento = None
+        if padrao_referencia:
+            if self.incerteza_padrao is None:
+                self.incerteza_padrao = padrao_referencia.incerteza
+            if self.resolucao_padrao is None:
+                self.resolucao_padrao = padrao_referencia.resolucao
+
+        componentes = [
+            float(valor)
+            for valor in (
+                self.repetibilidade,
+                self.resolucao_instrumento,
+                self.incerteza_padrao,
+                self.resolucao_padrao,
+                self.incerteza_curva,
+            )
+            if valor is not None
+        ]
+
+        if componentes:
+            combinada = sum(valor ** 2 for valor in componentes) ** 0.5
+            self.incerteza_padrao_combinada = Decimal(str(round(combinada, 6)))
+            repeticoes = 0
+            if ponto_calibracao:
+                repeticoes = len([
+                    valor for valor in (
+                        ponto_calibracao.leitura_1,
+                        ponto_calibracao.leitura_2,
+                        ponto_calibracao.leitura_3,
+                    ) if valor is not None
+                ])
             graus_repetibilidade = max(repeticoes - 1, 0)
             if (
                 self.repetibilidade is not None

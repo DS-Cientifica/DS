@@ -61,6 +61,16 @@
     setFieldValue("id_unidade_leitura", data.unidade_leitura);
   }
 
+  function preencherMetodo(data) {
+    if (!data || !data.documento || !data.documento.id) {
+      return;
+    }
+
+    setAutocompleteValue("id_procedimento_documento", data.documento.id, data.documento.text || data.codigo);
+    setFieldValue("id_procedimento_numero", data.codigo);
+    setFieldValue("id_procedimento_revisao", data.revisao);
+  }
+
   function carregarDadosInstrumento() {
     var instrumentoField = document.getElementById("id_instrumento");
     if (!instrumentoField || !instrumentoField.value) {
@@ -83,6 +93,33 @@
         return response.json();
       })
       .then(preencherDadosInstrumento)
+      .catch(function () {
+        // Mantém os campos editáveis mesmo se o preenchimento automático falhar.
+      });
+  }
+
+  function carregarMetodoPorTipo() {
+    var tipoField = document.getElementById("id_tipo_aplicacao");
+    if (!tipoField || !tipoField.value) {
+      return;
+    }
+
+    var urlBase = tipoField.getAttribute("data-metodo-dados-url");
+    if (!urlBase) {
+      return;
+    }
+
+    fetch(urlBase.replace("__tipo__", tipoField.value), {
+      credentials: "same-origin",
+      headers: { "X-Requested-With": "XMLHttpRequest" }
+    })
+      .then(function (response) {
+        if (!response.ok) {
+          throw new Error("Falha ao buscar método.");
+        }
+        return response.json();
+      })
+      .then(preencherMetodo)
       .catch(function () {
         // Mantém os campos editáveis mesmo se o preenchimento automático falhar.
       });
@@ -113,6 +150,11 @@
       fieldsets[2].setAttribute("data-turbidez-section", "planilha");
       fieldsets[3].setAttribute("data-turbidez-section", "certificado");
       fieldsets[4].setAttribute("data-turbidez-section", "certificado");
+    } else if (fieldsets.length >= 4) {
+      fieldsets[0].setAttribute("data-turbidez-section", "planilha");
+      fieldsets[1].setAttribute("data-turbidez-section", "planilha");
+      fieldsets[2].setAttribute("data-turbidez-section", "certificado");
+      fieldsets[3].setAttribute("data-turbidez-section", "certificado");
     }
 
     var inlineGroups = document.querySelectorAll("#content-main form .inline-group");
@@ -149,8 +191,22 @@
     }
   }
 
+  function setupMetodoAutofill() {
+    var tipoField = document.getElementById("id_tipo_aplicacao");
+    if (!tipoField) {
+      return;
+    }
+
+    tipoField.addEventListener("change", carregarMetodoPorTipo);
+
+    if (tipoField.value) {
+      carregarMetodoPorTipo();
+    }
+  }
+
   document.addEventListener("DOMContentLoaded", function () {
     decorateTabs();
     setupInstrumentoAutofill();
+    setupMetodoAutofill();
   });
 })();

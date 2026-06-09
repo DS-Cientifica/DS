@@ -3,7 +3,7 @@
 <html lang="pt-BR">
 <head>
     <meta charset="utf-8">
-    <title>{{ calibracao.numero_certificado|default:"Certificado de Calibração de Turbidez" }}</title>
+    <title>{{ calibracao.numero_certificado|default:document_title }}</title>
     <style>
         :root {
             --ink: #172033;
@@ -290,8 +290,8 @@
                 <h1 class="company-name">{{ empresa.nome }}</h1>
                 <div class="company-line">{{ empresa.email }} | {{ empresa.site }}</div>
                 <div class="company-line">{{ empresa.telefone }} | CNPJ: {{ empresa.cnpj }}</div>
-                <div class="document-title">Certificado de Calibração</div>
-                <div class="document-subtitle">Calibração de Turbidímetro</div>
+                <div class="document-title">{{ document_title }}</div>
+                <div class="document-subtitle">{{ document_subtitle }}</div>
                 <div class="document-code">{{ empresa.codigo_documento }}</div>
             </div>
         </header>
@@ -343,7 +343,7 @@
                     <div>{{ calibracao.faixa_calibrada|default:"NÃO CONSTA" }}</div>
 
                     <div class="equipment-label">Menor Resolução:</div>
-                    <div>{% if calibracao.menor_resolucao %}{{ calibracao.menor_resolucao|decimal_br:4 }}{% else %}NÃO CONSTA{% endif %}{% if calibracao.unidade_leitura %} {{ calibracao.unidade_leitura }}{% endif %}</div>
+                    <div>{% if calibracao.menor_resolucao %}{{ calibracao.menor_resolucao|decimal_br:4 }}{% else %}NÃO CONSTA{% endif %}{% if unit_label %} {{ unit_label }}{% endif %}</div>
 
                     <div class="equipment-label">Local de Calibração:</div>
                     <div>{{ calibracao.get_local_calibracao_display|default:"NÃO CONSTA" }}</div>
@@ -430,9 +430,7 @@
                 Método {{ calibracao.procedimento_numero|default:"NÃO CONSTA" }} &nbsp;&nbsp; Revisão {{ calibracao.procedimento_revisao|default:"NÃO CONSTA" }}
             </div>
             <div class="technical-text">
-                Os padrões utilizados na calibração são preparados por diluição a partir de um padrão mãe.
-                Todos os materiais e equipamentos utilizados nesta preparação são calibrados em laboratórios acreditados
-                ou rastreáveis à RBC. Para a calibração do turbidímetro padrão foi utilizado material de referência certificado.
+                {{ procedure_text }}
             </div>
         </section>
 
@@ -447,6 +445,7 @@
                         <th>Leitura</th>
                         <th>Erro</th>
                         <th>Critério</th>
+                        <th>Origem do critério</th>
                         <th>Status</th>
                     </tr>
                 </thead>
@@ -458,10 +457,11 @@
                             <td>{{ ponto.leitura|decimal_br:4 }}</td>
                             <td>{{ ponto.erro|decimal_br:4 }}</td>
                             <td>{{ ponto.criterio|default:"-" }}</td>
+                            <td>{{ ponto.get_criterio_origem_display|default:"-" }}</td>
                             <td>{{ ponto.resultado|default:"-" }}</td>
                         </tr>
                     {% empty %}
-                        <tr><td colspan="6" class="alert-cell"><span class="alert-chip">Alerta</span> Nenhum ponto de verificação cadastrado.</td></tr>
+                        <tr><td colspan="7" class="alert-cell"><span class="alert-chip">Alerta</span> Nenhum ponto de verificação cadastrado.</td></tr>
                     {% endfor %}
                 </tbody>
             </table>
@@ -472,10 +472,10 @@
             <table>
                 <thead>
                     <tr>
-                        <th>Valor de referência<br>NTU</th>
-                        <th>Leitura do equipamento<br>NTU</th>
-                        <th>Erro<br>NTU</th>
-                        <th>Incerteza expandida (U)<br>NTU</th>
+                        <th>Valor de referência<br>{{ unit_label }}</th>
+                        <th>Leitura do equipamento<br>{{ unit_label }}</th>
+                        <th>Erro<br>{{ unit_label }}</th>
+                        <th>Incerteza expandida (U)<br>{{ unit_label }}</th>
                         <th>Fator de abrangência<br>k</th>
                         <th>Graus de liberdade<br>Veff</th>
                     </tr>
@@ -508,7 +508,12 @@
         </section>
 
         <section class="section">
-            <h2 class="section-title">9. Notas</h2>
+            <h2 class="section-title">9. Resultado Final</h2>
+            <p>{{ calibracao.resultado_final_resolvido|default:"Sem resultado final informado." }}</p>
+        </section>
+
+        <section class="section">
+            <h2 class="section-title">10. Notas</h2>
             <ol class="notes-list">
                 <li>Erro = leitura do instrumento - valor do padrão.</li>
                 <li>O presente certificado refere-se exclusivamente ao instrumento calibrado aqui mencionado, não sendo extensivo a qualquer outro instrumento, ainda que similar.</li>
@@ -519,7 +524,7 @@
         </section>
 
         <section class="section">
-            <h2 class="section-title">10. Observações</h2>
+            <h2 class="section-title">11. Observações</h2>
             <p>{{ calibracao.observacoes_certificado|default:"Sem observações."|linebreaksbr }}</p>
         </section>
 
