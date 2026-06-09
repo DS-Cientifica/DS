@@ -1,0 +1,462 @@
+{% load calibracao_extras static %}
+<!doctype html>
+<html lang="pt-BR">
+<head>
+    <meta charset="utf-8">
+    <title>Certificado de Calibração de Turbidez</title>
+    <style>
+        :root {
+            --ink: #172033;
+            --muted: #5f6b7a;
+            --line: #b9c1cd;
+            --paper: #ffffff;
+            --soft: #f4f6f9;
+            --primary: #283864;
+        }
+
+        @page { size: A4; margin: 14mm; }
+
+        * { box-sizing: border-box; }
+
+        html, body {
+            margin: 0;
+            color: var(--ink);
+            background: var(--paper);
+            font-family: Arial, Helvetica, sans-serif;
+            font-size: 11px;
+            line-height: 1.35;
+        }
+
+        .sheet { width: 100%; }
+
+        .document-header {
+            display: grid;
+            grid-template-columns: 28mm 1fr;
+            align-items: center;
+            gap: 8mm;
+            padding-bottom: 5mm;
+            border-bottom: 2px solid var(--primary);
+            margin-bottom: 6mm;
+        }
+
+        .logo-wrap {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .logo-wrap img {
+            width: 24mm;
+            height: 24mm;
+            object-fit: contain;
+            display: block;
+        }
+
+        .header-content { text-align: center; }
+
+        .company-name {
+            margin: 0;
+            color: #1f4e5f;
+            font-size: 18px;
+            font-weight: 800;
+        }
+
+        .company-line {
+            margin: 1px 0;
+            color: var(--muted);
+            font-size: 10px;
+        }
+
+        .document-title {
+            margin: 7px 0 0;
+            color: #1d3fbf;
+            font-size: 18px;
+            font-weight: 800;
+        }
+
+        .document-subtitle {
+            margin: 4px 0 0;
+            color: #50555c;
+            font-size: 12px;
+        }
+
+        .meta-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+            margin-bottom: 12px;
+        }
+
+        .panel {
+            border: 1px solid var(--line);
+            border-radius: 4px;
+            overflow: hidden;
+            background: var(--paper);
+        }
+
+        .panel-title {
+            padding: 8px 10px;
+            background: var(--soft);
+            border-bottom: 1px solid var(--line);
+            color: var(--primary);
+            font-size: 12px;
+            font-weight: 800;
+            text-transform: uppercase;
+        }
+
+        .panel-body { padding: 10px; }
+        .line-item { margin: 3px 0; }
+
+        .section {
+            margin-top: 14px;
+            page-break-inside: avoid;
+        }
+
+        .section-title {
+            margin: 0 0 8px;
+            color: #1d3fbf;
+            font-size: 13px;
+            font-weight: 800;
+            font-style: italic;
+            text-transform: uppercase;
+            border-bottom: 2px solid #1d3fbf;
+            padding-bottom: 3px;
+        }
+
+        .equipment-grid {
+            display: grid;
+            grid-template-columns: 80mm 1fr;
+            gap: 4px 12px;
+            padding: 4px 0;
+        }
+
+        .equipment-label {
+            font-style: italic;
+            font-weight: 800;
+            text-transform: uppercase;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        th, td {
+            border: 1px solid var(--line);
+            padding: 6px 7px;
+            vertical-align: top;
+            text-align: left;
+        }
+
+        th {
+            background: var(--soft);
+            color: var(--primary);
+            font-weight: 800;
+        }
+
+        .technical-text {
+            text-align: justify;
+            line-height: 1.6;
+        }
+
+        .procedure-summary {
+            text-align: center;
+            margin: 12px 0 16px;
+            font-style: italic;
+            font-size: 13px;
+        }
+
+        .notes-list {
+            margin: 8px 0 0;
+            padding-left: 18px;
+            line-height: 1.6;
+        }
+
+        .execution-wrap {
+            margin-top: 20mm;
+            width: 70mm;
+            text-align: left;
+        }
+
+        .execution-title {
+            font-weight: 800;
+            margin-bottom: 4px;
+        }
+
+        .signature-wrap {
+            margin-top: 20mm;
+            display: flex;
+            justify-content: center;
+            text-align: center;
+        }
+
+        .signature-box {
+            width: 75mm;
+            border-top: 1px solid #444;
+            padding-top: 8px;
+        }
+
+        .signature-name { font-weight: 800; }
+
+        .signature-role {
+            color: var(--muted);
+            margin-top: 2px;
+        }
+    </style>
+</head>
+<body>
+    <div class="sheet">
+        <header class="document-header">
+            <div class="logo-wrap">
+                <img src="{% static 'img/logo_ds.png' %}" alt="DS Científica">
+            </div>
+            <div class="header-content">
+                <h1 class="company-name">{{ empresa.nome }}</h1>
+                <p class="company-line">{{ empresa.cidade }}</p>
+                <p class="company-line">{{ empresa.email }} | {{ empresa.site }}</p>
+                <p class="company-line">{{ empresa.telefone }} | CNPJ: {{ empresa.cnpj }}</p>
+                <div class="document-title">Certificado de Calibração</div>
+                <div class="document-subtitle">Calibração de Turbidímetro</div>
+            </div>
+        </header>
+
+        <div class="meta-grid">
+            <section class="panel">
+                <div class="panel-title">1. Informações Gerais</div>
+                <div class="panel-body">
+                    <div class="line-item"><strong>Certificado:</strong> {{ calibracao.numero_certificado|default:"NÃO CONSTA" }}</div>
+                    <div class="line-item"><strong>Data de calibração:</strong> {{ calibracao.data_calibracao|date:"d/m/Y" }}</div>
+                    <div class="line-item"><strong>Data de emissão:</strong> {{ calibracao.data_emissao|date:"d/m/Y" }}</div>
+                    <div class="line-item"><strong>Revisão:</strong> {{ calibracao.revisao|default:"NÃO CONSTA" }}</div>
+                </div>
+            </section>
+
+            <section class="panel">
+                <div class="panel-title">2. Dados do Cliente</div>
+                <div class="panel-body">
+                    <div class="line-item"><strong>Contratante:</strong> {{ calibracao.contratante|default:"NÃO CONSTA" }}</div>
+                    <div class="line-item"><strong>Cliente:</strong> {{ calibracao.cliente|default:"NÃO CONSTA" }}</div>
+                    <div class="line-item"><strong>Endereço:</strong> {{ calibracao.endereco_cliente|default:"NÃO CONSTA" }}</div>
+                </div>
+            </section>
+        </div>
+
+        <section class="section">
+            <h2 class="section-title">3. Dados do Equipamento Calibrado</h2>
+            <div class="equipment-grid">
+                <div class="equipment-label">Equipamento:</div>
+                <div>{{ calibracao.equipamento_calibrado|default:"NÃO CONSTA" }}</div>
+
+                <div class="equipment-label">Nº Identificação:</div>
+                <div>{{ calibracao.numero_identificacao|default:"NÃO CONSTA" }}</div>
+
+                <div class="equipment-label">Marca:</div>
+                <div>{{ calibracao.instrumento.marca|default:"NÃO CONSTA" }}</div>
+
+                <div class="equipment-label">Nº Série:</div>
+                <div>{{ calibracao.instrumento.numero_serie|default:"NÃO CONSTA" }}</div>
+
+                <div class="equipment-label">Modelo:</div>
+                <div>{{ calibracao.instrumento.modelo|default:"NÃO CONSTA" }}</div>
+
+                <div class="equipment-label">Capacidade:</div>
+                <div>{{ calibracao.capacidade_total|default:"NÃO CONSTA" }}</div>
+
+                <div class="equipment-label">Faixa de Calibração:</div>
+                <div>{{ calibracao.faixa_calibrada|default:"NÃO CONSTA" }}</div>
+
+                <div class="equipment-label">Menor Resolução:</div>
+                <div>{% if calibracao.menor_resolucao %}{{ calibracao.menor_resolucao|decimal_br:4 }}{% else %}NÃO CONSTA{% endif %}{% if calibracao.unidade_leitura %} {{ calibracao.unidade_leitura }}{% endif %}</div>
+
+                <div class="equipment-label">Local de Calibração:</div>
+                <div>{{ calibracao.get_local_calibracao_display|default:"NÃO CONSTA" }}</div>
+
+                <div class="equipment-label">Ordem de Serviço:</div>
+                <div>{{ calibracao.ordem_servico|default:"NÃO CONSTA" }}</div>
+            </div>
+        </section>
+
+        <section class="section">
+            <h2 class="section-title">4. Condições Ambientais</h2>
+            <table>
+                <tbody>
+                    <tr>
+                        <th style="width:42%">Condição ambiental recomendada</th>
+                        <td>Temperatura: entre 20 e 26 °C</td>
+                    </tr>
+                    <tr>
+                        <th></th>
+                        <td>Umidade: entre 30 e 80 %ur</td>
+                    </tr>
+                </tbody>
+            </table>
+            <table style="margin-top:8px;">
+                <thead>
+                    <tr>
+                        <th>Temperatura inicial (°C)</th>
+                        <th>Temperatura final (°C)</th>
+                        <th>Umidade inicial (%ur)</th>
+                        <th>Umidade final (%ur)</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>{{ calibracao.temperatura_inicial|decimal_br:2 }}</td>
+                        <td>{{ calibracao.temperatura_final|decimal_br:2 }}</td>
+                        <td>{{ calibracao.umidade_inicial|decimal_br:2 }}</td>
+                        <td>{{ calibracao.umidade_final|decimal_br:2 }}</td>
+                    </tr>
+                </tbody>
+            </table>
+        </section>
+
+        <section class="section">
+            <h2 class="section-title">5. Rastreabilidade Metrológica dos Padrões Utilizados</h2>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Identificação do padrão</th>
+                        <th>Descrição do padrão</th>
+                        <th>Número do certificado</th>
+                        <th>Laboratório</th>
+                        <th>Data da calibração</th>
+                        <th>Data da validade</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for tipo, itens in padroes_por_tipo.items %}
+                        {% for item in itens %}
+                            <tr>
+                                <td>{% if item.codigo %}{{ item.codigo }}{% else %}ALERTA{% endif %}</td>
+                                <td>{% if item.descricao %}{{ item.descricao }}{% else %}ALERTA{% endif %}</td>
+                                <td>{% if item.numero_certificado %}{{ item.numero_certificado }}{% else %}ALERTA{% endif %}</td>
+                                <td>{% if item.laboratorio_emitente %}{{ item.laboratorio_emitente }}{% else %}ALERTA{% endif %}</td>
+                                <td>{% if item.data_calibracao %}{{ item.data_calibracao|date:"d/m/Y" }}{% else %}ALERTA{% endif %}</td>
+                                <td>{% if item.validade %}{{ item.validade|date:"d/m/Y" }}{% else %}ALERTA{% endif %}</td>
+                            </tr>
+                        {% endfor %}
+                    {% empty %}
+                        <tr>
+                            <td colspan="6">Nenhum padrão cadastrado.</td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </section>
+
+        <section class="section">
+            <h2 class="section-title">6. Procedimento de Calibração</h2>
+            <div class="procedure-summary">
+                Procedimento {{ calibracao.procedimento_numero|default:"NÃO CONSTA" }} &nbsp;&nbsp; Revisão {{ calibracao.procedimento_revisao|default:"NÃO CONSTA" }}
+            </div>
+            <div class="technical-text">
+                Os padrões utilizados na calibração são preparados por diluição a partir de um padrão mãe.
+                Todos os materiais e equipamentos utilizados nesta preparação são calibrados em laboratórios acreditados
+                ou rastreáveis à RBC. Para a calibração do turbidímetro padrão foi utilizado material de referência certificado.
+            </div>
+        </section>
+
+        <section class="section">
+            <h2 class="section-title">7. Resultados da Verificação</h2>
+            <div class="line-item"><strong>Ajuste efetuado:</strong> {% if calibracao.ajuste_efetuado %}Sim{% else %}Não{% endif %}</div>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Ponto</th>
+                        <th>Valor do padrão</th>
+                        <th>Leitura</th>
+                        <th>Erro</th>
+                        <th>Critério</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for ponto in verificacoes %}
+                        <tr>
+                            <td>{{ ponto.ordem }}</td>
+                            <td>{{ ponto.valor_padrao|decimal_br:4 }}</td>
+                            <td>{{ ponto.leitura|decimal_br:4 }}</td>
+                            <td>{{ ponto.erro|decimal_br:4 }}</td>
+                            <td>{{ ponto.criterio|default:"-" }}</td>
+                            <td>{{ ponto.resultado|default:"-" }}</td>
+                        </tr>
+                    {% empty %}
+                        <tr><td colspan="6">Nenhum ponto de verificação cadastrado.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </section>
+
+        <section class="section">
+            <h2 class="section-title">8. Resultados da Calibração</h2>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Valor de referência<br>NTU</th>
+                        <th>Leitura do equipamento<br>NTU</th>
+                        <th>Erro<br>NTU</th>
+                        <th>Incerteza expandida (U)<br>NTU</th>
+                        <th>Fator de abrangência<br>k</th>
+                        <th>Graus de liberdade<br>Veff</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for ponto in resultados_calibracao %}
+                        <tr>
+                            <td>{{ ponto.valor_referencia|decimal_br:4 }}</td>
+                            <td>{{ ponto.leitura_equipamento|decimal_br:4 }}</td>
+                            <td>{{ ponto.erro|decimal_br:4 }}</td>
+                            <td>{{ ponto.incerteza_expandida|decimal_br:6 }}</td>
+                            <td>{{ ponto.fator_k|decimal_br:3 }}</td>
+                            <td>{{ ponto.graus_liberdade|decimal_br:2 }}</td>
+                        </tr>
+                    {% empty %}
+                        <tr><td colspan="6">Nenhum ponto de calibração cadastrado.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </section>
+
+        <section class="section">
+            <div class="technical-text">
+                A calibração foi realizada efetuando três leituras em cada ponto de calibração. O resultado expresso é a média destas leituras.
+                A incerteza expandida de medição relatada é declarada como incerteza padrão de medição multiplicada pelo fator de abrangência
+                k={{ fator_k_certificado|decimal_br:3 }}, o qual, para uma distribuição t com
+                Veff={{ graus_liberdade_certificado|decimal_br:2 }} graus de liberdade efetivos, corresponde a uma probabilidade
+                de abrangência de aproximadamente 95%.
+            </div>
+        </section>
+
+        <section class="section">
+            <h2 class="section-title">9. Notas</h2>
+            <ol class="notes-list">
+                <li>Erro = leitura do instrumento - valor do padrão.</li>
+                <li>EMA = Erro Máximo Admissível, correspondente à soma do erro em valor absoluto e da incerteza expandida.</li>
+                <li>O presente certificado refere-se exclusivamente ao instrumento calibrado aqui mencionado, não sendo extensivo a qualquer outro instrumento, ainda que similar.</li>
+                <li>É proibida a reprodução parcial ou total deste certificado sem prévia autorização.</li>
+                <li>O valor de indicação do equipamento é uma média de no mínimo 3 leituras, sendo arredondado ao número de casas decimais da resolução do equipamento.</li>
+                <li>Legenda: "-" indica campo sem informação aplicável ou não disponível.</li>
+            </ol>
+        </section>
+
+        <section class="section">
+            <h2 class="section-title">10. Observações</h2>
+            <p>{{ calibracao.observacoes_certificado|default:"Sem observações."|linebreaksbr }}</p>
+        </section>
+
+        <div class="execution-wrap">
+            <div class="execution-title">Técnico executante</div>
+            <div>{{ calibracao.responsavel_conferencia|default:"NÃO CONSTA" }}</div>
+        </div>
+
+        <div class="signature-wrap">
+            <div class="signature-box">
+                <div class="signature-name">{{ calibracao.tecnico_responsavel|default:"Responsável técnico" }}</div>
+                {% if calibracao.funcao_signatario %}
+                    <div class="signature-role">{{ calibracao.funcao_signatario }}</div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</body>
+</html>

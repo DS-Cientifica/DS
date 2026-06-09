@@ -21,3 +21,29 @@
 .change-form .submit-row {
     margin-top: 1rem;
 }
+
+.turbidez-tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin: 1rem 0 1.25rem;
+}
+
+.turbidez-tab {
+    border: 1px solid #1f4e5f;
+    background: #fff;
+    color: #1f4e5f;
+    padding: 0.55rem 0.9rem;
+    border-radius: 4px;
+    cursor: pointer;
+    font-weight: 600;
+}
+
+.turbidez-tab.is-active {
+    background: #1f4e5f;
+    color: #fff;
+}
+
+[data-turbidez-section] {
+    margin-bottom: 1rem;
+}

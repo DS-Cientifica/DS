@@ -1,7 +1,11 @@
 from django.contrib import admin
+from django.http import JsonResponse
+from django.shortcuts import get_object_or_404
 from django.utils.html import format_html, format_html_join
 from django.utils.safestring import mark_safe
-from django.urls import reverse
+from django.urls import path, reverse
+
+from qualidade.models import Documento
 
 from .models import (
     Instrumento,
@@ -10,7 +14,12 @@ from .models import (
     Padrao,
     Periodicidade,
     Calibracao,
-    CalibracaoAnexo
+    CalibracaoAnexo,
+    CalibracaoTurbidez,
+    TurbidezPadraoUtilizado,
+    TurbidezVerificacaoPonto,
+    TurbidezCalibracaoPonto,
+    TurbidezIncertezaPonto,
 )
 
 
@@ -26,6 +35,14 @@ class PeriodicidadeInline(admin.TabularInline):
 class InstrumentoTecnicoInline(admin.StackedInline):
     model = InstrumentoTecnico
     extra = 0
+    fields = (
+        "faixa_medicao",
+        "capacidade_total",
+        "menor_resolucao",
+        "unidade",
+        "classe",
+        "observacoes",
+    )
 
 
 # =========================
@@ -141,6 +158,97 @@ class InstrumentoAdmin(admin.ModelAdmin):
 class CalibracaoAnexoInline(admin.TabularInline):
     model = CalibracaoAnexo
     extra = 1
+
+
+class TurbidezPadraoInline(admin.TabularInline):
+    model = TurbidezPadraoUtilizado
+    extra = 1
+    autocomplete_fields = ("padrao",)
+    fields = (
+        "tipo",
+        "ordem",
+        "padrao",
+        "codigo",
+        "descricao",
+        "numero_certificado",
+        "laboratorio_emitente",
+        "data_calibracao",
+        "validade",
+        "resolucao",
+        "incerteza",
+        "fator_k",
+        "graus_liberdade",
+        "unidade",
+        "valor_nominal",
+    )
+    verbose_name = "Padrão"
+    verbose_name_plural = "Padrões"
+
+
+class TurbidezVerificacaoInline(admin.TabularInline):
+    model = TurbidezVerificacaoPonto
+    extra = 5
+    fields = ("ordem", "valor_padrao", "leitura", "erro", "criterio", "resultado")
+    readonly_fields = ("erro",)
+    verbose_name = "Ponto de verificação"
+    verbose_name_plural = "Verificação"
+
+
+class TurbidezCalibracaoInline(admin.TabularInline):
+    model = TurbidezCalibracaoPonto
+    extra = 9
+    fields = (
+        "ordem",
+        "valor_referencia",
+        "leitura_1",
+        "leitura_2",
+        "leitura_3",
+        "media",
+        "erro",
+        "ema",
+        "criterio",
+    )
+    readonly_fields = ("media", "erro", "ema")
+    verbose_name = "Ponto de calibração"
+    verbose_name_plural = "Calibração"
+
+
+class TurbidezIncertezaInline(admin.TabularInline):
+    model = TurbidezIncertezaPonto
+    extra = 9
+    fields = (
+        "ordem",
+        "repetibilidade",
+        "resolucao_instrumento",
+        "incerteza_padrao",
+        "resolucao_padrao",
+        "incerteza_curva",
+        "incerteza_turbidimetro",
+        "fator_k",
+        "graus_liberdade",
+        "incerteza_padrao_combinada",
+        "incerteza_expandida",
+    )
+    readonly_fields = ("incerteza_padrao_combinada", "incerteza_expandida")
+    verbose_name = "Ponto de incerteza"
+    verbose_name_plural = "Incerteza"
+
+    def get_readonly_fields(self, request, obj=None):
+        campos_calculados = ("incerteza_padrao_combinada", "incerteza_expandida")
+        if obj and not request.user.is_superuser:
+            return (
+                "ordem",
+                "repetibilidade",
+                "resolucao_instrumento",
+                "incerteza_padrao",
+                "resolucao_padrao",
+                "incerteza_curva",
+                "incerteza_turbidimetro",
+                "fator_k",
+                "graus_liberdade",
+                *campos_calculados,
+            )
+        return campos_calculados
 
 @admin.register(Calibracao)
 class CalibracaoAdmin(admin.ModelAdmin):
@@ -305,6 +413,195 @@ class CalibracaoAdmin(admin.ModelAdmin):
     ver_anexo.short_description = "Certificado"
     inlines = [CalibracaoAnexoInline]
 
+
+@admin.register(CalibracaoTurbidez)
+class CalibracaoTurbidezAdmin(admin.ModelAdmin):
+
+    change_form_template = "admin/calibracao/calibracaoturbidez/change_form.html"
+
+    list_display = (
+        "numero_certificado",
+        "instrumento",
+        "cliente",
+        "data_calibracao",
+        "data_emissao",
+        "pdf_certificado",
+    )
+
+    list_filter = ("data_calibracao", "data_emissao", "cliente")
+
+    search_fields = (
+        "numero_certificado",
+        "instrumento__codigo",
+        "instrumento__descricao",
+        "cliente__razao_social",
+        "ordem_servico",
+    )
+
+    autocomplete_fields = ("instrumento", "cliente", "procedimento_documento")
+
+    readonly_fields = ("numero_certificado", "procedimento_numero", "procedimento_revisao")
+
+    fieldsets = (
+        ("Planilha - Informações Gerais", {
+            "fields": (
+                "numero_certificado",
+                "ordem_servico",
+                "data_calibracao",
+                "data_emissao",
+                "revisao",
+                "instrumento",
+                "cliente",
+                "contratante",
+                "endereco_contratante",
+                "endereco_cliente",
+                "local_calibracao",
+            )
+        }),
+        ("Planilha - Equipamento", {
+            "fields": (
+                "equipamento_calibrado",
+                "numero_identificacao",
+                "capacidade_total",
+                "faixa_calibrada",
+                "menor_resolucao",
+                "unidade_leitura",
+            )
+        }),
+        ("Planilha - Sonda Multiparâmetro", {
+            "fields": (
+                "sonda_multiparametro",
+                "serie_sonda_optica_turbidez",
+                "serie_cabo_multi",
+                "id_sonda_multiparametro",
+                "id_sonda_optica_turbidez",
+                "id_cabo_multi",
+            )
+        }),
+        ("Certificado - Procedimento e Ambiente", {
+            "fields": (
+                "procedimento_documento",
+                "procedimento_numero",
+                "procedimento_revisao",
+                "temperatura_inicial",
+                "temperatura_final",
+                "umidade_inicial",
+                "umidade_final",
+                "ajuste_efetuado",
+            )
+        }),
+        ("Certificado - Responsáveis e Observações", {
+            "fields": (
+                "tecnico_responsavel",
+                "responsavel_conferencia",
+                "signatario_autorizado",
+                "funcao_signatario",
+                "observacoes_certificado",
+            )
+        }),
+    )
+
+    inlines = [
+        TurbidezPadraoInline,
+        TurbidezVerificacaoInline,
+        TurbidezCalibracaoInline,
+        TurbidezIncertezaInline,
+    ]
+
+    class Media:
+        js = ("js/calibracao_turbidez.js",)
+
+    def get_form(self, request, obj=None, change=False, **kwargs):
+        form = super().get_form(request, obj=obj, change=change, **kwargs)
+        instrumento_field = form.base_fields.get("instrumento")
+        if instrumento_field:
+            instrumento_url = reverse(
+                "admin:calibracao_calibracaoturbidez_instrumento_dados",
+                args=["00000000-0000-0000-0000-000000000000"],
+            )
+            instrumento_field.widget.attrs["data-instrumento-dados-url"] = instrumento_url.replace(
+                "00000000-0000-0000-0000-000000000000",
+                "__instrumento__",
+            )
+        return form
+
+    def formfield_for_foreignkey(self, db_field, request, **kwargs):
+        if db_field.name == "procedimento_documento":
+            kwargs["queryset"] = Documento.objects.filter(
+                tipo__in=("procedimento", "instrucao", "metodo"),
+                status="vigente",
+            ).order_by("codigo", "titulo")
+        return super().formfield_for_foreignkey(db_field, request, **kwargs)
+
+    def get_urls(self):
+        urls = super().get_urls()
+        custom_urls = [
+            path(
+                "instrumento/<uuid:instrumento_id>/dados/",
+                self.admin_site.admin_view(self.instrumento_dados_view),
+                name="calibracao_calibracaoturbidez_instrumento_dados",
+            ),
+            path(
+                "<uuid:pk>/pdf/",
+                self.admin_site.admin_view(self.pdf_view),
+                name="calibracao_calibracaoturbidez_pdf",
+            ),
+        ]
+        return custom_urls + urls
+
+    def pdf_view(self, request, pk):
+        from .views import pdf_calibracao_turbidez
+
+        return pdf_calibracao_turbidez(request, pk)
+
+    def instrumento_dados_view(self, request, instrumento_id):
+        instrumento = get_object_or_404(Instrumento.objects.select_related("cliente"), pk=instrumento_id)
+        cliente = instrumento.cliente
+
+        try:
+            tecnico = instrumento.tecnico
+        except InstrumentoTecnico.DoesNotExist:
+            tecnico = None
+
+        endereco_partes = [
+            getattr(cliente, "endereco", ""),
+            getattr(cliente, "numero", ""),
+            getattr(cliente, "bairro", ""),
+            getattr(cliente, "cidade", ""),
+            getattr(cliente, "uf", ""),
+        ]
+        endereco_cliente = ", ".join([parte for parte in endereco_partes if parte])
+        local_calibracao = CalibracaoTurbidez._normalizar_local_calibracao(instrumento.local_instalacao)
+
+        return JsonResponse({
+            "cliente": {
+                "id": str(cliente.pk),
+                "text": str(cliente),
+                "razao_social": cliente.razao_social,
+            },
+            "contratante": cliente.razao_social or "",
+            "endereco_contratante": endereco_cliente,
+            "endereco_cliente": endereco_cliente,
+            "local_calibracao": local_calibracao,
+            "equipamento_calibrado": instrumento.descricao or "",
+            "numero_identificacao": instrumento.codigo or "",
+            "capacidade_total": (tecnico.capacidade_total if tecnico and tecnico.capacidade_total else instrumento.modelo or ""),
+            "faixa_calibrada": tecnico.faixa_medicao if tecnico else "",
+            "menor_resolucao": str(tecnico.menor_resolucao) if tecnico and tecnico.menor_resolucao is not None else "",
+            "unidade_leitura": tecnico.unidade if tecnico else "",
+            "numero_serie": instrumento.numero_serie or "",
+            "marca": instrumento.marca or "",
+            "modelo": instrumento.modelo or "",
+        })
+
+    def pdf_certificado(self, obj):
+        return format_html(
+            "<a class='button' href='{}' target='_blank'>Gerar PDF</a>",
+            reverse("admin:calibracao_calibracaoturbidez_pdf", args=[obj.pk]),
+        )
+
+    pdf_certificado.short_description = "Certificado"
+
 # =========================
 # ORDEM DE SERVIÇO
 # =========================
@@ -402,6 +699,9 @@ class PadraoAdmin(admin.ModelAdmin):
     list_display = (
         "codigo",
         "descricao",
+        "numero_certificado",
+        "laboratorio_emitente",
+        "data_calibracao",
         "status",
         "vencimento",
         "ver_certificado",
@@ -410,6 +710,8 @@ class PadraoAdmin(admin.ModelAdmin):
     search_fields = (
         "codigo",
         "descricao",
+        "numero_certificado",
+        "laboratorio_emitente",
     )
 
     list_filter = (
@@ -417,6 +719,31 @@ class PadraoAdmin(admin.ModelAdmin):
     )
 
     ordering = ("codigo",)
+
+    fieldsets = (
+        ("Identificação", {
+            "fields": (
+                "codigo",
+                "descricao",
+                "status",
+                "vencimento",
+                "certificado",
+            )
+        }),
+        ("Dados metrológicos", {
+            "fields": (
+                "numero_certificado",
+                "laboratorio_emitente",
+                "data_calibracao",
+                "valor_nominal",
+                "resolucao",
+                "incerteza",
+                "fator_k",
+                "graus_liberdade",
+                "unidade",
+            )
+        }),
+    )
 
     def ver_certificado(self, obj):
         if obj.certificado:
