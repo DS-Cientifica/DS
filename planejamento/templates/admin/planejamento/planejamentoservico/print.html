@@ -1,0 +1,292 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ planejamento.codigo }} | Planejamento de Servico</title>
+    <style>
+        @page {
+            size: A4;
+            margin: 12mm;
+        }
+        body {
+            color: #1f2937;
+            font-family: Arial, Helvetica, sans-serif;
+            margin: 0;
+        }
+        .page {
+            margin: 0 auto;
+            max-width: 190mm;
+        }
+        .header {
+            align-items: center;
+            border-bottom: 3px solid #1f4e5f;
+            display: grid;
+            gap: 16px;
+            grid-template-columns: 90px 1fr;
+            padding-bottom: 12px;
+        }
+        .header img {
+            height: 74px;
+            width: auto;
+        }
+        .brand h1 {
+            color: #1f4e5f;
+            font-size: 28px;
+            margin: 0 0 4px;
+        }
+        .brand p {
+            color: #475569;
+            font-size: 12px;
+            margin: 2px 0;
+        }
+        .doc-title {
+            color: #17324d;
+            font-size: 24px;
+            font-weight: 800;
+            margin: 18px 0 6px;
+            text-align: center;
+        }
+        .doc-subtitle {
+            color: #475569;
+            font-size: 13px;
+            margin-bottom: 18px;
+            text-align: center;
+        }
+        .grid {
+            display: grid;
+            gap: 14px;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+        .panel {
+            border: 1px solid #cbd5e1;
+            border-radius: 8px;
+            overflow: hidden;
+        }
+        .panel h2 {
+            background: #eef3f7;
+            color: #17324d;
+            font-size: 14px;
+            margin: 0;
+            padding: 10px 12px;
+        }
+        .panel-body {
+            min-width: 0;
+            padding: 12px;
+        }
+        .line {
+            display: grid;
+            gap: 10px;
+            grid-template-columns: 135px minmax(0, 1fr);
+            padding: 4px 0;
+        }
+        .line strong {
+            color: #0f172a;
+            font-size: 13px;
+        }
+        .line span {
+            color: #334155;
+            font-size: 13px;
+            overflow-wrap: anywhere;
+            word-break: break-word;
+        }
+        .panel.full {
+            grid-column: 1 / -1;
+        }
+        .badges {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: 4px;
+        }
+        .badge {
+            border-radius: 999px;
+            display: inline-flex;
+            font-size: 12px;
+            font-weight: 700;
+            padding: 6px 10px;
+        }
+        .badge.ok {
+            background: #dcfce7;
+            color: #166534;
+        }
+        .badge.warn {
+            background: #fef3c7;
+            color: #92400e;
+        }
+        .badge.danger {
+            background: #fee2e2;
+            color: #991b1b;
+        }
+        .list-box {
+            border: 1px dashed #cbd5e1;
+            border-radius: 8px;
+            min-height: 64px;
+            padding: 10px 12px;
+        }
+        .list-box ul {
+            margin: 0;
+            padding-left: 18px;
+        }
+        .list-box li {
+            overflow-wrap: anywhere;
+            word-break: break-word;
+        }
+        .signature-area {
+            display: grid;
+            gap: 32px;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            margin-top: 34px;
+            page-break-inside: avoid;
+        }
+        .signature-card {
+            padding-top: 30px;
+        }
+        .signature-line {
+            border-top: 1px solid #334155;
+            margin-top: 34px;
+            padding-top: 8px;
+            text-align: center;
+        }
+        .signature-meta {
+            color: #475569;
+            font-size: 12px;
+            margin-top: 18px;
+        }
+        .print-actions {
+            display: flex;
+            gap: 10px;
+            justify-content: flex-end;
+            margin: 0 0 16px;
+        }
+        .print-actions button {
+            background: #1f4e5f;
+            border: 0;
+            border-radius: 6px;
+            color: #fff;
+            cursor: pointer;
+            font-weight: 700;
+            padding: 10px 14px;
+        }
+        @media print {
+            .print-actions {
+                display: none;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="page">
+        <div class="print-actions">
+            <button onclick="window.print()">Imprimir planejamento</button>
+        </div>
+
+        <header class="header">
+            <img src="{% static 'img/logo_ds.png' %}" alt="DS Cientifica">
+            <div class="brand">
+                <h1>DS Cientifica</h1>
+                <p>contato@dscientifica.com.br | www.dscientifica.com.br</p>
+                <p>(11) 98859-9577</p>
+            </div>
+        </header>
+
+        <div class="doc-title">Planejamento de Servico</div>
+        <div class="doc-subtitle">{{ planejamento.codigo }} | {{ planejamento.get_tipo_agendamento_display }}</div>
+
+        <section class="grid">
+            <article class="panel">
+                <h2>Dados gerais</h2>
+                <div class="panel-body">
+                    <div class="line"><strong>Titulo</strong><span>{{ planejamento.titulo }}</span></div>
+                    <div class="line"><strong>Status</strong><span>{{ planejamento.get_status_display }}</span></div>
+                    <div class="line"><strong>Periodo</strong><span>{{ planejamento.intervalo_resumido }}</span></div>
+                    <div class="line"><strong>Local</strong><span>{{ planejamento.local_servico|default:"-" }}</span></div>
+                    <div class="line"><strong>Cliente confirmado</strong><span>{% if planejamento.confirmado_cliente %}Sim{% else %}Nao{% endif %}</span></div>
+                </div>
+            </article>
+
+            <article class="panel">
+                <h2>Cliente</h2>
+                <div class="panel-body">
+                    <div class="line"><strong>Cliente</strong><span>{{ planejamento.cliente }}</span></div>
+                    <div class="line"><strong>Responsavel</strong><span>{{ planejamento.nome_responsavel_cliente|default:"-" }}</span></div>
+                    <div class="line"><strong>Cargo</strong><span>{{ planejamento.cargo_responsavel_cliente|default:"-" }}</span></div>
+                    <div class="line"><strong>Telefone</strong><span>{{ planejamento.telefone_contato|default:"-" }}</span></div>
+                    <div class="line"><strong>E-mail</strong><span>{{ planejamento.email_contato|default:"-" }}</span></div>
+                </div>
+            </article>
+
+            <article class="panel">
+                <h2>Vinculos</h2>
+                <div class="panel-body">
+                    <div class="line"><strong>Proposta</strong><span>{% if planejamento.proposta %}{{ planejamento.proposta.codigo }}{% else %}-{% endif %}</span></div>
+                    <div class="line"><strong>OS</strong><span>{% if planejamento.ordem_servico %}{{ planejamento.ordem_servico.numero }}{% else %}-{% endif %}</span></div>
+                    <div class="line"><strong>Responsavel interno</strong><span>{% if planejamento.responsavel %}{{ planejamento.responsavel.get_full_name|default:planejamento.responsavel.username }}{% else %}-{% endif %}</span></div>
+                    <div class="line"><strong>Veiculo</strong><span>{% if planejamento.necessita_veiculo %}{{ planejamento.veiculo_descricao|default:"Necessario definir" }}{% else %}Nao necessario{% endif %}</span></div>
+                </div>
+            </article>
+
+            <article class="panel">
+                <h2>Controle de padroes</h2>
+                <div class="panel-body">
+                    <div class="badges">
+                        {% with codigo=planejamento.situacao_padroes_codigo %}
+                            <span class="badge {% if codigo == 'ok' %}ok{% elif codigo == 'nao_aplicavel' %}warn{% else %}danger{% endif %}">
+                                {{ planejamento.situacao_padroes_label }}
+                            </span>
+                        {% endwith %}
+                    </div>
+                    <div class="line" style="margin-top:8px;"><strong>Exigir padroes</strong><span>{% if planejamento.exige_padroes %}Sim{% else %}---{% endif %}</span></div>
+                    <div class="list-box" style="margin-top:10px;">
+                        {% if planejamento.exige_padroes %}
+                            <ul>
+                                {% for padrao in planejamento.padroes.all %}
+                                    <li>{{ padrao.codigo }} - {{ padrao.descricao }} | validade {{ padrao.vencimento|date:"d/m/Y" }}</li>
+                                {% empty %}
+                                    <li>Nenhum padrao vinculado.</li>
+                                {% endfor %}
+                            </ul>
+                        {% else %}
+                            Nao se aplica a este tipo de planejamento.
+                        {% endif %}
+                    </div>
+                </div>
+            </article>
+
+            <article class="panel full">
+                <h2>Equipe tecnica e equipamentos</h2>
+                <div class="panel-body">
+                    <div class="line"><strong>Tecnicos</strong><span>{% for nome in planejamento.nomes_tecnicos %}{{ nome }}{% if not forloop.last %}, {% endif %}{% empty %}-{% endfor %}</span></div>
+                    <div class="line"><strong>Equipamentos</strong><span>{% for instrumento in planejamento.instrumentos.all %}{{ instrumento.codigo }} - {{ instrumento.descricao }}{% if not forloop.last %}, {% endif %}{% empty %}-{% endfor %}</span></div>
+                    <div class="line"><strong>Recursos necessarios</strong><span>{{ planejamento.recursos_necessarios|default:"-"|linebreaksbr }}</span></div>
+                    <div class="line"><strong>Retirada/entrega</strong><span>{{ planejamento.retirada_equipamentos|default:"-"|linebreaksbr }}</span></div>
+                    <div class="line"><strong>Observacoes</strong><span>{{ planejamento.observacoes|default:"-"|linebreaksbr }}</span></div>
+                </div>
+            </article>
+        </section>
+
+        <section class="signature-area">
+            <div class="signature-card">
+                <div class="signature-line">
+                    {{ planejamento.nome_responsavel_cliente|default:"Responsavel pelo cliente" }}
+                </div>
+                <div class="signature-meta">
+                    Cliente / responsavel pela liberacao<br>
+                    Data: ____/____/________ &nbsp;&nbsp; Hora: ________
+                </div>
+            </div>
+
+            <div class="signature-card">
+                <div class="signature-line">
+                    {% if planejamento.responsavel %}{% firstof planejamento.responsavel.get_full_name planejamento.responsavel.username %}{% else %}Responsavel interno{% endif %}
+                </div>
+                <div class="signature-meta">
+                    DS Cientifica<br>
+                    Data: ____/____/________ &nbsp;&nbsp; Hora: ________
+                </div>
+            </div>
+        </section>
+    </div>
+</body>
+</html>

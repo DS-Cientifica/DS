@@ -1,4 +1,28 @@
 document.addEventListener("DOMContentLoaded", function () {
+    function setFieldValue(selector, value) {
+        const field = document.querySelector(selector);
+        if (field) {
+            field.value = value || "";
+        }
+    }
+
+    function formatPhone(value) {
+        const digits = (value || "").replace(/\D/g, "");
+
+        if (!digits) {
+            return "";
+        }
+
+        if (digits.length === 10) {
+            return `(${digits.slice(0, 2)}) ${digits.slice(2, 6)}-${digits.slice(6)}`;
+        }
+
+        if (digits.length === 11) {
+            return `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7)}`;
+        }
+
+        return value || "";
+    }
 
     // =========================
     // CNPJ (PRINCIPAL)
@@ -15,16 +39,24 @@ document.addEventListener("DOMContentLoaded", function () {
                 fetch(`https://brasilapi.com.br/api/cnpj/v1/${cnpj}`)
                     .then(response => response.json())
                     .then(data => {
+                        const telefone1 = formatPhone(data.ddd_telefone_1 || "");
+                        const telefone2 = formatPhone(data.ddd_telefone_2 || "");
+                        const inscricaoEstadual = data.inscricao_estadual || data.ie || "";
 
-                        document.querySelector("#id_razao_social").value = data.razao_social || "";
-                        document.querySelector("#id_nome_empresa").value = data.nome_fantasia || "";
+                        setFieldValue("#id_razao_social", data.razao_social || "");
+                        setFieldValue("#id_nome_empresa", data.nome_fantasia || data.razao_social || "");
 
-                        document.querySelector("#id_endereco").value = data.logradouro || "";
-                        document.querySelector("#id_numero").value = data.numero || "";
-                        document.querySelector("#id_bairro").value = data.bairro || "";
-                        document.querySelector("#id_cidade").value = data.municipio || "";
-                        document.querySelector("#id_uf").value = data.uf || "";
-                        document.querySelector("#id_cep").value = data.cep || "";
+                        setFieldValue("#id_endereco", data.logradouro || "");
+                        setFieldValue("#id_numero", data.numero || "");
+                        setFieldValue("#id_bairro", data.bairro || "");
+                        setFieldValue("#id_cidade", data.municipio || "");
+                        setFieldValue("#id_uf", data.uf || "");
+                        setFieldValue("#id_cep", data.cep || "");
+
+                        setFieldValue("#id_ie", inscricaoEstadual);
+                        setFieldValue("#id_telefone", telefone1);
+                        setFieldValue("#id_telefone2", telefone2);
+                        setFieldValue("#id_email", data.email || "");
 
                     })
                     .catch(error => console.log("Erro ao buscar CNPJ:", error));
@@ -50,11 +82,10 @@ document.addEventListener("DOMContentLoaded", function () {
                     fetch(`https://viacep.com.br/ws/${cep}/json/`)
                         .then(response => response.json())
                         .then(data => {
-
-                            document.querySelector("#id_endereco").value = data.logradouro || "";
-                            document.querySelector("#id_bairro").value = data.bairro || "";
-                            document.querySelector("#id_cidade").value = data.localidade || "";
-                            document.querySelector("#id_uf").value = data.uf || "";
+                            setFieldValue("#id_endereco", data.logradouro || "");
+                            setFieldValue("#id_bairro", data.bairro || "");
+                            setFieldValue("#id_cidade", data.localidade || "");
+                            setFieldValue("#id_uf", data.uf || "");
 
                         })
                         .catch(error => console.log("Erro ao buscar CEP:", error));

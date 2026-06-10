@@ -53,9 +53,10 @@ INSTALLED_APPS = [
     "clientes",
     "calibracao",
     "comercial",
-    "financeiro",
-    'qualidade',
-]
+    "financeiro",
+    "qualidade",
+    "planejamento",
+]
 
 # ========================
 # MIDDLEWARE

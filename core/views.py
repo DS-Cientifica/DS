@@ -12,6 +12,7 @@ from calibracao.models import Calibracao, Instrumento, OrdemServico, Padrao
 from clientes.models import Cliente
 from comercial.models import CRMRegistro, CRMTicket, ProdutoServico, Proposta
 from financeiro.models import ContaPagar, ContaReceber, Imposto
+from planejamento.models import PlanejamentoServico
 from qualidade.models import Documento
 
 
@@ -219,6 +220,11 @@ def dashboard(request):
     padroes_7_dias = Padrao.objects.filter(vencimento__gte=today, vencimento__lte=next_7_days)
     impostos_vencidos = Imposto.objects.filter(pago=False, vencimento__lt=today)
     tickets_urgentes = tickets_abertos.filter(prioridade="urgente")
+    planejamentos_periodo = PlanejamentoServico.objects.filter(
+        data_inicio__gte=today,
+        data_inicio__lte=next_30_days,
+    ).prefetch_related("padroes")
+    planejamentos_alerta = [item for item in planejamentos_periodo if item.possui_alerta_padroes()]
     qualidade = _qualidade_documental(today)
 
     alertas_possiveis = [
@@ -285,6 +291,14 @@ def dashboard(request):
             "url": reverse("admin:comercial_crmticket_changelist"),
             "tipo": "warn",
             "icone": "TK",
+        },
+        {
+            "titulo": "Planejamentos com alerta",
+            "texto": "Servicos com padrao faltando ou vencido.",
+            "total": len(planejamentos_alerta),
+            "url": reverse("admin:planejamento_planejamentoservico_calendario"),
+            "tipo": "warn",
+            "icone": "PL",
         },
     ]
     alertas = [alerta for alerta in alertas_possiveis if alerta["total"] > 0]
@@ -403,6 +417,7 @@ def dashboard(request):
             {"rotulo": "Novo instrumento", "url": reverse("admin:calibracao_instrumento_add"), "icone": "IN"},
             {"rotulo": "Conta a receber", "url": reverse("admin:financeiro_contareceber_add"), "icone": "RC"},
             {"rotulo": "Conta a pagar", "url": reverse("admin:financeiro_contapagar_add"), "icone": "PG"},
+            {"rotulo": "Planejamento", "url": reverse("admin:planejamento_planejamentoservico_calendario"), "icone": "PL"},
             {"rotulo": "Documento", "url": reverse("admin:qualidade_documento_add"), "icone": "DOC"},
             {"rotulo": "Gestão documental", "url": "#qualidade-section", "icone": "QD"},
         ],
@@ -428,6 +443,7 @@ def dashboard(request):
             "impostos_abertos": Imposto.objects.filter(pago=False).count(),
             "oportunidades": oportunidades_abertas.count(),
             "tickets": tickets_abertos.count(),
+            "planejamentos": PlanejamentoServico.objects.count(),
         },
         "admin_url": reverse("admin:index"),
         "refresh_url": f"{reverse('dashboard')}?periodo={periodo_atual}",

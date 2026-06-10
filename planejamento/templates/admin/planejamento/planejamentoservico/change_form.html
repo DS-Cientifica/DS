@@ -1,0 +1,11 @@
+{% extends "admin/change_form.html" %}
+
+{% block object-tools-items %}
+    {% if original %}
+        <li>
+            <a href="{% url 'admin:planejamento_planejamentoservico_imprimir' original.pk %}" target="_blank">Imprimir</a>
+        </li>
+    {% endif %}
+    {{ block.super }}
+{% endblock %}
+

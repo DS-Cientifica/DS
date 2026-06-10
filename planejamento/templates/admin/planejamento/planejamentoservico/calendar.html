@@ -1,0 +1,237 @@
+{% extends "admin/base_site.html" %}
+
+{% block extrastyle %}
+{{ block.super }}
+<style>
+    .planejamento-wrap { padding: 24px 0 12px; }
+    .planejamento-header { align-items: center; display: flex; flex-wrap: wrap; gap: 12px; justify-content: space-between; margin-bottom: 18px; }
+    .planejamento-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+    .planejamento-actions a, .planejamento-filtros button {
+        background: #1f4e5f; border: 1px solid #1f4e5f; border-radius: 6px; color: #fff;
+        cursor: pointer; display: inline-flex; font-weight: 600; min-height: 36px; padding: 8px 12px; text-decoration: none;
+    }
+    .planejamento-actions a.secondary { background: #fff; color: #1f4e5f; }
+    .planejamento-filtros { background: #fff; border: 1px solid #d6dce5; border-radius: 8px; margin-bottom: 18px; padding: 16px; }
+    .planejamento-filtros form { display: grid; gap: 12px; grid-template-columns: repeat(6, minmax(0, 1fr)); }
+    .planejamento-filtros label { color: #334155; display: block; font-size: 12px; font-weight: 700; margin-bottom: 4px; }
+    .planejamento-filtros select { min-height: 38px; width: 100%; }
+    .calendario-head {
+        display: grid;
+        gap: 12px;
+        grid-template-columns: repeat(7, minmax(0, 1fr));
+        margin-bottom: 12px;
+    }
+    .calendario-head span {
+        color: #1f4e5f;
+        font-size: 12px;
+        font-weight: 800;
+        text-align: center;
+        text-transform: uppercase;
+    }
+    .legenda {
+        align-items: center;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin: 0 0 14px;
+    }
+    .legenda-item {
+        align-items: center;
+        background: #fff;
+        border: 1px solid #d6dce5;
+        border-radius: 999px;
+        color: #334155;
+        display: inline-flex;
+        font-size: 12px;
+        font-weight: 700;
+        gap: 8px;
+        padding: 6px 10px;
+    }
+    .legenda-cor {
+        border-radius: 999px;
+        display: inline-block;
+        height: 10px;
+        width: 10px;
+    }
+    .calendario-grid { display: grid; gap: 12px; }
+    .calendario-semana { display: grid; gap: 12px; grid-template-columns: repeat(7, minmax(0, 1fr)); }
+    .calendario-dia { background: #fff; border: 1px solid #d6dce5; border-radius: 8px; min-height: 180px; padding: 12px; }
+    .calendario-dia.fora-mes { background: #f8fafc; opacity: .75; }
+    .calendario-dia.hoje { border-color: #1d4ed8; box-shadow: 0 0 0 2px rgba(29, 78, 216, .12); }
+    .calendario-dia header { align-items: center; display: flex; justify-content: space-between; margin-bottom: 10px; }
+    .dia-numero { color: #0f172a; font-size: 16px; font-weight: 800; }
+    .evento-lista { display: grid; gap: 8px; }
+    .evento { border-left: 4px solid #1d4ed8; border-radius: 6px; box-shadow: inset 0 0 0 1px #dce3ed; color: #0f172a; display: block; padding: 8px 10px; text-decoration: none; }
+    .evento strong { display: block; font-size: 13px; margin-bottom: 2px; }
+    .evento small { color: #475569; display: block; font-size: 11px; line-height: 1.35; }
+    .evento.status-confirmado { border-left-color: #15803d; }
+    .evento.status-em_execucao { border-left-color: #c2410c; }
+    .evento.status-concluido { border-left-color: #166534; }
+    .evento.status-cancelado { border-left-color: #b91c1c; }
+    .evento.status-rascunho { border-left-color: #64748b; }
+    .evento-alerta {
+        color: #b91c1c;
+        font-weight: 700;
+    }
+    .evento-alerta.warn {
+        color: #92400e;
+    }
+    .sem-eventos { color: #94a3b8; font-size: 12px; }
+    @media (max-width: 1200px) {
+        .planejamento-filtros form, .calendario-semana { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+    @media (max-width: 720px) {
+        .planejamento-filtros form, .calendario-semana { grid-template-columns: 1fr; }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="planejamento-wrap">
+    <div class="planejamento-header">
+        <div>
+            <h1>{{ title }}</h1>
+            <p style="margin:4px 0 0;color:#475569;">{{ subtitulo }}</p>
+        </div>
+        <div class="planejamento-actions">
+            <a class="secondary" href="{{ link_anterior }}">Mes anterior</a>
+            <a class="secondary" href="{{ link_proximo }}">Proximo mes</a>
+            <a class="secondary" href="{{ lista_url }}">Lista</a>
+            <a href="{{ novo_url }}">Novo planejamento</a>
+        </div>
+    </div>
+
+    <div class="planejamento-filtros">
+        <form method="get">
+            <div>
+                <label for="id_mes">Mes</label>
+                <select id="id_mes" name="mes">
+                    <option value="1"{% if mes == 1 %} selected{% endif %}>Janeiro</option>
+                    <option value="2"{% if mes == 2 %} selected{% endif %}>Fevereiro</option>
+                    <option value="3"{% if mes == 3 %} selected{% endif %}>Marco</option>
+                    <option value="4"{% if mes == 4 %} selected{% endif %}>Abril</option>
+                    <option value="5"{% if mes == 5 %} selected{% endif %}>Maio</option>
+                    <option value="6"{% if mes == 6 %} selected{% endif %}>Junho</option>
+                    <option value="7"{% if mes == 7 %} selected{% endif %}>Julho</option>
+                    <option value="8"{% if mes == 8 %} selected{% endif %}>Agosto</option>
+                    <option value="9"{% if mes == 9 %} selected{% endif %}>Setembro</option>
+                    <option value="10"{% if mes == 10 %} selected{% endif %}>Outubro</option>
+                    <option value="11"{% if mes == 11 %} selected{% endif %}>Novembro</option>
+                    <option value="12"{% if mes == 12 %} selected{% endif %}>Dezembro</option>
+                </select>
+            </div>
+            <div>
+                <label for="id_ano">Ano</label>
+                <select id="id_ano" name="ano">
+                    <option value="{{ ano|add:'-1' }}">{{ ano|add:"-1" }}</option>
+                    <option value="{{ ano }}" selected>{{ ano }}</option>
+                    <option value="{{ ano|add:'1' }}">{{ ano|add:"1" }}</option>
+                    <option value="{{ ano|add:'2' }}">{{ ano|add:"2" }}</option>
+                </select>
+            </div>
+            <div>
+                <label for="id_status">Status</label>
+                <select id="id_status" name="status">
+                    <option value="">Todos</option>
+                    {% for value, label in status_choices %}
+                        <option value="{{ value }}"{% if filtros.status == value %} selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div>
+                <label for="id_tipo">Tipo</label>
+                <select id="id_tipo" name="tipo">
+                    <option value="">Todos</option>
+                    {% for value, label in tipo_choices %}
+                        <option value="{{ value }}"{% if filtros.tipo == value %} selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div>
+                <label for="id_responsavel">Responsavel</label>
+                <select id="id_responsavel" name="responsavel">
+                    <option value="">Todos</option>
+                    {% for usuario in usuarios %}
+                        <option value="{{ usuario.pk }}"{% if filtros.responsavel == usuario.pk|stringformat:"s" %} selected{% endif %}>{% firstof usuario.get_full_name usuario.username %}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div>
+                <label for="id_cliente">Cliente</label>
+                <select id="id_cliente" name="cliente">
+                    <option value="">Todos</option>
+                    {% for item in clientes %}
+                        <option value="{{ item.pk }}"{% if filtros.cliente == item.pk|stringformat:"s" %} selected{% endif %}>{{ item }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div style="align-self:end;">
+                <button type="submit">Aplicar filtros</button>
+            </div>
+        </form>
+    </div>
+
+    <div class="legenda">
+        {% for value, label in legenda_status %}
+            <span class="legenda-item">
+                <span class="legenda-cor" style="background:
+                    {% if value == 'confirmado' %}#15803d
+                    {% elif value == 'em_execucao' %}#c2410c
+                    {% elif value == 'concluido' %}#166534
+                    {% elif value == 'agendado' %}#1d4ed8
+                    {% elif value == 'rascunho' %}#64748b
+                    {% else %}#b91c1c{% endif %};"></span>
+                {{ label }}
+            </span>
+        {% endfor %}
+        <span class="legenda-item"><span class="legenda-cor" style="background:#991b1b;"></span> Padrao vencido</span>
+        <span class="legenda-item"><span class="legenda-cor" style="background:#92400e;"></span> Padrao faltando</span>
+    </div>
+
+    <div class="calendario-head">
+        <span>Domingo</span>
+        <span>Segunda</span>
+        <span>Terca</span>
+        <span>Quarta</span>
+        <span>Quinta</span>
+        <span>Sexta</span>
+        <span>Sabado</span>
+    </div>
+
+    <div class="calendario-grid">
+        {% for semana in semanas %}
+            <div class="calendario-semana">
+                {% for dia in semana %}
+                    <section class="calendario-dia{% if dia.fora_mes %} fora-mes{% endif %}{% if dia.hoje %} hoje{% endif %}">
+                        <header>
+                            <span class="dia-numero">{{ dia.data|date:"d" }}</span>
+                            <small style="color:#64748b;">{{ dia.data|date:"D" }}</small>
+                        </header>
+                        <div class="evento-lista">
+                            {% for evento in dia.eventos %}
+                                <a class="evento status-{{ evento.status_key }}" href="{{ evento.url }}">
+                                    <strong>{{ evento.cliente }}</strong>
+                                    <small>{{ evento.tipo }}</small>
+                                    <small>{{ evento.horarios }}</small>
+                                    {% if evento.situacao_padroes_key == 'vencido' %}
+                                        <small class="evento-alerta">Padrao vencido</small>
+                                    {% elif evento.situacao_padroes_key == 'faltando' %}
+                                        <small class="evento-alerta warn">Padroes nao informados</small>
+                                    {% elif not evento.exige_padroes %}
+                                        <small>Padroes: nao se aplica</small>
+                                    {% endif %}
+                                    {% if evento.veiculo %}<small>Veiculo: {{ evento.veiculo }}</small>{% endif %}
+                                    {% if evento.padroes %}<small>Padroes: {{ evento.padroes }}</small>{% endif %}
+                                    <small>{{ evento.status }}</small>
+                                </a>
+                            {% empty %}
+                                <span class="sem-eventos">Sem agenda</span>
+                            {% endfor %}
+                        </div>
+                    </section>
+                {% endfor %}
+            </div>
+        {% endfor %}
+    </div>
+</div>
+{% endblock %}
