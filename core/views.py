@@ -27,6 +27,12 @@ PERIODOS = (
 MESES = ("Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez")
 
 
+def _has_any_perm(user, perms):
+    if user.is_superuser:
+        return True
+    return any(user.has_perm(perm) for perm in perms)
+
+
 def _money(value):
     value = value or Decimal("0")
     formatted = f"{value:,.2f}"
@@ -154,6 +160,7 @@ def _qualidade_documental(today):
 
 @login_required(login_url="/admin/login/")
 def dashboard(request):
+    user = request.user
     today = timezone.localdate()
     next_7_days = today + timedelta(days=7)
     next_30_days = today + timedelta(days=30)
@@ -396,6 +403,78 @@ def dashboard(request):
         ]
     )
 
+    modulos = {
+        "clientes": _has_any_perm(user, ["clientes.view_cliente", "clientes.view_contatocliente"]),
+        "comercial": _has_any_perm(
+            user,
+            [
+                "comercial.view_proposta",
+                "comercial.view_crmregistro",
+                "comercial.view_crmticket",
+                "comercial.view_produtoservico",
+            ],
+        ),
+        "financeiro": _has_any_perm(
+            user,
+            [
+                "financeiro.view_contareceber",
+                "financeiro.view_contapagar",
+                "financeiro.view_imposto",
+                "financeiro.view_categoriafinanceira",
+                "financeiro.view_pedidocompra",
+            ],
+        ),
+        "calibracao": _has_any_perm(
+            user,
+            [
+                "calibracao.view_instrumento",
+                "calibracao.view_calibracao",
+                "calibracao.view_ordemservico",
+                "calibracao.view_padrao",
+                "calibracao.view_calibracaoturbidez",
+                "calibracao.view_calibracaocolorimetro",
+            ],
+        ),
+        "qualidade": _has_any_perm(user, ["qualidade.view_documento", "qualidade.view_documentorevisao"]),
+        "planejamento": _has_any_perm(user, ["planejamento.view_planejamentoservico"]),
+    }
+
+    atalho_defs = [
+        {"rotulo": "Nova proposta", "url": reverse("admin:comercial_proposta_add"), "icone": "PR", "modulo": "comercial"},
+        {"rotulo": "Novo cliente", "url": reverse("admin:clientes_cliente_add"), "icone": "CL", "modulo": "clientes"},
+        {"rotulo": "Novo instrumento", "url": reverse("admin:calibracao_instrumento_add"), "icone": "IN", "modulo": "calibracao"},
+        {"rotulo": "Conta a receber", "url": reverse("admin:financeiro_contareceber_add"), "icone": "RC", "modulo": "financeiro"},
+        {"rotulo": "Conta a pagar", "url": reverse("admin:financeiro_contapagar_add"), "icone": "PG", "modulo": "financeiro"},
+        {"rotulo": "Planejamento", "url": reverse("admin:planejamento_planejamentoservico_calendario"), "icone": "PL", "modulo": "planejamento"},
+        {"rotulo": "Documento", "url": reverse("admin:qualidade_documento_add"), "icone": "DOC", "modulo": "qualidade"},
+        {"rotulo": "Gestão documental", "url": "#qualidade-section", "icone": "QD", "modulo": "qualidade"},
+    ]
+    atalhos = [atalho for atalho in atalho_defs if modulos.get(atalho["modulo"], False)]
+
+    if not user.is_superuser:
+        indicadores = [
+            item for item in indicadores
+            if (
+                (item["titulo"] == "Clientes ativos" and modulos["clientes"]) or
+                (item["titulo"] == "Instrumentos ativos" and modulos["calibracao"]) or
+                (item["titulo"] == "Calibrações abertas" and modulos["calibracao"]) or
+                (item["titulo"] == "Propostas ativas" and modulos["comercial"]) or
+                (item["titulo"] == "Documentos vigentes" and modulos["qualidade"]) or
+                (item["titulo"] == "Receber no período" and modulos["financeiro"]) or
+                (item["titulo"] == "Pagar no período" and modulos["financeiro"])
+            )
+        ]
+        alertas = [
+            alerta for alerta in alertas
+            if (
+                (alerta["titulo"] in ("CalibraÃ§Ãµes vencidas", "PadrÃµes vencidos", "PrÃ³ximos 7 dias") and modulos["calibracao"]) or
+                (alerta["titulo"] in ("Contas atrasadas", "Impostos vencidos") and modulos["financeiro"]) or
+                (alerta["titulo"] in ("Docs vencendo", "Docs vencidos") and modulos["qualidade"]) or
+                (alerta["titulo"] == "Tickets urgentes" and modulos["comercial"]) or
+                (alerta["titulo"] == "Planejamentos com alerta" and modulos["planejamento"])
+            )
+        ]
+
     context = {
         "hoje": today,
         "periodo_atual": periodo_atual,
@@ -448,5 +527,8 @@ def dashboard(request):
         "admin_url": reverse("admin:index"),
         "refresh_url": f"{reverse('dashboard')}?periodo={periodo_atual}",
     }
+
+    context["atalhos"] = atalhos
+    context["modulos"] = modulos
 
     return render(request, "dashboard.html", context)

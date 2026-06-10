@@ -661,14 +661,18 @@
                     <span class="btn-symbol" aria-hidden="true">AD</span>
                     <span>Admin</span>
                 </a>
-                <a class="btn secondary" href="#qualidade-section">
-                    <span class="btn-symbol" aria-hidden="true">QD</span>
-                    <span>Qualidade</span>
-                </a>
-                <a class="btn" href="{% url 'admin:comercial_proposta_add' %}">
-                    <span class="btn-symbol" aria-hidden="true">+</span>
-                    <span>Proposta</span>
-                </a>
+                {% if modulos.qualidade %}
+                    <a class="btn secondary" href="#qualidade-section">
+                        <span class="btn-symbol" aria-hidden="true">QD</span>
+                        <span>Qualidade</span>
+                    </a>
+                {% endif %}
+                {% if modulos.comercial %}
+                    <a class="btn" href="{% url 'admin:comercial_proposta_add' %}">
+                        <span class="btn-symbol" aria-hidden="true">+</span>
+                        <span>Proposta</span>
+                    </a>
+                {% endif %}
             </nav>
         </div>
     </header>
@@ -680,13 +684,15 @@
                 <p>Visão geral de clientes, calibrações, comercial e financeiro em {{ hoje|date:"d/m/Y" }}.</p>
             </div>
 
-            <div class="cashline">
-                <span>
-                    <span class="small">Saldo previsto</span>
-                    <strong>{{ saldo_previsto }}</strong>
-                </span>
-                <span class="small">Receber {{ receita_aberta }}<br>Pagar {{ despesa_aberta }}</span>
-            </div>
+            {% if modulos.financeiro %}
+                <div class="cashline">
+                    <span>
+                        <span class="small">Saldo previsto</span>
+                        <strong>{{ saldo_previsto }}</strong>
+                    </span>
+                    <span class="small">Receber {{ receita_aberta }}<br>Pagar {{ despesa_aberta }}</span>
+                </div>
+            {% endif %}
         </section>
 
         <section class="period-line" aria-label="Filtro de período">
@@ -747,6 +753,7 @@
         </section>
 
         <section class="charts-grid" aria-label="Gráficos do dashboard">
+            {% if modulos.comercial %}
             <section class="panel" aria-labelledby="status-propostas-title">
                 <div class="section-title">
                     <div>
@@ -790,7 +797,9 @@
                     {% endfor %}
                 </div>
             </section>
+            {% endif %}
 
+            {% if modulos.financeiro %}
             <section class="panel wide" aria-labelledby="financeiro-chart-title">
                 <div class="section-title">
                     <div>
@@ -824,6 +833,7 @@
                     {% endfor %}
                 </div>
             </section>
+            {% endif %}
         </section>
 
         <section class="layout">
@@ -847,6 +857,7 @@
                 </div>
 
                 <div class="tables">
+                    {% if modulos.calibracao %}
                     <section class="panel" aria-labelledby="calibracoes-title">
                         <div class="section-title">
                             <h2 id="calibracoes-title">Calibrações próximas</h2>
@@ -896,7 +907,9 @@
                             {% endfor %}
                         </div>
                     </section>
+                    {% endif %}
 
+                    {% if modulos.comercial %}
                     <section class="panel" aria-labelledby="propostas-title">
                         <div class="section-title">
                             <h2 id="propostas-title">Propostas recentes</h2>
@@ -938,7 +951,9 @@
                             {% endfor %}
                         </div>
                     </section>
+                    {% endif %}
 
+                    {% if modulos.qualidade %}
                     <section class="panel" id="qualidade-section" aria-labelledby="qualidade-title">
                         <div class="section-title">
                             <div>
@@ -971,10 +986,12 @@
                             {% endfor %}
                         </div>
                     </section>
+                    {% endif %}
                 </div>
             </div>
 
             <aside>
+                {% if modulos.financeiro %}
                 <section class="panel" aria-labelledby="financeiro-title">
                     <div class="section-title">
                         <h2 id="financeiro-title">Pendências financeiras</h2>
@@ -1007,6 +1024,7 @@
                         {% endif %}
                     </div>
                 </section>
+                {% endif %}
 
                 <section class="panel" aria-labelledby="resumo-title" style="margin-top: 18px;">
                     <div class="section-title">
@@ -1014,12 +1032,12 @@
                     </div>
 
                     <div class="mini-grid">
-                        <div class="mini"><span class="small">OS</span><strong>{{ resumo_operacional.ordens_servico }}</strong></div>
-                        <div class="mini"><span class="small">Produtos</span><strong>{{ resumo_operacional.produtos_servicos }}</strong></div>
-                        <div class="mini"><span class="small">Documentos</span><strong>{{ resumo_operacional.documentos }}</strong></div>
-                        <div class="mini"><span class="small">Impostos</span><strong>{{ resumo_operacional.impostos_abertos }}</strong></div>
-                        <div class="mini"><span class="small">Oportunidades</span><strong>{{ resumo_operacional.oportunidades }}</strong></div>
-                        <div class="mini"><span class="small">Tickets</span><strong>{{ resumo_operacional.tickets }}</strong></div>
+                        {% if modulos.calibracao %}<div class="mini"><span class="small">OS</span><strong>{{ resumo_operacional.ordens_servico }}</strong></div>{% endif %}
+                        {% if modulos.comercial %}<div class="mini"><span class="small">Produtos</span><strong>{{ resumo_operacional.produtos_servicos }}</strong></div>{% endif %}
+                        {% if modulos.qualidade %}<div class="mini"><span class="small">Documentos</span><strong>{{ resumo_operacional.documentos }}</strong></div>{% endif %}
+                        {% if modulos.financeiro %}<div class="mini"><span class="small">Impostos</span><strong>{{ resumo_operacional.impostos_abertos }}</strong></div>{% endif %}
+                        {% if modulos.comercial %}<div class="mini"><span class="small">Oportunidades</span><strong>{{ resumo_operacional.oportunidades }}</strong></div>{% endif %}
+                        {% if modulos.comercial %}<div class="mini"><span class="small">Tickets</span><strong>{{ resumo_operacional.tickets }}</strong></div>{% endif %}
                     </div>
                 </section>
             </aside>
