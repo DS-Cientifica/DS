@@ -17,9 +17,9 @@ urlpatterns = [
 ]
 
 
-if settings.DEBUG:
+if settings.DEBUG and not getattr(settings, "USE_CLOUD_MEDIA", False):
     urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
-else:
+elif not getattr(settings, "USE_CLOUD_MEDIA", False):
     urlpatterns += [
         re_path(
             rf"^{settings.MEDIA_URL.lstrip('/')}(?P<path>.*)$",
