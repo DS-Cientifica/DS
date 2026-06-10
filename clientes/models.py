@@ -133,7 +133,7 @@ class ClienteAnexo(models.Model):
 class PerfilUsuario(models.Model):
     user = models.OneToOneField(User, on_delete=models.CASCADE)
 
-    empresa = models.CharField(max_length=200)
+    empresa = models.CharField(max_length=200, blank=True, default="DS Científica")
     numero_sequencial = models.CharField(max_length=50, unique=True, blank=True)
 
     def gerar_codigo(self):
