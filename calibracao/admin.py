@@ -1,3 +1,4 @@
+from django import forms
 from django.contrib import admin
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404
@@ -26,6 +27,10 @@ from .models import (
     ColorimetroVerificacaoPonto,
     ColorimetroCalibracaoPonto,
     ColorimetroIncertezaPonto,
+    CalibracaoPressao,
+    PressaoPadraoUtilizado,
+    PressaoCalibracaoPonto,
+    PressaoIncertezaPonto,
 )
 
 
@@ -332,6 +337,193 @@ class ColorimetroIncertezaInline(admin.TabularInline):
         "resolucao_instrumento",
         "incerteza_padrao",
         "resolucao_padrao",
+        "incerteza_curva",
+        "fator_k",
+        "graus_liberdade",
+        "incerteza_padrao_combinada",
+        "incerteza_expandida",
+    )
+    readonly_fields = ("incerteza_padrao_combinada", "incerteza_expandida")
+    verbose_name = "Ponto de incerteza"
+    verbose_name_plural = "Incerteza"
+
+
+class PressaoPadraoInlineForm(forms.ModelForm):
+    class Meta:
+        model = PressaoPadraoUtilizado
+        fields = "__all__"
+
+    def clean(self):
+        cleaned_data = super().clean()
+        if cleaned_data.get("DELETE"):
+            return cleaned_data
+
+        padrao = cleaned_data.get("padrao")
+
+        possui_dados = any(
+            cleaned_data.get(campo) not in (None, "")
+            for campo in (
+                "padrao",
+                "codigo",
+                "descricao",
+                "numero_certificado",
+                "laboratorio_emitente",
+                "data_calibracao",
+                "validade",
+                "incerteza",
+                "resolucao",
+            )
+        )
+        if not possui_dados:
+            return cleaned_data
+
+        campos_criticos = {
+            "codigo": "Identificação do padrão",
+            "descricao": "Descrição do padrão",
+            "numero_certificado": "Número do certificado",
+            "laboratorio_emitente": "Laboratório",
+            "data_calibracao": "Data da calibração",
+            "validade": "Data da validade",
+        }
+        for campo, rotulo in campos_criticos.items():
+            valor = cleaned_data.get(campo)
+            if valor in (None, "") and padrao is not None:
+                if campo == "validade":
+                    valor = getattr(padrao, "vencimento", None)
+                else:
+                    valor = getattr(padrao, campo, None)
+            if valor in (None, ""):
+                self.add_error(campo, f"{rotulo} é obrigatória para rastreabilidade metrológica.")
+
+        return cleaned_data
+
+
+class PressaoPadraoInline(admin.TabularInline):
+    model = PressaoPadraoUtilizado
+    form = PressaoPadraoInlineForm
+    extra = 3
+    fields = (
+        "tipo",
+        "ordem",
+        "padrao",
+        "codigo",
+        "descricao",
+        "tipo_padrao",
+        "numero_certificado",
+        "laboratorio_emitente",
+        "data_calibracao",
+        "validade",
+        "resolucao",
+        "incerteza",
+        "unidade",
+        "status_validade",
+    )
+    autocomplete_fields = ("padrao",)
+    readonly_fields = ("status_validade",)
+    verbose_name = "Padrão utilizado"
+    verbose_name_plural = "Padrões"
+
+
+class PressaoCalibracaoInlineForm(forms.ModelForm):
+    class Meta:
+        model = PressaoCalibracaoPonto
+        fields = "__all__"
+        labels = {
+            "valor_referencia": "Padrão em",
+            "valor_referencia_convertido": "Padrão convertido",
+            "leitura_1": "Crescente 1ª série",
+            "leitura_2": "Crescente 2ª série",
+            "leitura_3": "Decrescente 1ª série",
+            "leitura_4": "Decrescente 2ª série",
+            "media": "Média",
+            "desvio_padrao": "Desvio padrão",
+            "erro": "Erro do instrumento",
+            "erro_percentual": "Erro (%)",
+            "ema": "EMA",
+            "criterio": "Critério de aceitação",
+            "criterio_origem": "Origem da tolerância",
+            "criterio_referencia": "Referência do critério",
+            "resultado": "Resultado",
+        }
+
+    def clean(self):
+        cleaned_data = super().clean()
+        if self.instance and self.instance.pk and not cleaned_data.get("DELETE"):
+            for campo in ("leitura_1", "leitura_2", "leitura_3", "leitura_4"):
+                if cleaned_data.get(campo) is None and getattr(self.instance, campo) is not None:
+                    cleaned_data[campo] = getattr(self.instance, campo)
+        return cleaned_data
+
+
+class CalibracaoPressaoAdminForm(forms.ModelForm):
+    class Meta:
+        model = CalibracaoPressao
+        fields = "__all__"
+
+    def clean(self):
+        cleaned_data = super().clean()
+        campos_criticos = {
+            "temperatura_inicial": "Temperatura inicial",
+            "temperatura_final": "Temperatura final",
+            "umidade_inicial": "Umidade inicial",
+            "umidade_final": "Umidade final",
+        }
+        for campo, rotulo in campos_criticos.items():
+            if cleaned_data.get(campo) in (None, ""):
+                self.add_error(campo, f"{rotulo} é obrigatória para emissão do certificado.")
+
+        if not cleaned_data.get("procedimento_documento") and not (cleaned_data.get("procedimento_numero") or "").strip():
+            self.add_error(
+                "procedimento_documento",
+                "Informe o procedimento aplicável para emissão do certificado.",
+            )
+
+        return cleaned_data
+
+
+class PressaoCalibracaoInline(admin.TabularInline):
+    model = PressaoCalibracaoPonto
+    form = PressaoCalibracaoInlineForm
+    extra = 10
+    fields = (
+        "ordem",
+        "valor_referencia",
+        "valor_referencia_convertido",
+        "leitura_1",
+        "leitura_2",
+        "leitura_3",
+        "leitura_4",
+        "media",
+        "desvio_padrao",
+        "erro",
+        "erro_percentual",
+        "ema",
+        "criterio",
+        "criterio_origem",
+        "criterio_referencia",
+        "resultado",
+    )
+    readonly_fields = (
+        "valor_referencia_convertido",
+        "media",
+        "desvio_padrao",
+        "erro",
+        "erro_percentual",
+        "ema",
+    )
+    verbose_name = "Ponto de calibração"
+    verbose_name_plural = "Calibração"
+
+
+class PressaoIncertezaInline(admin.TabularInline):
+    model = PressaoIncertezaPonto
+    extra = 10
+    fields = (
+        "ordem",
+        "repetibilidade",
+        "resolucao_instrumento",
+        "resolucao_padrao",
+        "incerteza_padrao",
         "incerteza_curva",
         "fator_k",
         "graus_liberdade",
@@ -1095,3 +1287,200 @@ class PadraoAdmin(admin.ModelAdmin):
         return "—"
 
     ver_certificado.short_description = "Certificado"
+
+
+@admin.register(CalibracaoPressao)
+class CalibracaoPressaoAdmin(admin.ModelAdmin):
+    change_form_template = "admin/calibracao/calibracaopressao/change_form.html"
+    form = CalibracaoPressaoAdminForm
+
+    list_display = (
+        "numero_certificado",
+        "tipo_instrumento",
+        "instrumento",
+        "cliente",
+        "data_calibracao",
+        "data_emissao",
+        "pdf_certificado",
+    )
+    list_filter = ("tipo_instrumento", "tipo_indicacao", "data_calibracao", "data_emissao", "cliente")
+    search_fields = (
+        "numero_certificado",
+        "instrumento__codigo",
+        "instrumento__descricao",
+        "cliente__razao_social",
+        "ordem_servico",
+    )
+    autocomplete_fields = (
+        "instrumento",
+        "cliente",
+        "procedimento_documento",
+        "responsavel_tecnico_ref",
+        "tecnico_executante_ref",
+    )
+    readonly_fields = ("numero_certificado", "procedimento_numero", "procedimento_revisao", "valor_por_divisao")
+    fieldsets = (
+        ("Planilha - InformaÃ§Ãµes Gerais", {
+            "fields": (
+                "numero_certificado",
+                "ordem_servico",
+                "data_calibracao",
+                "data_emissao",
+                "revisao",
+                "instrumento",
+                "cliente",
+                "contratante",
+                "endereco_contratante",
+                "endereco_cliente",
+                "local_calibracao",
+            )
+        }),
+        ("Planilha - Equipamento", {
+            "fields": (
+                "tipo_instrumento",
+                "tipo_indicacao",
+                "referencia_calculo",
+                "equipamento_calibrado",
+                "numero_identificacao",
+                "marca",
+                "modelo",
+                "numero_serie",
+                "faixa_indicacao",
+                "faixa_calibrada",
+                "capacidade_total",
+                "menor_resolucao",
+                "classe_declarada",
+                "unidade_indicacao",
+                "unidade_padrao",
+                "divisao_escala",
+                "valor_por_divisao",
+            )
+        }),
+        ("Certificado - MÃ©todo e Ambiente", {
+            "fields": (
+                "procedimento_documento",
+                "procedimento_numero",
+                "procedimento_revisao",
+                "temperatura_inicial",
+                "temperatura_final",
+                "umidade_inicial",
+                "umidade_final",
+                "ajuste_efetuado",
+            )
+        }),
+        ("Certificado - ResponsÃ¡veis e ObservaÃ§Ãµes", {
+            "fields": (
+                "responsavel_tecnico_ref",
+                "tecnico_executante_ref",
+                "funcao_signatario",
+                "resultado_final_status",
+                "resultado_final",
+                "observacoes_certificado",
+            )
+        }),
+    )
+    inlines = [PressaoPadraoInline, PressaoCalibracaoInline, PressaoIncertezaInline]
+
+    class Media:
+        js = ("js/calibracao_pressao.js",)
+
+    def get_form(self, request, obj=None, change=False, **kwargs):
+        form = super().get_form(request, obj=obj, change=change, **kwargs)
+        instrumento_field = form.base_fields.get("instrumento")
+        if instrumento_field:
+            instrumento_url = reverse(
+                "admin:calibracao_calibracaopressao_instrumento_dados",
+                args=["00000000-0000-0000-0000-000000000000"],
+            )
+            instrumento_field.widget.attrs["data-instrumento-dados-url"] = instrumento_url.replace(
+                "00000000-0000-0000-0000-000000000000",
+                "__instrumento__",
+            )
+        return form
+
+    def get_changeform_initial_data(self, request):
+        initial = super().get_changeform_initial_data(request)
+        responsavel = ResponsavelCertificado.objects.filter(nome="Diego Henrique Alves Saldanha").first()
+        if responsavel:
+            initial.setdefault("responsavel_tecnico_ref", responsavel.pk)
+            initial.setdefault("tecnico_executante_ref", responsavel.pk)
+            initial.setdefault("funcao_signatario", responsavel.cargo)
+        return initial
+
+    def formfield_for_foreignkey(self, db_field, request, **kwargs):
+        if db_field.name == "procedimento_documento":
+            kwargs["queryset"] = Documento.objects.filter(
+                tipo__in=("procedimento", "instrucao", "metodo"),
+                status="vigente",
+            ).order_by("codigo", "titulo")
+        return super().formfield_for_foreignkey(db_field, request, **kwargs)
+
+    def get_urls(self):
+        urls = super().get_urls()
+        custom_urls = [
+            path(
+                "instrumento/<uuid:instrumento_id>/dados/",
+                self.admin_site.admin_view(self.instrumento_dados_view),
+                name="calibracao_calibracaopressao_instrumento_dados",
+            ),
+            path(
+                "<uuid:pk>/pdf/",
+                self.admin_site.admin_view(self.pdf_view),
+                name="calibracao_calibracaopressao_pdf",
+            ),
+        ]
+        return custom_urls + urls
+
+    def instrumento_dados_view(self, request, instrumento_id):
+        instrumento = get_object_or_404(Instrumento.objects.select_related("cliente"), pk=instrumento_id)
+        cliente = instrumento.cliente
+        try:
+            tecnico = instrumento.tecnico
+        except InstrumentoTecnico.DoesNotExist:
+            tecnico = None
+
+        endereco_partes = [
+            getattr(cliente, "endereco", ""),
+            getattr(cliente, "numero", ""),
+            getattr(cliente, "bairro", ""),
+            getattr(cliente, "cidade", ""),
+            getattr(cliente, "uf", ""),
+        ]
+        endereco_cliente = ", ".join([parte for parte in endereco_partes if parte])
+        local_calibracao = CalibracaoPressao._normalizar_local_calibracao(instrumento.local_instalacao)
+
+        return JsonResponse({
+            "cliente": {
+                "id": str(cliente.pk),
+                "text": str(cliente),
+                "razao_social": cliente.razao_social,
+            },
+            "contratante": cliente.razao_social or "",
+            "endereco_contratante": endereco_cliente,
+            "endereco_cliente": endereco_cliente,
+            "local_calibracao": local_calibracao,
+            "equipamento_calibrado": instrumento.descricao or "Instrumento de PressÃ£o",
+            "numero_identificacao": instrumento.codigo or "",
+            "capacidade_total": (tecnico.capacidade_total if tecnico and tecnico.capacidade_total else instrumento.modelo or ""),
+            "faixa_calibrada": tecnico.faixa_medicao if tecnico else "",
+            "faixa_indicacao": tecnico.faixa_medicao if tecnico else "",
+            "menor_resolucao": str(tecnico.menor_resolucao) if tecnico and tecnico.menor_resolucao is not None else "",
+            "unidade_leitura": tecnico.unidade if tecnico else "",
+            "unidade_indicacao": tecnico.unidade if tecnico else "",
+            "numero_serie": instrumento.numero_serie or "",
+            "marca": instrumento.marca or "",
+            "modelo": instrumento.modelo or "",
+            "classe_declarada": tecnico.classe if tecnico else "",
+        })
+
+    def pdf_view(self, request, pk):
+        from .views import pdf_calibracao_pressao
+        return pdf_calibracao_pressao(request, pk)
+
+    def pdf_certificado(self, obj):
+        return format_html(
+            "<a class='button' href='{}' target='_blank'>Gerar PDF</a>",
+            reverse("admin:calibracao_calibracaopressao_pdf", args=[obj.pk]),
+        )
+
+    pdf_certificado.short_description = "Certificado"

@@ -433,6 +433,7 @@ def dashboard(request):
                 "calibracao.view_padrao",
                 "calibracao.view_calibracaoturbidez",
                 "calibracao.view_calibracaocolorimetro",
+                "calibracao.view_calibracaopressao",
             ],
         ),
         "qualidade": _has_any_perm(user, ["qualidade.view_documento", "qualidade.view_documentorevisao"]),

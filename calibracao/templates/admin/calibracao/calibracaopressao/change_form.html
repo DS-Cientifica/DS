@@ -1,0 +1,21 @@
+{% extends "admin/change_form.html" %}
+{% load admin_urls %}
+
+{% block object-tools-items %}
+    {{ block.super }}
+    {% if change and original %}
+        <li>
+            <a href="{% url 'admin:calibracao_calibracaopressao_pdf' original.pk %}" target="_blank">Gerar Certificado</a>
+        </li>
+    {% endif %}
+{% endblock %}
+
+{% block after_field_sets %}
+    <nav class="turbidez-tabs" aria-label="Seções da calibração de pressão">
+        <button type="button" class="turbidez-tab is-active" data-tab-target="planilha">Planilha</button>
+        <button type="button" class="turbidez-tab" data-tab-target="padroes">Padrões</button>
+        <button type="button" class="turbidez-tab" data-tab-target="calibracao">Calibração</button>
+        <button type="button" class="turbidez-tab" data-tab-target="incerteza">Incerteza</button>
+        <button type="button" class="turbidez-tab" data-tab-target="certificado">Certificado</button>
+    </nav>
+{% endblock %}

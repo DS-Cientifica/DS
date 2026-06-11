@@ -10,6 +10,71 @@ from clientes.models import Cliente
 from qualidade.models import Documento
 
 
+PRESSAO_UNIDADE_FATORES = {
+    "pa": Decimal("1"),
+    "hpa": Decimal("100"),
+    "kpa": Decimal("1000"),
+    "mpa": Decimal("1000000"),
+    "bar": Decimal("100000"),
+    "mbar": Decimal("100"),
+    "psi": Decimal("6894.757293168"),
+    "kgf/cm2": Decimal("98066.5"),
+    "mmhg": Decimal("133.322387415"),
+    "mh2o": Decimal("9806.65"),
+    "mmh2o": Decimal("9.80665"),
+    "inh2o": Decimal("249.08891"),
+}
+
+
+def _normalizar_unidade_pressao(unidade):
+    valor = (unidade or "").strip().lower()
+    substituicoes = {
+        "kgf/cm²": "kgf/cm2",
+        "kgfcm2": "kgf/cm2",
+        "kg/cm2": "kgf/cm2",
+        "mm hg": "mmhg",
+        "m h2o": "mh2o",
+        "mm h2o": "mmh2o",
+        "in h2o": "inh2o",
+        "polh2o": "inh2o",
+    }
+    return substituicoes.get(valor, valor.replace(" ", ""))
+
+
+def _para_decimal(valor):
+    if valor in (None, ""):
+        return None
+    if isinstance(valor, Decimal):
+        return valor
+    try:
+        return Decimal(str(valor).replace(",", "."))
+    except (InvalidOperation, TypeError, ValueError):
+        return None
+
+
+def _converter_pressao(valor, unidade_origem, unidade_destino):
+    valor_decimal = _para_decimal(valor)
+    if valor_decimal is None:
+        return None
+
+    origem = PRESSAO_UNIDADE_FATORES.get(_normalizar_unidade_pressao(unidade_origem))
+    destino = PRESSAO_UNIDADE_FATORES.get(_normalizar_unidade_pressao(unidade_destino))
+    if not origem or not destino:
+        return valor_decimal
+
+    valor_pa = valor_decimal * origem
+    return valor_pa / destino
+
+
+def _extrair_faixa_numerica(texto):
+    if not texto:
+        return None, None
+    numeros = re.findall(r"[-+]?\d+(?:[.,]\d+)?", str(texto))
+    if len(numeros) < 2:
+        return None, None
+    return _para_decimal(numeros[0]), _para_decimal(numeros[1])
+
+
 def _extrair_decimal_criterio(texto):
     if not texto:
         return None
@@ -1561,3 +1626,668 @@ class ColorimetroIncertezaPonto(models.Model):
 
     def __str__(self):
         return f"Incerteza {self.ordem}"
+
+
+class CalibracaoPressao(models.Model):
+    RESULTADO_FINAL_CHOICES = (
+        ("", "---------"),
+        ("conforme", "Equipamento conforme, dentro do critério de aceitação informado"),
+        ("nao_conforme", "Equipamento não conforme, fora do critério de aceitação informado"),
+    )
+    TIPO_INSTRUMENTO_CHOICES = (
+        ("manometro", "Manômetro"),
+        ("transmissor", "Transmissor de pressão"),
+        ("indicador_transmissor", "Indicador e transmissor de pressão"),
+        ("vacuometro", "Vacuômetro"),
+        ("manovacuometro", "Manovacuômetro"),
+        ("pressostato", "Pressostato"),
+    )
+    TIPO_INDICACAO_CHOICES = (
+        ("analogico", "Analógico"),
+        ("digital", "Digital"),
+    )
+    REFERENCIA_ESCOLHA_CHOICES = (
+        ("padrao", "Padrão"),
+        ("instrumento", "Instrumento"),
+    )
+    UNIDADE_CHOICES = (
+        ("Pa", "Pa"),
+        ("hPa", "hPa"),
+        ("kPa", "kPa"),
+        ("MPa", "MPa"),
+        ("bar", "bar"),
+        ("mbar", "mbar"),
+        ("psi", "psi"),
+        ("kgf/cm2", "kgf/cm²"),
+        ("mmHg", "mmHg"),
+        ("mH2O", "mH2O"),
+        ("mmH2O", "mmH2O"),
+        ("inH2O", "inH2O"),
+    )
+    LOCAL_CALIBRACAO_CHOICES = (
+        ("in_loco", "IN LOCO"),
+        ("laboratorio_optico_ds", "Laboratório Pressão DS Científica"),
+        ("laboratorio_pressao_ds", "Laboratório Pressão DS Científica"),
+        ("ds_cientifica", "DS Científica"),
+    )
+    DOCUMENTO_CODIGO_MAP = {
+        "manometro": "CCDS-0006 Rev.00",
+        "transmissor": "CCDS-0007 Rev.00",
+        "indicador_transmissor": "CCDS-0008 Rev.00",
+        "vacuometro": "CCDS-0009 Rev.00",
+        "manovacuometro": "CCDS-0010 Rev.00",
+        "pressostato": "CCDS-0011 Rev.00",
+    }
+    PREFIXO_CERTIFICADO_MAP = {
+        "manometro": "PRE",
+        "transmissor": "PRE",
+        "indicador_transmissor": "PRE",
+        "vacuometro": "PRE",
+        "manovacuometro": "PRE",
+        "pressostato": "PRE",
+    }
+    EQUIPAMENTO_CALIBRADO_MAP = {
+        "manometro": "Manômetro",
+        "transmissor": "Transmissor de pressão",
+        "indicador_transmissor": "Indicador e transmissor de pressão",
+        "vacuometro": "Vacuômetro",
+        "manovacuometro": "Manovacuômetro",
+        "pressostato": "Pressostato",
+    }
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tipo_instrumento = models.CharField(max_length=30, choices=TIPO_INSTRUMENTO_CHOICES, default="manometro")
+    tipo_indicacao = models.CharField(max_length=20, choices=TIPO_INDICACAO_CHOICES, default="digital")
+    referencia_calculo = models.CharField(max_length=20, choices=REFERENCIA_ESCOLHA_CHOICES, default="padrao")
+
+    instrumento = models.ForeignKey(
+        Instrumento,
+        on_delete=models.PROTECT,
+        related_name="calibracoes_pressao",
+    )
+    cliente = models.ForeignKey(
+        Cliente,
+        on_delete=models.PROTECT,
+        related_name="calibracoes_pressao",
+    )
+
+    numero_certificado = models.CharField(max_length=100, unique=True, blank=True)
+    ordem_servico = models.CharField(max_length=100, blank=True)
+    data_calibracao = models.DateField()
+    data_emissao = models.DateField(default=date.today)
+    revisao = models.CharField(max_length=20, default="00", blank=True)
+    local_calibracao = models.CharField(
+        max_length=30,
+        choices=LOCAL_CALIBRACAO_CHOICES,
+        default="ds_cientifica",
+    )
+
+    contratante = models.CharField(max_length=255, blank=True)
+    endereco_contratante = models.CharField(max_length=255, blank=True)
+    endereco_cliente = models.CharField(max_length=255, blank=True)
+
+    equipamento_calibrado = models.CharField(max_length=255, default="Instrumento de Pressão", blank=True)
+    numero_identificacao = models.CharField(max_length=100, blank=True)
+    marca = models.CharField(max_length=100, blank=True)
+    modelo = models.CharField(max_length=100, blank=True)
+    numero_serie = models.CharField(max_length=100, blank=True)
+    faixa_indicacao = models.CharField(max_length=120, blank=True)
+    faixa_calibrada = models.CharField(max_length=120, blank=True)
+    capacidade_total = models.CharField(max_length=100, blank=True)
+    menor_resolucao = models.DecimalField(max_digits=12, decimal_places=6, null=True, blank=True)
+    classe_declarada = models.CharField(max_length=80, blank=True)
+    unidade_indicacao = models.CharField(max_length=20, choices=UNIDADE_CHOICES, default="bar")
+    unidade_padrao = models.CharField(max_length=20, choices=UNIDADE_CHOICES, default="bar")
+    divisao_escala = models.PositiveIntegerField(null=True, blank=True)
+    valor_por_divisao = models.DecimalField(max_digits=12, decimal_places=6, null=True, blank=True)
+
+    procedimento_documento = models.ForeignKey(
+        Documento,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="calibracoes_pressao",
+    )
+    procedimento_numero = models.CharField(max_length=100, blank=True)
+    procedimento_revisao = models.CharField(max_length=50, blank=True)
+
+    temperatura_inicial = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
+    temperatura_final = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
+    umidade_inicial = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
+    umidade_final = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
+
+    responsavel_tecnico_ref = models.ForeignKey(
+        "ResponsavelCertificado",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="calibracoes_pressao_como_responsavel",
+    )
+    tecnico_executante_ref = models.ForeignKey(
+        "ResponsavelCertificado",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="calibracoes_pressao_como_executante",
+    )
+    ajuste_efetuado = models.BooleanField(default=False)
+    tecnico_responsavel = models.CharField(max_length=255, blank=True)
+    responsavel_conferencia = models.CharField(max_length=255, blank=True)
+    signatario_autorizado = models.CharField(max_length=255, blank=True)
+    funcao_signatario = models.CharField(max_length=255, blank=True)
+    resultado_final_status = models.CharField(max_length=30, choices=RESULTADO_FINAL_CHOICES, blank=True)
+    resultado_final = models.TextField(blank=True)
+    observacoes_certificado = models.TextField(blank=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Calibração de Pressão"
+        verbose_name_plural = "Calibrações de Pressão"
+        ordering = ("-data_calibracao", "-created_at")
+
+    @property
+    def codigo_documento(self):
+        return self.DOCUMENTO_CODIGO_MAP.get(self.tipo_instrumento, "CCDS-0006 Rev.00")
+
+    @property
+    def titulo_certificado(self):
+        return f"Certificado de Pressão - {self.get_tipo_instrumento_display()}"
+
+    @property
+    def local_calibracao_certificado(self):
+        mapa = {
+            "in_loco": "IN LOCO",
+            "laboratorio_optico_ds": "Laboratório Pressão DS Científica",
+            "laboratorio_pressao_ds": "Laboratório Pressão DS Científica",
+            "ds_cientifica": "DS Científica",
+        }
+        return mapa.get(self.local_calibracao, "DS Científica")
+
+    @property
+    def metodo_utilizado_titulo(self):
+        return "Método utilizado"
+
+    def metodo_utilizado_texto(self):
+        return (
+            "A calibração do equipamento calibrado foi realizada por comparação direta com padrão de referência "
+            "rastreável, considerando as conversões de unidade aplicáveis, as condições ambientais registradas "
+            "e as contribuições de incerteza pertinentes ao processo."
+        )
+
+    @property
+    def resultado_final_resolvido(self):
+        partes = []
+        status_texto = self._texto_resultado_final_status()
+        if status_texto:
+            partes.append(status_texto.rstrip("."))
+        if self.resultado_final:
+            partes.append(self.resultado_final.strip())
+        if partes:
+            return ". ".join([parte for parte in partes if parte]).strip() + "."
+        return self._gerar_resultado_final()
+
+    def _texto_resultado_final_status(self):
+        return dict(self.RESULTADO_FINAL_CHOICES).get(self.resultado_final_status, "")
+
+    def _gerar_prefixo_certificado(self):
+        prefixo_tipo = self.PREFIXO_CERTIFICADO_MAP.get(self.tipo_instrumento, "PRES")
+        os_token = slugify(self.ordem_servico or "", allow_unicode=False).upper().replace("-", "")
+        cliente_token = "CLIENTE"
+        if self.cliente_id:
+            primeiro_nome = (self.cliente.razao_social or "").strip().split()
+            if primeiro_nome:
+                cliente_base = slugify(primeiro_nome[0], allow_unicode=False).upper().replace("-", "")
+                if cliente_base:
+                    cliente_token = cliente_base[:10]
+        if os_token:
+            return f"{prefixo_tipo}-{os_token}-{cliente_token}"
+        data_token = (self.data_calibracao or date.today()).strftime("%Y%m%d")
+        return f"{prefixo_tipo}-{cliente_token}-{data_token}"
+
+    def _gerar_numero_certificado(self):
+        prefixo = self._gerar_prefixo_certificado()
+        existentes = (
+            CalibracaoPressao.objects.exclude(pk=self.pk)
+            .filter(numero_certificado__startswith=f"{prefixo}-")
+            .values_list("numero_certificado", flat=True)
+        )
+        sufixos = set()
+        for numero in existentes:
+            try:
+                sufixos.add(int(str(numero).rsplit("-", 1)[-1]))
+            except (TypeError, ValueError):
+                continue
+        sequencia = 1
+        while sequencia in sufixos:
+            sequencia += 1
+        return f"{prefixo}-{sequencia:02d}"
+
+    def _gerar_resultado_final(self):
+        pontos = list(self.pontos_calibracao.all())
+        if not pontos:
+            return ""
+        erros = [abs(float(ponto.erro)) for ponto in pontos if ponto.erro is not None]
+        referencias = [
+            float(ponto.valor_referencia_convertido or ponto.valor_referencia)
+            for ponto in pontos
+            if (ponto.valor_referencia_convertido is not None or ponto.valor_referencia is not None)
+        ]
+        if not erros:
+            return ""
+        erro_maximo = max(erros)
+        faixa_inicial = min(referencias) if referencias else None
+        faixa_final = max(referencias) if referencias else None
+        situacao = "adequado" if self.calcular_status_final() == "conforme" else "inadequado"
+        if faixa_inicial is not None and faixa_final is not None:
+            return (
+                f"O instrumento apresentou erro máximo de {erro_maximo:.4f} {self.unidade_padrao} "
+                f"na faixa calibrada de {faixa_inicial:.4f} a {faixa_final:.4f} {self.unidade_padrao} "
+                f"e encontra-se {situacao}."
+            )
+        return f"O instrumento apresentou erro máximo de {erro_maximo:.4f} {self.unidade_padrao}."
+
+    def calcular_status_final(self):
+        pontos = list(self.pontos_calibracao.all())
+        if not pontos:
+            return ""
+        resultados = [ponto.resultado for ponto in pontos if ponto.resultado]
+        if resultados and any(resultado == "reprovado" for resultado in resultados):
+            return "nao_conforme"
+        if resultados and all(resultado == "aprovado" for resultado in resultados):
+            return "conforme"
+        return ""
+
+    def pendencias_certificado(self):
+        pendencias = []
+        if not self.contratante:
+            pendencias.append("Contratante não informado")
+        if not self.endereco_cliente:
+            pendencias.append("Endereço do cliente não informado")
+        if self.temperatura_inicial is None or self.temperatura_final is None:
+            pendencias.append("Temperatura ambiental incompleta")
+        if self.umidade_inicial is None or self.umidade_final is None:
+            pendencias.append("Umidade ambiental incompleta")
+        if not self.procedimento_numero:
+            pendencias.append("Método utilizado não informado")
+        if not self.padroes_utilizados.exists():
+            pendencias.append("Padrões utilizados não informados")
+        if not self.pontos_calibracao.exists():
+            pendencias.append("Pontos de calibração não informados")
+        return pendencias
+
+    def _calcular_resolucao_analogica(self):
+        inicio, fim = _extrair_faixa_numerica(self.faixa_indicacao or self.faixa_calibrada)
+        if inicio is None or fim is None or not self.divisao_escala:
+            return None
+        try:
+            span = abs(fim - inicio)
+            return span / Decimal(str(self.divisao_escala))
+        except (InvalidOperation, ZeroDivisionError):
+            return None
+
+    def save(self, *args, **kwargs):
+        if isinstance(self.data_calibracao, str):
+            self.data_calibracao = date.fromisoformat(self.data_calibracao)
+
+        if not self.cliente_id and self.instrumento_id:
+            self.cliente = self.instrumento.cliente
+        if not self.contratante and self.cliente_id:
+            self.contratante = self.cliente.razao_social
+        if not self.endereco_cliente and self.cliente_id:
+            partes = [
+                getattr(self.cliente, "endereco", ""),
+                getattr(self.cliente, "numero", ""),
+                getattr(self.cliente, "bairro", ""),
+                getattr(self.cliente, "cidade", ""),
+                getattr(self.cliente, "uf", ""),
+            ]
+            self.endereco_cliente = ", ".join([parte for parte in partes if parte])
+        if not self.endereco_contratante:
+            self.endereco_contratante = self.endereco_cliente
+        if self.instrumento_id:
+            if not self.numero_identificacao:
+                self.numero_identificacao = self.instrumento.codigo
+            if not self.marca:
+                self.marca = self.instrumento.marca or ""
+            if not self.modelo:
+                self.modelo = self.instrumento.modelo or ""
+            if not self.numero_serie:
+                self.numero_serie = self.instrumento.numero_serie or ""
+
+        self.local_calibracao = self._normalizar_local_calibracao(
+            self.local_calibracao or (self.instrumento.local_instalacao if self.instrumento_id else "")
+        )
+
+        if self.instrumento_id:
+            try:
+                tecnico = self.instrumento.tecnico
+            except InstrumentoTecnico.DoesNotExist:
+                tecnico = None
+            if tecnico:
+                if not self.faixa_indicacao:
+                    self.faixa_indicacao = tecnico.faixa_medicao or ""
+                if not self.faixa_calibrada:
+                    self.faixa_calibrada = tecnico.faixa_medicao or ""
+                if self.menor_resolucao is None:
+                    self.menor_resolucao = tecnico.menor_resolucao
+                if not self.capacidade_total:
+                    self.capacidade_total = tecnico.capacidade_total or ""
+                if not self.classe_declarada:
+                    self.classe_declarada = tecnico.classe or ""
+                if not self.unidade_indicacao:
+                    self.unidade_indicacao = tecnico.unidade or self.unidade_indicacao
+
+        if not self.equipamento_calibrado:
+            self.equipamento_calibrado = self.EQUIPAMENTO_CALIBRADO_MAP.get(
+                self.tipo_instrumento,
+                "Instrumento de Pressão",
+            )
+
+        if self.tipo_indicacao == "analogico":
+            resolucao_analogica = self._calcular_resolucao_analogica()
+            if self.menor_resolucao is None and resolucao_analogica is not None:
+                self.menor_resolucao = resolucao_analogica
+            if self.valor_por_divisao is None and resolucao_analogica is not None:
+                self.valor_por_divisao = resolucao_analogica
+        elif self.valor_por_divisao is None and self.menor_resolucao is not None:
+            self.valor_por_divisao = self.menor_resolucao
+
+        if self.procedimento_documento_id:
+            self.procedimento_numero = self.procedimento_documento.codigo or ""
+            self.procedimento_revisao = self.procedimento_documento.revisao or ""
+
+        if not self.responsavel_tecnico_ref_id:
+            self.responsavel_tecnico_ref = _obter_ou_criar_responsavel_padrao()
+        if not self.tecnico_executante_ref_id:
+            self.tecnico_executante_ref = self.responsavel_tecnico_ref or _obter_ou_criar_responsavel_padrao()
+        if self.responsavel_tecnico_ref_id:
+            self.tecnico_responsavel = self.responsavel_tecnico_ref.nome
+            self.signatario_autorizado = self.responsavel_tecnico_ref.nome
+            if self.responsavel_tecnico_ref.cargo:
+                self.funcao_signatario = self.responsavel_tecnico_ref.cargo
+        if self.tecnico_executante_ref_id:
+            self.responsavel_conferencia = self.tecnico_executante_ref.nome
+
+        if not self.numero_certificado:
+            self.numero_certificado = self._gerar_numero_certificado()
+
+        super().save(*args, **kwargs)
+
+    @classmethod
+    def _normalizar_local_calibracao(cls, valor):
+        valor = (valor or "").strip().lower()
+        if valor in dict(cls.LOCAL_CALIBRACAO_CHOICES):
+            return valor
+        if "in loco" in valor or "in_loco" in valor:
+            return "in_loco"
+        if "press" in valor:
+            return "laboratorio_pressao_ds"
+        if "optico" in valor or "óptico" in valor:
+            return "laboratorio_optico_ds"
+        return "ds_cientifica"
+
+    def __str__(self):
+        return f"{self.numero_certificado} - {self.instrumento}"
+
+
+class PressaoPadraoUtilizado(models.Model):
+    TIPO_CHOICES = (
+        ("padrao_pressao", "Padrão de pressão"),
+        ("termometro", "Termômetro ambiente"),
+        ("higrometro", "Higrômetro ambiente"),
+    )
+
+    calibracao = models.ForeignKey(
+        CalibracaoPressao,
+        on_delete=models.CASCADE,
+        related_name="padroes_utilizados",
+    )
+    tipo = models.CharField(max_length=30, choices=TIPO_CHOICES)
+    ordem = models.PositiveSmallIntegerField(default=1)
+    padrao = models.ForeignKey(
+        Padrao,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="usos_pressao",
+    )
+    codigo = models.CharField(max_length=100, blank=True)
+    descricao = models.CharField(max_length=255, blank=True)
+    tipo_padrao = models.CharField(max_length=120, blank=True)
+    numero_certificado = models.CharField(max_length=100, blank=True)
+    laboratorio_emitente = models.CharField(max_length=150, blank=True)
+    data_calibracao = models.DateField(null=True, blank=True)
+    validade = models.DateField(null=True, blank=True)
+    resolucao = models.DecimalField(max_digits=12, decimal_places=6, null=True, blank=True)
+    incerteza = models.DecimalField(max_digits=12, decimal_places=6, null=True, blank=True)
+    fator_k = models.DecimalField(max_digits=8, decimal_places=3, null=True, blank=True)
+    graus_liberdade = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    unidade = models.CharField(max_length=30, default="bar", blank=True)
+    faixa_inicial = models.DecimalField(max_digits=12, decimal_places=6, null=True, blank=True)
+    faixa_final = models.DecimalField(max_digits=12, decimal_places=6, null=True, blank=True)
+    status_validade = models.CharField(max_length=20, blank=True)
+
+    class Meta:
+        verbose_name = "Padrão utilizado - pressão"
+        verbose_name_plural = "Padrões utilizados - pressão"
+        ordering = ("tipo", "ordem")
+
+    def save(self, *args, **kwargs):
+        if self.padrao_id:
+            if not self.codigo:
+                self.codigo = self.padrao.codigo
+            if not self.descricao:
+                self.descricao = self.padrao.descricao
+            if not self.numero_certificado:
+                self.numero_certificado = self.padrao.numero_certificado
+            if not self.laboratorio_emitente:
+                self.laboratorio_emitente = self.padrao.laboratorio_emitente
+            if not self.data_calibracao:
+                self.data_calibracao = self.padrao.data_calibracao
+            if not self.validade:
+                self.validade = self.padrao.vencimento
+            if self.resolucao is None:
+                self.resolucao = self.padrao.resolucao
+            if self.incerteza is None:
+                self.incerteza = self.padrao.incerteza
+            if self.fator_k is None:
+                self.fator_k = self.padrao.fator_k
+            if self.graus_liberdade is None:
+                self.graus_liberdade = self.padrao.graus_liberdade
+            if not self.unidade:
+                self.unidade = self.padrao.unidade
+            if self.faixa_inicial is None or self.faixa_final is None:
+                faixa_inicial, faixa_final = _extrair_faixa_numerica(self.padrao.descricao)
+                self.faixa_inicial = self.faixa_inicial if self.faixa_inicial is not None else faixa_inicial
+                self.faixa_final = self.faixa_final if self.faixa_final is not None else faixa_final
+
+        if self.validade:
+            self.status_validade = "Vencido" if self.validade < date.today() else "Válido"
+
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"{self.get_tipo_display()} - {self.codigo or self.descricao or self.ordem}"
+
+
+class PressaoCalibracaoPonto(models.Model):
+    RESULTADO_CHOICES = (
+        ("", "---------"),
+        ("aprovado", "Aprovado"),
+        ("reprovado", "Reprovado"),
+    )
+
+    calibracao = models.ForeignKey(
+        CalibracaoPressao,
+        on_delete=models.CASCADE,
+        related_name="pontos_calibracao",
+    )
+    ordem = models.PositiveSmallIntegerField(default=1)
+    valor_referencia = models.DecimalField(max_digits=12, decimal_places=6, null=True, blank=True)
+    valor_referencia_convertido = models.DecimalField(max_digits=12, decimal_places=6, null=True, blank=True)
+    leitura_1 = models.DecimalField(max_digits=12, decimal_places=6, null=True, blank=True)
+    leitura_2 = models.DecimalField(max_digits=12, decimal_places=6, null=True, blank=True)
+    leitura_3 = models.DecimalField(max_digits=12, decimal_places=6, null=True, blank=True)
+    leitura_4 = models.DecimalField(max_digits=12, decimal_places=6, null=True, blank=True)
+    media = models.DecimalField(max_digits=12, decimal_places=6, null=True, blank=True)
+    desvio_padrao = models.DecimalField(max_digits=12, decimal_places=6, null=True, blank=True)
+    erro = models.DecimalField(max_digits=12, decimal_places=6, null=True, blank=True)
+    erro_percentual = models.DecimalField(max_digits=12, decimal_places=6, null=True, blank=True)
+    ema = models.DecimalField(max_digits=12, decimal_places=6, null=True, blank=True)
+    tolerancia = models.DecimalField(max_digits=12, decimal_places=6, null=True, blank=True)
+    criterio = models.CharField(max_length=120, blank=True)
+    criterio_origem = models.CharField(
+        max_length=30,
+        choices=(
+            ("", "---------"),
+            ("cliente", "Tolerância do cliente"),
+            ("fabricante", "Tolerância do fabricante"),
+        ),
+        blank=True,
+        null=True,
+        default="",
+    )
+    criterio_referencia = models.CharField(max_length=255, blank=True, null=True, default="")
+    resultado = models.CharField(max_length=20, choices=RESULTADO_CHOICES, blank=True)
+
+    class Meta:
+        verbose_name = "Ponto de calibração - pressão"
+        verbose_name_plural = "Pontos de calibração - pressão"
+        ordering = ("ordem",)
+
+    def save(self, *args, **kwargs):
+        if self.criterio_origem is None:
+            self.criterio_origem = ""
+        if self.criterio_referencia is None:
+            self.criterio_referencia = ""
+        leituras = [valor for valor in (self.leitura_1, self.leitura_2, self.leitura_3, self.leitura_4) if valor is not None]
+        unidade_origem = self.calibracao.unidade_indicacao
+        unidade_destino = self.calibracao.unidade_padrao
+
+        if self.valor_referencia is not None:
+            self.valor_referencia_convertido = _converter_pressao(
+                self.valor_referencia,
+                unidade_destino,
+                unidade_destino,
+            )
+
+        leituras_convertidas = []
+        for valor in leituras:
+            convertido = _converter_pressao(valor, unidade_origem, unidade_destino)
+            if convertido is not None:
+                leituras_convertidas.append(convertido)
+
+        if leituras_convertidas:
+            media = sum(leituras_convertidas) / len(leituras_convertidas)
+            self.media = Decimal(str(round(float(media), 6)))
+            if len(leituras_convertidas) > 1:
+                media_float = float(media)
+                variancia = sum((float(valor) - media_float) ** 2 for valor in leituras_convertidas) / (len(leituras_convertidas) - 1)
+                self.desvio_padrao = Decimal(str(round(variancia ** 0.5, 6)))
+
+        referencia = self.valor_referencia_convertido
+        if referencia is not None and self.media is not None:
+            self.erro = Decimal(str(round(float(self.media - referencia), 6)))
+            if float(referencia) != 0:
+                self.erro_percentual = Decimal(str(round((float(self.erro) / abs(float(referencia))) * 100, 6)))
+
+        incerteza = (
+            self.calibracao.pontos_incerteza.filter(ordem=self.ordem)
+            .values_list("incerteza_expandida", flat=True)
+            .first()
+        )
+        if self.erro is not None and incerteza is not None:
+            self.ema = Decimal(str(round(float(abs(self.erro)) + float(incerteza), 6)))
+
+        tolerancia_resolvida = self.tolerancia
+        if tolerancia_resolvida is None and self.criterio:
+            tolerancia_resolvida = _extrair_decimal_criterio(self.criterio)
+            if tolerancia_resolvida is not None:
+                self.tolerancia = tolerancia_resolvida
+
+        if tolerancia_resolvida is not None and self.erro is not None:
+            self.resultado = "aprovado" if abs(self.erro) <= tolerancia_resolvida else "reprovado"
+        elif self.erro is not None:
+            self.resultado = ""
+
+        super().save(*args, **kwargs)
+
+        status_final = self.calibracao.calcular_status_final()
+        if status_final != self.calibracao.resultado_final_status:
+            CalibracaoPressao.objects.filter(pk=self.calibracao_id).update(resultado_final_status=status_final)
+
+    def __str__(self):
+        return f"Pressão {self.ordem}"
+
+
+class PressaoIncertezaPonto(models.Model):
+    calibracao = models.ForeignKey(
+        CalibracaoPressao,
+        on_delete=models.CASCADE,
+        related_name="pontos_incerteza",
+    )
+    ordem = models.PositiveSmallIntegerField(default=1)
+    repetibilidade = models.DecimalField(max_digits=12, decimal_places=6, null=True, blank=True)
+    resolucao_instrumento = models.DecimalField(max_digits=12, decimal_places=6, null=True, blank=True)
+    resolucao_padrao = models.DecimalField(max_digits=12, decimal_places=6, null=True, blank=True)
+    incerteza_padrao = models.DecimalField(max_digits=12, decimal_places=6, null=True, blank=True)
+    incerteza_curva = models.DecimalField(max_digits=12, decimal_places=6, null=True, blank=True)
+    fator_k = models.DecimalField(max_digits=8, decimal_places=3, default=2)
+    graus_liberdade = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    incerteza_padrao_combinada = models.DecimalField(max_digits=12, decimal_places=6, null=True, blank=True)
+    incerteza_expandida = models.DecimalField(max_digits=12, decimal_places=6, null=True, blank=True)
+
+    class Meta:
+        verbose_name = "Ponto de incerteza - pressão"
+        verbose_name_plural = "Pontos de incerteza - pressão"
+        ordering = ("ordem",)
+
+    def _obter_padrao_referencia(self):
+        return self.calibracao.padroes_utilizados.filter(tipo="padrao_pressao").order_by("ordem").first()
+
+    def save(self, *args, **kwargs):
+        ponto_calibracao = self.calibracao.pontos_calibracao.filter(ordem=self.ordem).first()
+        padrao_referencia = self._obter_padrao_referencia()
+
+        if self.repetibilidade is None and ponto_calibracao and ponto_calibracao.desvio_padrao is not None:
+            self.repetibilidade = ponto_calibracao.desvio_padrao
+        if self.resolucao_instrumento is None:
+            self.resolucao_instrumento = self.calibracao.menor_resolucao
+        if padrao_referencia:
+            if self.incerteza_padrao is None:
+                self.incerteza_padrao = padrao_referencia.incerteza
+            if self.resolucao_padrao is None:
+                self.resolucao_padrao = padrao_referencia.resolucao
+
+        componentes = [
+            float(valor)
+            for valor in (
+                self.repetibilidade,
+                self.resolucao_instrumento,
+                self.incerteza_padrao,
+                self.resolucao_padrao,
+                self.incerteza_curva,
+            )
+            if valor is not None
+        ]
+
+        if componentes:
+            combinada = sum(valor ** 2 for valor in componentes) ** 0.5
+            self.incerteza_padrao_combinada = Decimal(str(round(combinada, 6)))
+            self.graus_liberdade = Decimal("999999.00")
+            self.fator_k = Decimal("2.000")
+            self.incerteza_expandida = Decimal(str(round(combinada * float(self.fator_k or 2), 6)))
+        else:
+            self.incerteza_padrao_combinada = None
+            self.incerteza_expandida = None
+
+        super().save(*args, **kwargs)
+
+        if ponto_calibracao and ponto_calibracao.erro is not None and self.incerteza_expandida is not None:
+            ponto_calibracao.ema = Decimal(str(round(float(abs(ponto_calibracao.erro)) + float(self.incerteza_expandida), 6)))
+            ponto_calibracao.save(update_fields=["ema"])
+
+    def __str__(self):
+        return f"Incerteza pressão {self.ordem}"
