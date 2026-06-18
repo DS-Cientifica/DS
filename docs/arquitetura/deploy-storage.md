@@ -76,6 +76,21 @@ Variáveis principais no Render:
 - `CSRF_TRUSTED_ORIGINS=https://*.onrender.com`
 - `DATABASE_URL`
 
+### Observação operacional
+
+Para o AXION, o Render Free não deve ser tratado como base oficial de dados.
+
+Motivos:
+
+- banco Postgres Free expira
+- instância expirada pode ficar suspensa
+- não é aderente ao risco operacional de histórico metrológico
+
+Uso recomendado:
+
+- Render como homologação com banco vazio
+- produção apenas com banco pago e backup validado
+
 ## Storage de Arquivos
 
 O projeto usa `STORAGES` do Django.

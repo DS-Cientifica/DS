@@ -619,7 +619,12 @@
                 <h2 class="section-title">V. Despesas e totais</h2>
                 <div class="totals-layout">
                     <div class="commercial-note">
-                        Valores expressos em reais. Tributos, frete e demais condições seguem o cadastro desta proposta.
+                        Valores expressos em reais. Tributos e demais condições seguem o cadastro desta proposta.
+                        {% if proposta.frete == "NA" %}
+                            Frete não incluso nesta proposta.
+                        {% else %}
+                            Frete conforme condição comercial cadastrada nesta proposta: {{ frete }}.
+                        {% endif %}
                     </div>
                     <table class="totals-table">
                         <tbody>
@@ -642,7 +647,17 @@
 
             <section class="proposal-section">
                 <h2 class="section-title">VI. Observações</h2>
-                <div class="text-box">{% if proposta.observacoes %}{{ proposta.observacoes }}{% else %}Conforme condições comerciais descritas nesta proposta.{% endif %}</div>
+                <div class="text-box">
+                    {% if proposta.observacoes %}
+                        {% if proposta.observacoes == "Esta proposta não inclui despesas de deslocamento técnico nem frete. Caso aplicáveis, esses custos serão informados e aprovados previamente pelo cliente." %}
+                            Esta proposta não inclui despesas adicionais de deslocamento técnico. Frete, quando aplicável, seguirá a condição comercial cadastrada nesta proposta e deverá ser previamente aprovado pelo cliente.
+                        {% else %}
+                            {{ proposta.observacoes }}
+                        {% endif %}
+                    {% else %}
+                        Conforme condições comerciais descritas nesta proposta.
+                    {% endif %}
+                </div>
             </section>
 
             {% if proposta.metodo or proposta.padroes_utilizados %}

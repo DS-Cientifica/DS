@@ -10,6 +10,7 @@ O objetivo é deixar claro como o sistema está organizado, quais módulos exist
 - [Módulos do sistema](modulos.md)
 - [Modelo de dados](modelo-de-dados.md)
 - [Deploy, storage e infraestrutura](deploy-storage.md)
+- [Backup local, homologação Render e migração futura](backup-migracao.md)
 - [Decisões arquiteturais](decisoes-arquiteturais.md)
 
 ## Resumo Rápido
