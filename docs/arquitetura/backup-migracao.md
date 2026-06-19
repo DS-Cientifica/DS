@@ -66,6 +66,7 @@ Para base oficial, usar:
 Script incluído no projeto:
 
 - [backup_postgres_local.ps1](C:/Users/User/Desktop/DS_CIENTIFICA_BACKUP_20260525_080751/07_PROJETOS/Projetos_Ativos/SOFTWARE/axion/projeto_ds_cientifica-rev03-170526/scripts/backup_postgres_local.ps1)
+- [sync_backup_archive.ps1](C:/Users/User/Desktop/DS_CIENTIFICA_BACKUP_20260525_080751/07_PROJETOS/Projetos_Ativos/SOFTWARE/axion/projeto_ds_cientifica-rev03-170526/scripts/sync_backup_archive.ps1)
 
 ### O que o script faz
 
@@ -133,6 +134,45 @@ powershell.exe
 
 6. Definir diretório seguro de backup fora da pasta do projeto
 7. Replicar esse diretório para OneDrive, Google Drive, NAS ou bucket
+
+### Replicação para nuvem ou outro disco
+
+O segundo script copia os backups gerados para uma pasta sincronizada, mantendo retenção própria.
+
+Execução manual:
+
+```powershell
+.\scripts\sync_backup_archive.ps1 `
+  -SourceRoot "$env:USERPROFILE\Backups\AXION\PostgreSQL" `
+  -TargetRoot "D:\BackupNuvem\AXION\PostgreSQL"
+```
+
+Se `-TargetRoot` não for informado, o script tenta encontrar automaticamente:
+
+- `OneDrive\Backups\AXION\PostgreSQL`
+- `Google Drive\Backups\AXION\PostgreSQL`
+- `Dropbox\Backups\AXION\PostgreSQL`
+
+### Agendamento da replicação
+
+Criar uma segunda tarefa no Windows, alguns minutos após o backup principal.
+
+Programa:
+
+```text
+powershell.exe
+```
+
+Argumentos:
+
+```text
+-ExecutionPolicy Bypass -File "C:\CAMINHO\DO\PROJETO\scripts\sync_backup_archive.ps1" -TargetRoot "D:\BackupNuvem\AXION\PostgreSQL"
+```
+
+Objetivo:
+
+- manter uma cópia adicional fora da pasta local principal
+- reduzir risco de perda por falha do disco local
 
 ## Homologação no Render
 
