@@ -57,6 +57,7 @@ INSTALLED_APPS = [
     "financeiro",
     "qualidade",
     "planejamento",
+    "core.apps.CoreConfig",
 ]
 
 
