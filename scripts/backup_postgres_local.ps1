@@ -6,7 +6,8 @@ param(
     [string]$BackupRoot = "$env:USERPROFILE\Backups\AXION\PostgreSQL",
     [int]$RetentionDays = 14,
     [string]$PgDumpPath = "",
-    [switch]$PlainSql
+    [switch]$PlainSql,
+    [long]$MinimumBackupSizeBytes = 10240
 )
 
 Set-StrictMode -Version Latest
@@ -34,7 +35,23 @@ function Find-PgDump {
         }
     }
 
-    throw "pg_dump.exe não encontrado. Informe -PgDumpPath ou instale o cliente do PostgreSQL."
+    throw "pg_dump.exe nao encontrado. Informe -PgDumpPath ou instale o cliente do PostgreSQL."
+}
+
+function Find-PgRestore {
+    param([string]$PgDumpExecutable)
+
+    $sameFolder = Join-Path (Split-Path -Parent $PgDumpExecutable) "pg_restore.exe"
+    if (Test-Path $sameFolder) {
+        return (Resolve-Path $sameFolder).Path
+    }
+
+    $fromPath = Get-Command pg_restore.exe -ErrorAction SilentlyContinue
+    if ($fromPath) {
+        return $fromPath.Source
+    }
+
+    throw "pg_restore.exe nao encontrado. A validacao do backup nao pode ser executada."
 }
 
 function Ensure-Password {
@@ -68,7 +85,34 @@ function Remove-ExpiredBackups {
         Remove-Item -Force
 }
 
+function Write-LogLine {
+    param(
+        [string]$Message,
+        [string]$LogPath
+    )
+
+    $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+    "[$timestamp] $Message" | Add-Content -Path $LogPath -Encoding UTF8
+}
+
+function Validate-CustomBackup {
+    param(
+        [string]$PgRestoreExecutable,
+        [string]$BackupFile,
+        [string]$LogPath
+    )
+
+    Write-LogLine -Message "Validando backup custom com pg_restore -l" -LogPath $LogPath
+    $restoreOutput = & $PgRestoreExecutable -l $BackupFile 2>&1
+    $restoreOutput | Add-Content -Path $LogPath -Encoding UTF8
+
+    if ($LASTEXITCODE -ne 0) {
+        throw "Falha na validacao do backup custom. Verifique o log em $LogPath"
+    }
+}
+
 $pgDump = Find-PgDump -PreferredPath $PgDumpPath
+$pgRestore = if (-not $PlainSql) { Find-PgRestore -PgDumpExecutable $pgDump } else { $null }
 Ensure-Password
 
 $timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
@@ -78,6 +122,11 @@ $extension = if ($PlainSql) { "sql" } else { "backup" }
 $dumpFile = Join-Path $BackupRoot "$($DatabaseName)_$timestamp.$extension"
 $logFile = Join-Path $BackupRoot "$($DatabaseName)_$timestamp.log"
 $hashFile = "$dumpFile.sha256"
+
+Set-Content -Path $logFile -Value "" -Encoding UTF8
+Write-LogLine -Message "Iniciando backup do banco $DatabaseName" -LogPath $logFile
+Write-LogLine -Message "Destino: $dumpFile" -LogPath $logFile
+Write-LogLine -Message "Executavel pg_dump: $pgDump" -LogPath $logFile
 
 $args = @(
     "--host=$DatabaseHost"
@@ -104,19 +153,37 @@ else {
 }
 
 Write-Host "Iniciando backup do banco $DatabaseName em $dumpFile"
-& $pgDump @args 2>&1 | Tee-Object -FilePath $logFile
+$dumpOutput = & $pgDump @args 2>&1
+$dumpOutput | Add-Content -Path $logFile -Encoding UTF8
+
+if ($LASTEXITCODE -ne 0) {
+    throw "pg_dump retornou codigo $LASTEXITCODE. Verifique o log em $logFile"
+}
 
 if (-not (Test-Path $dumpFile)) {
-    throw "Backup não foi gerado. Verifique o log em $logFile"
+    throw "Backup nao foi gerado. Verifique o log em $logFile"
+}
+
+$dumpInfo = Get-Item $dumpFile
+Write-LogLine -Message "Arquivo gerado com $($dumpInfo.Length) bytes" -LogPath $logFile
+
+if ($dumpInfo.Length -lt $MinimumBackupSizeBytes) {
+    throw "Backup gerado com tamanho suspeito ($($dumpInfo.Length) bytes). Verifique o log em $logFile"
+}
+
+if (-not $PlainSql) {
+    Validate-CustomBackup -PgRestoreExecutable $pgRestore -BackupFile $dumpFile -LogPath $logFile
 }
 
 $hash = Get-FileHash -Path $dumpFile -Algorithm SHA256
 $hash.Hash | Set-Content -Path $hashFile -Encoding ASCII
+Write-LogLine -Message "Hash SHA256 gerado em $hashFile" -LogPath $logFile
 
 Remove-ExpiredBackups -RootPath $BackupRoot -DaysToKeep $RetentionDays
+Write-LogLine -Message "Rotina concluida com sucesso" -LogPath $logFile
 
 Write-Host ""
-Write-Host "Backup concluído com sucesso."
+Write-Host "Backup concluido com sucesso."
 Write-Host "Arquivo: $dumpFile"
 Write-Host "Hash SHA256: $hashFile"
 Write-Host "Log: $logFile"

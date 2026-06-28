@@ -31,6 +31,14 @@ from .models import (
     PressaoPadraoUtilizado,
     PressaoCalibracaoPonto,
     PressaoIncertezaPonto,
+    CalibracaoCondutividade,
+)
+from .ph_models import (
+    CalibracaoPH,
+    CalibracaoPHPadraoUtilizado,
+    CalibracaoPHPonto,
+    CalibracaoPHIncertezaPonto,
+    _join_address,
 )
 
 
@@ -1484,3 +1492,399 @@ class CalibracaoPressaoAdmin(admin.ModelAdmin):
         )
 
     pdf_certificado.short_description = "Certificado"
+
+
+class PHPadraoInline(admin.TabularInline):
+    model = CalibracaoPHPadraoUtilizado
+    extra = 1
+    autocomplete_fields = ("padrao",)
+    fields = (
+        "tipo",
+        "ordem",
+        "padrao",
+        "codigo",
+        "descricao",
+        "numero_certificado",
+        "laboratorio_emitente",
+        "data_calibracao",
+        "validade",
+        "resolucao",
+        "incerteza",
+        "fator_k",
+        "graus_liberdade",
+        "unidade",
+        "valor_nominal",
+    )
+    verbose_name = "Padrao"
+    verbose_name_plural = "Padroes"
+
+
+class PHCalibracaoEletricaInline(admin.TabularInline):
+    model = CalibracaoPHPonto
+    extra = 3
+    fields = (
+        "ordem",
+        "tipo",
+        "valor_padrao_mv",
+        "leitura_1",
+        "leitura_2",
+        "leitura_3",
+        "media",
+        "desvio_padrao",
+        "erro",
+        "ema",
+        "criterio",
+        "resultado",
+    )
+    readonly_fields = ("media", "desvio_padrao", "erro", "ema")
+    verbose_name = "Ponto de calibracao eletrica"
+    verbose_name_plural = "Calibracao eletrica"
+
+    def get_queryset(self, request):
+        queryset = super().get_queryset(request)
+        return queryset.filter(tipo__in=("eletrica_mv", "eletrica_ph"))
+
+
+class PHCalibracaoMRCInline(admin.TabularInline):
+    model = CalibracaoPHPonto
+    extra = 5
+    fields = (
+        "ordem",
+        "tipo",
+        "valor_padrao_ph",
+        "leitura_1",
+        "leitura_2",
+        "leitura_3",
+        "media",
+        "desvio_padrao",
+        "erro",
+        "ema",
+        "criterio",
+        "resultado",
+    )
+    readonly_fields = ("media", "desvio_padrao", "erro", "ema")
+    verbose_name = "Ponto de calibracao da parte quimica"
+    verbose_name_plural = "Calibracao com parte quimica"
+
+    def get_queryset(self, request):
+        queryset = super().get_queryset(request)
+        return queryset.filter(
+            tipo__in=(
+                "quimica_acida",
+                "quimica_neutra",
+                "quimica_basica",
+                "verificacao_acida",
+                "verificacao_basica",
+                "mrc_acida",
+                "mrc_neutra",
+                "mrc_basica",
+                "mrc_verificacao_acida",
+                "mrc_verificacao_basica",
+            )
+        )
+
+
+class PHIncertezaInline(admin.TabularInline):
+    model = CalibracaoPHIncertezaPonto
+    extra = 1
+    fields = (
+        "ordem",
+        "repetibilidade",
+        "resolucao_instrumento",
+        "resolucao_padrao",
+        "incerteza_padrao",
+        "incerteza_curva",
+        "incerteza_temperatura",
+        "incerteza_constante_faraday",
+        "incerteza_constante_gas",
+        "incerteza_phx",
+        "fator_k",
+        "graus_liberdade",
+        "incerteza_padrao_combinada",
+        "incerteza_expandida",
+    )
+    readonly_fields = ("incerteza_padrao_combinada", "incerteza_expandida")
+    verbose_name = "Ponto de incerteza"
+    verbose_name_plural = "Incerteza"
+
+
+@admin.register(CalibracaoPH)
+class CalibracaoPHAdmin(admin.ModelAdmin):
+
+    change_form_template = "admin/calibracao/calibracaoph/change_form.html"
+
+    list_display = (
+        "numero_certificado",
+        "tipo_calibracao",
+        "instrumento",
+        "cliente",
+        "data_calibracao",
+        "data_emissao",
+        "pdf_certificado",
+    )
+
+    list_filter = ("tipo_calibracao", "local_calibracao", "data_calibracao", "cliente")
+
+    search_fields = (
+        "numero_certificado",
+        "instrumento__codigo",
+        "instrumento__descricao",
+        "cliente__razao_social",
+        "ordem_servico",
+    )
+
+    autocomplete_fields = (
+        "instrumento",
+        "cliente",
+        "procedimento_documento",
+        "responsavel_tecnico_ref",
+        "tecnico_executante_ref",
+    )
+
+    readonly_fields = ("numero_certificado", "procedimento_numero", "procedimento_revisao", "resultado_final_status", "resultado_final")
+
+    fieldsets = (
+        ("Planilha - Informacoes Gerais", {
+            "fields": (
+                "numero_certificado",
+                "ordem_servico",
+                "data_calibracao",
+                "data_emissao",
+                "revisao",
+                "instrumento",
+                "cliente",
+                "contratante",
+                "endereco_contratante",
+                "endereco_cliente",
+                "local_calibracao",
+                "tipo_calibracao",
+                "tipo_indicacao",
+            )
+        }),
+        ("Planilha - Equipamento", {
+            "fields": (
+                "equipamento_calibrado",
+                "numero_identificacao",
+                "marca",
+                "modelo",
+                "numero_serie",
+                "capacidade_total",
+                "faixa_calibrada",
+                "menor_resolucao",
+                "resolucao_mv",
+                "resolucao_ph",
+                "identificacao_eletrodo",
+                "resolucao_termometro",
+                "temperatura_referencia",
+                "slope_indicado",
+                "id_sensor_temperatura",
+                "unidade_leitura",
+                "tipo_sensor_temperatura",
+            )
+        }),
+        ("Certificado - Procedimento e Ambiente", {
+            "fields": (
+                "procedimento_documento",
+                "procedimento_numero",
+                "procedimento_revisao",
+                "temperatura_inicial",
+                "temperatura_final",
+                "umidade_inicial",
+                "umidade_final",
+                "ajuste_efetuado",
+            )
+        }),
+        ("Certificado - Responsaveis e Observacoes", {
+            "fields": (
+                "responsavel_tecnico_ref",
+                "tecnico_executante_ref",
+                "funcao_signatario",
+                "signatario_autorizado",
+                "resultado_final_status",
+                "resultado_final",
+                "observacoes_certificado",
+            )
+        }),
+    )
+
+    inlines = [
+        PHPadraoInline,
+        PHCalibracaoEletricaInline,
+        PHCalibracaoMRCInline,
+        PHIncertezaInline,
+    ]
+
+    class Media:
+        js = ("js/calibracao_ph.js",)
+
+    def get_form(self, request, obj=None, change=False, **kwargs):
+        form = super().get_form(request, obj=obj, change=change, **kwargs)
+        instrumento_field = form.base_fields.get("instrumento")
+        if instrumento_field:
+            instrumento_url = reverse(
+                "admin:calibracao_calibracaoph_instrumento_dados",
+                args=["00000000-0000-0000-0000-000000000000"],
+            )
+            instrumento_field.widget.attrs["data-instrumento-dados-url"] = instrumento_url.replace(
+                "00000000-0000-0000-0000-000000000000",
+                "__instrumento__",
+            )
+        return form
+
+    def get_changeform_initial_data(self, request):
+        initial = super().get_changeform_initial_data(request)
+        responsavel = ResponsavelCertificado.objects.filter(nome="Diego Henrique Alves Saldanha").first()
+        if responsavel:
+            initial.setdefault("responsavel_tecnico_ref", responsavel.pk)
+            initial.setdefault("tecnico_executante_ref", responsavel.pk)
+            initial.setdefault("funcao_signatario", responsavel.cargo)
+        return initial
+
+    def formfield_for_foreignkey(self, db_field, request, **kwargs):
+        if db_field.name == "procedimento_documento":
+            kwargs["queryset"] = Documento.objects.filter(
+                tipo__in=("procedimento", "instrucao", "metodo"),
+                status="vigente",
+            ).order_by("codigo", "titulo")
+        return super().formfield_for_foreignkey(db_field, request, **kwargs)
+
+    def get_urls(self):
+        urls = super().get_urls()
+        custom_urls = [
+            path(
+                "instrumento/<uuid:instrumento_id>/dados/",
+                self.admin_site.admin_view(self.instrumento_dados_view),
+                name="calibracao_calibracaoph_instrumento_dados",
+            ),
+            path(
+                "<int:pk>/pdf/",
+                self.admin_site.admin_view(self.pdf_view),
+                name="calibracao_calibracaoph_pdf",
+            ),
+        ]
+        return custom_urls + urls
+
+    def instrumento_dados_view(self, request, instrumento_id):
+        instrumento = get_object_or_404(Instrumento.objects.select_related("cliente"), pk=instrumento_id)
+        cliente = instrumento.cliente
+        try:
+            tecnico = instrumento.tecnico
+        except InstrumentoTecnico.DoesNotExist:
+            tecnico = None
+
+        return JsonResponse({
+            "cliente": {
+                "id": str(cliente.pk),
+                "text": str(cliente),
+                "razao_social": cliente.razao_social,
+            },
+            "contratante": cliente.razao_social or "",
+            "endereco_contratante": _join_address(cliente),
+            "endereco_cliente": _join_address(cliente),
+            "local_calibracao": CalibracaoPH._normalizar_local_calibracao(instrumento.local_instalacao),
+            "equipamento_calibrado": instrumento.descricao or "Medidor de pH",
+            "numero_identificacao": instrumento.codigo or "",
+            "marca": instrumento.marca or "",
+            "modelo": instrumento.modelo or "",
+            "numero_serie": instrumento.numero_serie or "",
+            "capacidade_total": (tecnico.capacidade_total if tecnico and tecnico.capacidade_total else instrumento.modelo or ""),
+            "faixa_calibrada": tecnico.faixa_medicao if tecnico else "",
+            "menor_resolucao": str(tecnico.menor_resolucao) if tecnico and tecnico.menor_resolucao is not None else "",
+            "unidade_leitura": tecnico.unidade if tecnico else "",
+            "tipo_indicacao": "digital" if tecnico and tecnico.classe else "",
+            "resolucao_mv": str(tecnico.menor_resolucao) if tecnico and tecnico.menor_resolucao is not None else "",
+            "resolucao_ph": str(tecnico.menor_resolucao) if tecnico and tecnico.menor_resolucao is not None else "",
+            "identificacao_eletrodo": instrumento.codigo or "",
+            "id_sensor_temperatura": "",
+        })
+
+    def pdf_view(self, request, pk):
+        from .views import pdf_calibracao_ph
+
+        return pdf_calibracao_ph(request, pk)
+
+    def pdf_certificado(self, obj):
+        return format_html(
+            "<a class='button' href='{}' target='_blank'>Gerar PDF</a>",
+            reverse("admin:calibracao_calibracaoph_pdf", args=[obj.pk]),
+        )
+
+    pdf_certificado.short_description = "Certificado"
+
+
+@admin.register(CalibracaoCondutividade)
+class CalibracaoCondutividadeAdmin(admin.ModelAdmin):
+    list_display = (
+        "numero_certificado",
+        "cliente",
+        "instrumento",
+        "data_calibracao",
+        "resultado_final",
+        "status",
+    )
+    list_filter = ("status", "resultado_final", "local_calibracao")
+    search_fields = (
+        "numero_certificado",
+        "cliente__razao_social",
+        "instrumento__codigo",
+        "instrumento__descricao",
+    )
+    autocomplete_fields = ("cliente", "instrumento")
+    fieldsets = (
+        ("Identificação", {
+            "fields": (
+                "cliente",
+                "instrumento",
+                "ordem_servico",
+                "numero_certificado",
+                "revisao",
+            )
+        }),
+        ("Datas e status", {
+            "fields": (
+                "data_calibracao",
+                "data_emissao",
+                "local_calibracao",
+                "status",
+                "resultado_final",
+            )
+        }),
+        ("Dados do equipamento", {
+            "fields": (
+                "contratante",
+                "endereco_contratante",
+                "endereco_cliente",
+                "equipamento_calibrado",
+                "numero_identificacao",
+                "marca",
+                "modelo",
+                "numero_serie",
+                "faixa_capacidade",
+                "resolucao",
+                "unidade_indicacao",
+                "unidade_padrao",
+                "unidade_leitura",
+                "temperatura_referencia",
+                "identificacao_celula",
+                "constante_celula",
+                "compensacao_temperatura",
+            )
+        }),
+        ("Responsáveis", {
+            "fields": (
+                "tecnico_responsavel",
+                "responsavel_conferencia",
+                "signatario_autorizado",
+                "funcao_signatario",
+            )
+        }),
+        ("Ambiente e controle", {
+            "fields": (
+                "temperatura_ambiente",
+                "umidade_ambiente",
+                "observacoes",
+                "snapshot_json",
+                "pdf_arquivo",
+            )
+        }),
+    )

@@ -5,6 +5,7 @@ from django.http import FileResponse
 from django.shortcuts import get_object_or_404, render
 
 from .models import Calibracao, CalibracaoColorimetro, CalibracaoPressao, CalibracaoTurbidez, _converter_pressao
+from .ph_models import CalibracaoPH
 from .pdf import gerar_pdf_calibracao
 
 EMPRESA_CERTIFICADO = {
@@ -42,6 +43,12 @@ def _valor_ou_traco(valor, casas=6):
         return f"{Decimal(str(valor)):.{casas}f}".replace(".", ",")
     except Exception:
         return str(valor)
+
+
+def _alerta_ou_valor(valor, vazio="ALERTA"):
+    if valor in (None, ""):
+        return vazio
+    return str(valor)
 
 
 def _pressao_leitura_pdf(ponto, campo, calibracao, usar_media_fallback=False):
@@ -314,3 +321,107 @@ def pdf_calibracao_pressao(request, pk):
         "curva_calibracao": curva_calibracao,
     }
     return render(request, "calibracao/pressao_pdf.html", context)
+
+
+@login_required
+def pdf_calibracao_ph(request, pk):
+    calibracao = get_object_or_404(
+        CalibracaoPH.objects.select_related(
+            "instrumento",
+            "cliente",
+            "procedimento_documento",
+            "responsavel_tecnico_ref",
+            "tecnico_executante_ref",
+        ).prefetch_related(
+            "padroes_utilizados",
+            "pontos_calibracao",
+            "pontos_incerteza",
+        ),
+        pk=pk,
+    )
+
+    padroes_por_tipo = {}
+    for padrao in calibracao.padroes_utilizados.all():
+        padroes_por_tipo.setdefault(padrao.get_tipo_display(), []).append(padrao)
+
+    pontos_incerteza = list(calibracao.pontos_incerteza.all())
+    pontos_incerteza_por_ordem = {ponto.ordem: ponto for ponto in pontos_incerteza}
+    fator_k_certificado = next(
+        (ponto.fator_k for ponto in pontos_incerteza if ponto.fator_k not in (None, "")),
+        None,
+    )
+    graus_liberdade_certificado = next(
+        (ponto.graus_liberdade for ponto in pontos_incerteza if ponto.graus_liberdade not in (None, "")),
+        None,
+    )
+
+    resultados_calibracao = []
+    for ponto in calibracao.pontos_calibracao.all():
+        incerteza = pontos_incerteza_por_ordem.get(ponto.ordem)
+        referencia = ponto.valor_padrao_ph if ponto.valor_padrao_ph is not None else ponto.valor_padrao_mv
+        resultados_calibracao.append(
+            {
+                "ordem": ponto.ordem,
+                "tipo": ponto.get_tipo_display(),
+                "referencia": referencia,
+                "leitura_equipamento": ponto.media,
+                "erro": ponto.erro,
+                "incerteza_expandida": getattr(incerteza, "incerteza_expandida", None),
+                "fator_k": getattr(incerteza, "fator_k", None),
+                "graus_liberdade": getattr(incerteza, "graus_liberdade", None),
+                "ema": ponto.ema,
+                "resultado": ponto.resultado,
+            }
+        )
+
+    resultados_eletrica = [
+        item for item in resultados_calibracao
+        if str(item["tipo"]).lower().startswith("eletrica")
+    ]
+    resultados_mrc = [
+        item for item in resultados_calibracao
+        if item not in resultados_eletrica
+    ]
+
+    context = {
+        "empresa": {
+            **EMPRESA_CERTIFICADO,
+            "codigo_documento": calibracao.procedimento_documento.codigo if calibracao.procedimento_documento else EMPRESA_CERTIFICADO["codigo_documento"],
+        },
+        "calibracao": calibracao,
+        "padroes_por_tipo": padroes_por_tipo,
+        "resultados_calibracao": resultados_calibracao,
+        "resultados_eletrica": resultados_eletrica,
+        "resultados_mrc": resultados_mrc,
+        "pontos_incerteza": pontos_incerteza,
+        "fator_k_certificado": fator_k_certificado,
+        "graus_liberdade_certificado": graus_liberdade_certificado,
+        "formatar_decimal": _formatar_decimal,
+        "valor_ou_traco": _valor_ou_traco,
+        "document_title": "Certificado de Calibracao de Medidor de pH",
+        "document_subtitle": calibracao.get_tipo_calibracao_display(),
+        "unit_label": calibracao.unidade_leitura or "pH",
+        "resultado_final": calibracao.resultado_final_resolvido,
+        "descricao_equipamento": _alerta_ou_valor(calibracao.equipamento_calibrado or calibracao.instrumento.descricao),
+        "numero_identificacao": _alerta_ou_valor(calibracao.numero_identificacao or calibracao.instrumento.codigo),
+        "marca": _alerta_ou_valor(calibracao.marca or calibracao.instrumento.marca),
+        "numero_serie": _alerta_ou_valor(calibracao.numero_serie or calibracao.instrumento.numero_serie),
+        "capacidade_ph": _alerta_ou_valor(calibracao.capacidade_total or "0 a 14 pH"),
+        "capacidade_mv": _alerta_ou_valor("-500 a 500 mV"),
+        "resolucao_ph": _alerta_ou_valor(calibracao.resolucao_ph or "0,01 pH"),
+        "resolucao_mv": _alerta_ou_valor(calibracao.resolucao_mv or "0,1 mV"),
+        "temperatura_referencia": _alerta_ou_valor(calibracao.temperatura_referencia or "25 °C", vazio="-"),
+        "tipo_sensor_temperatura": _alerta_ou_valor(calibracao.tipo_sensor_temperatura),
+        "identificacao_sensor_temperatura": _alerta_ou_valor(calibracao.id_sensor_temperatura),
+        "identificacao_eletrodo": _alerta_ou_valor(calibracao.identificacao_eletrodo),
+        "calibracao_canal": "NÃO APLICÁVEL",
+        "local_calibracao_label": _alerta_ou_valor(calibracao.get_local_calibracao_display()),
+        "ordem_servico_label": _alerta_ou_valor(calibracao.ordem_servico or "0", vazio="0"),
+        "slope_real": calibracao.calculo_inclinacao_real(),
+        "slope_indicado": calibracao.slope_indicado,
+        "slope_teorico": calibracao.slope_teorico(),
+        "ph0": calibracao.calculo_pH0(),
+        "eficiencia_eletromotriz": calibracao.eficiencia_eletromotriz(),
+        "slope_relativo": calibracao.slope_relativo(),
+    }
+    return render(request, "calibracao/ph_pdf.html", context)

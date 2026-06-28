@@ -1,0 +1,405 @@
+{% load static %}
+<!doctype html>
+<html lang="pt-BR">
+<head>
+    <meta charset="utf-8">
+    <title>{{ calibracao.numero_certificado|default:document_title }}</title>
+    <style>
+        :root {
+            --ink: #172033;
+            --muted: #5f6b7a;
+            --line: #b9c1cd;
+            --paper: #ffffff;
+            --soft: #f4f6f9;
+            --primary: #283864;
+        }
+        @page { size: A4; margin: 16mm 14mm 18mm; }
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            color: var(--ink);
+            background: var(--paper);
+            font-family: Arial, Helvetica, sans-serif;
+            font-size: 11px;
+            line-height: 1.35;
+        }
+        .sheet { width: 100%; }
+        .document-header {
+            position: relative;
+            display: flex;
+            justify-content: center;
+            min-height: 28mm;
+            padding-bottom: 5mm;
+            border-bottom: 2px solid var(--primary);
+            margin-bottom: 6mm;
+        }
+        .logo-wrap {
+            position: absolute;
+            left: 0;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 26mm;
+        }
+        .logo-wrap img {
+            width: 23mm;
+            height: 23mm;
+            object-fit: contain;
+            display: block;
+        }
+        .header-content { width: 100%; text-align: center; }
+        .company-name { margin: 0; color: #1f4e5f; font-size: 18px; font-weight: 800; }
+        .document-title { margin: 3px 0 0; color: #1d3fbf; font-size: 18px; font-weight: 800; }
+        .document-subtitle { margin: 4px 0 0; color: #50555c; font-size: 12px; }
+        .company-line, .document-code { margin-top: 3px; color: var(--muted); font-size: 10px; }
+        .document-code { margin-top: 6px; font-weight: 700; }
+        .equipment-details {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 4px 14px;
+        }
+        .equipment-row { display: contents; }
+        .equipment-label {
+            font-style: italic;
+            font-weight: 800;
+            text-transform: uppercase;
+        }
+        .equipment-value {
+            text-align: left;
+            font-style: italic;
+            color: #222;
+        }
+        .equipment-value.alert {
+            color: #fff;
+            background: #c00000;
+            font-weight: 800;
+            padding: 2px 6px;
+            display: inline-block;
+            min-width: 38mm;
+        }
+        .equipment-value.na {
+            color: #555;
+        }
+        .meta-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+            margin-bottom: 12px;
+        }
+        .panel {
+            border: 1px solid var(--line);
+            border-radius: 4px;
+            overflow: hidden;
+            background: var(--paper);
+        }
+        .panel-title {
+            padding: 8px 10px;
+            background: var(--soft);
+            border-bottom: 1px solid var(--line);
+            color: var(--primary);
+            font-size: 12px;
+            font-weight: 800;
+            text-transform: uppercase;
+        }
+        .panel-body { padding: 10px; }
+        .line-item { margin: 4px 0; }
+        .section { margin-top: 14px; page-break-inside: avoid; }
+        .section-title {
+            margin: 0 0 8px;
+            color: #1d3fbf;
+            font-size: 13px;
+            font-weight: 800;
+            font-style: italic;
+            text-transform: uppercase;
+            border-bottom: 2px solid #1d3fbf;
+            padding-bottom: 3px;
+        }
+        table { width: 100%; border-collapse: collapse; }
+        th, td {
+            border: 1px solid var(--line);
+            padding: 6px 7px;
+            vertical-align: top;
+            text-align: left;
+        }
+        th {
+            background: var(--soft);
+            color: var(--primary);
+            font-weight: 800;
+        }
+        .results-table {
+            table-layout: fixed;
+            font-size: 10px;
+        }
+        .results-table th,
+        .results-table td {
+            padding: 5px 4px;
+            word-break: break-word;
+            overflow-wrap: anywhere;
+        }
+        .results-table thead th { text-align: center; }
+        .results-table tbody td { text-align: center; }
+        .results-table tbody td:first-child { text-align: left; }
+        .technical-text { text-align: justify; line-height: 1.6; }
+        .signature-wrap {
+            margin-top: 20mm;
+            display: flex;
+            justify-content: center;
+            text-align: center;
+        }
+        .signature-box {
+            width: 75mm;
+            border-top: 1px solid #444;
+            padding-top: 8px;
+        }
+        .signature-name { font-weight: 800; }
+        .signature-role { color: var(--muted); margin-top: 2px; }
+    </style>
+</head>
+<body>
+<div class="sheet">
+    <header class="document-header">
+        <div class="logo-wrap">
+            <img src="{% static 'img/logo_ds.png' %}" alt="DS Cientifica">
+        </div>
+        <div class="header-content">
+            <h1 class="company-name">{{ empresa.nome }}</h1>
+            <div class="company-line">{{ empresa.email }} | {{ empresa.site }}</div>
+            <div class="company-line">{{ empresa.telefone }} | CNPJ: {{ empresa.cnpj }}</div>
+            <h2 class="document-title">{{ document_title }}</h2>
+            <div class="document-subtitle">{{ document_subtitle }}</div>
+            <div class="document-code">{{ empresa.codigo_documento }}</div>
+        </div>
+    </header>
+
+    <div class="meta-grid">
+        <section class="panel">
+            <div class="panel-title">Informacoes gerais</div>
+            <div class="panel-body">
+                <div class="line-item"><strong>Certificado:</strong> {{ calibracao.numero_certificado }}</div>
+                <div class="line-item"><strong>OS:</strong> {{ calibracao.ordem_servico|default:"-" }}</div>
+                <div class="line-item"><strong>Data da calibracao:</strong> {{ calibracao.data_calibracao|default:"-" }}</div>
+                <div class="line-item"><strong>Data da emissao:</strong> {{ calibracao.data_emissao|default:"-" }}</div>
+                <div class="line-item"><strong>Cliente:</strong> {{ calibracao.cliente }}</div>
+                <div class="line-item"><strong>Contratante:</strong> {{ calibracao.contratante|default:"-" }}</div>
+                <div class="line-item"><strong>Local:</strong> {{ calibracao.get_local_calibracao_display }}</div>
+                <div class="line-item"><strong>Tipo:</strong> {{ calibracao.get_tipo_calibracao_display }}</div>
+            </div>
+        </section>
+        <section class="panel">
+            <div class="panel-title">Equipamento</div>
+            <div class="panel-body">
+                <div class="equipment-details">
+                    <div class="equipment-row">
+                        <div class="equipment-label">Equipamento:</div>
+                        <div class="equipment-value">{{ descricao_equipamento }}</div>
+                    </div>
+                    <div class="equipment-row">
+                        <div class="equipment-label">N° Identificação:</div>
+                        <div class="equipment-value {% if numero_identificacao == 'ALERTA' %}alert{% endif %}">{{ numero_identificacao }}</div>
+                    </div>
+                    <div class="equipment-row">
+                        <div class="equipment-label">Marca:</div>
+                        <div class="equipment-value {% if marca == 'ALERTA' %}alert{% endif %}">{{ marca }}</div>
+                    </div>
+                    <div class="equipment-row">
+                        <div class="equipment-label">N° Série:</div>
+                        <div class="equipment-value {% if numero_serie == 'ALERTA' %}alert{% endif %}">{{ numero_serie }}</div>
+                    </div>
+                    <div class="equipment-row">
+                        <div class="equipment-label">Modelo:</div>
+                        <div class="equipment-value {% if calibracao.modelo or calibracao.instrumento.modelo %}{% else %}alert{% endif %}">{{ calibracao.modelo|default:calibracao.instrumento.modelo|default:"ALERTA" }}</div>
+                    </div>
+                    <div class="equipment-row">
+                        <div class="equipment-label">Capacidade em pH:</div>
+                        <div class="equipment-value">{{ capacidade_ph }}</div>
+                    </div>
+                    <div class="equipment-row">
+                        <div class="equipment-label">Capacidade em mV:</div>
+                        <div class="equipment-value">{{ capacidade_mv }}</div>
+                    </div>
+                    <div class="equipment-row">
+                        <div class="equipment-label">Resolução em pH:</div>
+                        <div class="equipment-value">{{ resolucao_ph }}</div>
+                    </div>
+                    <div class="equipment-row">
+                        <div class="equipment-label">Resolução em mV:</div>
+                        <div class="equipment-value">{{ resolucao_mv }}</div>
+                    </div>
+                    <div class="equipment-row">
+                        <div class="equipment-label">Temperatura de referência:</div>
+                        <div class="equipment-value">{{ temperatura_referencia }}</div>
+                    </div>
+                    <div class="equipment-row">
+                        <div class="equipment-label">Tipo de sensor (temperatura):</div>
+                        <div class="equipment-value {% if tipo_sensor_temperatura == 'ALERTA' %}alert{% endif %}">{{ tipo_sensor_temperatura }}</div>
+                    </div>
+                    <div class="equipment-row">
+                        <div class="equipment-label">Identificação sensor temperatura:</div>
+                        <div class="equipment-value {% if identificacao_sensor_temperatura == 'ALERTA' %}alert{% endif %}">{{ identificacao_sensor_temperatura }}</div>
+                    </div>
+                    <div class="equipment-row">
+                        <div class="equipment-label">Identificação do eletrodo:</div>
+                        <div class="equipment-value {% if identificacao_eletrodo == 'ALERTA' %}alert{% endif %}">{{ identificacao_eletrodo }}</div>
+                    </div>
+                    <div class="equipment-row">
+                        <div class="equipment-label">N° de série do eletrodo:</div>
+                        <div class="equipment-value {% if identificacao_eletrodo == 'ALERTA' %}alert{% endif %}">{{ identificacao_eletrodo }}</div>
+                    </div>
+                    <div class="equipment-row">
+                        <div class="equipment-label">Calibração realizada no canal:</div>
+                        <div class="equipment-value na">{{ calibracao_canal }}</div>
+                    </div>
+                    <div class="equipment-row">
+                        <div class="equipment-label">Local de calibração:</div>
+                        <div class="equipment-value {% if local_calibracao_label == 'ALERTA' %}alert{% endif %}">{{ local_calibracao_label }}</div>
+                    </div>
+                    <div class="equipment-row">
+                        <div class="equipment-label">Ordem de serviço:</div>
+                        <div class="equipment-value">{{ ordem_servico_label }}</div>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </div>
+
+    <section class="section">
+        <h3 class="section-title">Padroes utilizados</h3>
+        <table>
+            <thead>
+                <tr>
+                    <th>Tipo</th>
+                    <th>Codigo</th>
+                    <th>Certificado</th>
+                    <th>Laboratorio</th>
+                    <th>Validade</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for grupo, itens in padroes_por_tipo.items %}
+                    {% for item in itens %}
+                        <tr>
+                            <td>{{ grupo }}</td>
+                            <td>{{ item.codigo|default:"-" }}</td>
+                            <td>{{ item.numero_certificado|default:"-" }}</td>
+                            <td>{{ item.laboratorio_emitente|default:"-" }}</td>
+                            <td>{{ item.validade|default:"-" }}</td>
+                        </tr>
+                    {% endfor %}
+                {% empty %}
+                <tr><td colspan="5">Nenhum padrao informado.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </section>
+
+    <section class="section">
+        <h3 class="section-title">Calibração elétrica</h3>
+        <table class="results-table">
+            <thead>
+                <tr>
+                    <th>Ponto</th>
+                    <th>Tipo</th>
+                    <th>Referência (mV)</th>
+                    <th>Leitura média</th>
+                    <th>Erro</th>
+                    <th>EMA</th>
+                    <th>Resultado</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in resultados_eletrica %}
+                <tr>
+                    <td>{{ item.ordem }}</td>
+                    <td>{{ item.tipo }}</td>
+                    <td>{{ item.referencia|default:"-" }}</td>
+                    <td>{{ item.leitura_equipamento|default:"-" }}</td>
+                    <td>{{ item.erro|default:"-" }}</td>
+                    <td>{{ item.ema|default:"-" }}</td>
+                    <td>{{ item.resultado|default:"-" }}</td>
+                </tr>
+                {% empty %}
+                <tr><td colspan="7">Nenhum ponto elétrico cadastrado.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </section>
+
+    <section class="section">
+        <h3 class="section-title">Calibração com parte química</h3>
+        <table class="results-table">
+            <thead>
+                <tr>
+                    <th>Ponto</th>
+                    <th>Tipo</th>
+                    <th>Referência (pH)</th>
+                    <th>Leitura média</th>
+                    <th>Erro</th>
+                    <th>EMA</th>
+                    <th>Resultado</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in resultados_mrc %}
+                <tr>
+                    <td>{{ item.ordem }}</td>
+                    <td>{{ item.tipo }}</td>
+                    <td>{{ item.referencia|default:"-" }}</td>
+                    <td>{{ item.leitura_equipamento|default:"-" }}</td>
+                    <td>{{ item.erro|default:"-" }}</td>
+                    <td>{{ item.ema|default:"-" }}</td>
+                    <td>{{ item.resultado|default:"-" }}</td>
+                </tr>
+                {% empty %}
+                <tr><td colspan="7">Nenhum ponto da parte química cadastrado.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </section>
+
+    <section class="section">
+        <div class="equipment-panel">
+            <div class="equipment-grid" style="grid-template-columns: 1fr 1fr;">
+                <div class="equipment-label">Slope indicado pelo equipamento na escala básica</div>
+                <div>{{ slope_indicado|default:"--------" }}</div>
+                <div class="equipment-label">Slope teórico calculado</div>
+                <div>{{ slope_teorico|default:"--------" }}</div>
+            </div>
+            <table style="margin-top: 10px;">
+                <thead>
+                    <tr>
+                        <th>Temperatura Padrão &deg;C</th>
+                        <th>MRC de calibração pH</th>
+                        <th>Leitura mV</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>{{ calibracao.temperatura_referencia|default:"-" }}</td>
+                        <td>{{ resultados_mrc.0.referencia|default:"-" }}</td>
+                        <td>{{ resultados_eletrica.0.leitura_equipamento|default:"-" }}</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </section>
+
+    <section class="section">
+        <h3 class="section-title">Calculos consolidados</h3>
+        <div class="technical-text">
+            <p><strong>Slope real:</strong> {{ slope_real|default:"-" }}</p>
+            <p><strong>pH0:</strong> {{ ph0|default:"-" }}</p>
+            <p><strong>Eficiencia eletromotriz:</strong> {{ eficiencia_eletromotriz|default:"-" }}</p>
+            <p><strong>Slope relativo:</strong> {{ slope_relativo|default:"-" }}</p>
+            <p><strong>Veff:</strong> &infin;</p>
+            <p><strong>Resultado final:</strong> {{ resultado_final|default:"-" }}</p>
+        </div>
+    </section>
+
+    <section class="signature-wrap">
+        <div class="signature-box">
+            <div class="signature-name">{{ calibracao.signatario_autorizado|default:calibracao.tecnico_responsavel|default:"-" }}</div>
+            <div class="signature-role">{{ calibracao.funcao_signatario|default:"Responsavel tecnico" }}</div>
+        </div>
+    </section>
+</div>
+</body>
+</html>

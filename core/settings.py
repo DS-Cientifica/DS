@@ -53,6 +53,7 @@ INSTALLED_APPS = [
     "storages",
     "clientes",
     "calibracao",
+    "manutencao.apps.ManutencaoConfig",
     "comercial",
     "financeiro",
     "qualidade",

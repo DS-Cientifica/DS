@@ -12,6 +12,7 @@ from calibracao.models import Calibracao, Instrumento, OrdemServico, Padrao
 from clientes.models import Cliente
 from comercial.models import CRMRegistro, CRMTicket, ProdutoServico, Proposta
 from financeiro.models import ContaPagar, ContaReceber, Imposto
+from manutencao.models import Manutencao
 from planejamento.models import PlanejamentoServico
 from qualidade.models import Documento
 
@@ -434,8 +435,10 @@ def dashboard(request):
                 "calibracao.view_calibracaoturbidez",
                 "calibracao.view_calibracaocolorimetro",
                 "calibracao.view_calibracaopressao",
+                "calibracao.view_calibracaoph",
             ],
         ),
+        "manutencao": _has_any_perm(user, ["manutencao.view_manutencao"]),
         "qualidade": _has_any_perm(user, ["qualidade.view_documento", "qualidade.view_documentorevisao"]),
         "planejamento": _has_any_perm(user, ["planejamento.view_planejamentoservico"]),
     }
@@ -444,6 +447,8 @@ def dashboard(request):
         {"rotulo": "Nova proposta", "url": reverse("admin:comercial_proposta_add"), "icone": "PR", "modulo": "comercial"},
         {"rotulo": "Novo cliente", "url": reverse("admin:clientes_cliente_add"), "icone": "CL", "modulo": "clientes"},
         {"rotulo": "Novo instrumento", "url": reverse("admin:calibracao_instrumento_add"), "icone": "IN", "modulo": "calibracao"},
+        {"rotulo": "Nova calibraÃ§Ã£o pH", "url": reverse("admin:calibracao_calibracaoph_add"), "icone": "PH", "modulo": "calibracao"},
+        {"rotulo": "Nova manutenÃ§Ã£o", "url": reverse("admin:manutencao_manutencao_add"), "icone": "MN", "modulo": "manutencao"},
         {"rotulo": "Conta a receber", "url": reverse("admin:financeiro_contareceber_add"), "icone": "RC", "modulo": "financeiro"},
         {"rotulo": "Conta a pagar", "url": reverse("admin:financeiro_contapagar_add"), "icone": "PG", "modulo": "financeiro"},
         {"rotulo": "Planejamento", "url": reverse("admin:planejamento_planejamentoservico_calendario"), "icone": "PL", "modulo": "planejamento"},
@@ -495,6 +500,7 @@ def dashboard(request):
             {"rotulo": "Nova proposta", "url": reverse("admin:comercial_proposta_add"), "icone": "PR"},
             {"rotulo": "Novo cliente", "url": reverse("admin:clientes_cliente_add"), "icone": "CL"},
             {"rotulo": "Novo instrumento", "url": reverse("admin:calibracao_instrumento_add"), "icone": "IN"},
+            {"rotulo": "Nova calibraÃ§Ã£o pH", "url": reverse("admin:calibracao_calibracaoph_add"), "icone": "PH"},
             {"rotulo": "Conta a receber", "url": reverse("admin:financeiro_contareceber_add"), "icone": "RC"},
             {"rotulo": "Conta a pagar", "url": reverse("admin:financeiro_contapagar_add"), "icone": "PG"},
             {"rotulo": "Planejamento", "url": reverse("admin:planejamento_planejamentoservico_calendario"), "icone": "PL"},
@@ -524,6 +530,7 @@ def dashboard(request):
             "oportunidades": oportunidades_abertas.count(),
             "tickets": tickets_abertos.count(),
             "planejamentos": PlanejamentoServico.objects.count(),
+            "manutencoes": Manutencao.objects.count(),
         },
         "admin_url": reverse("admin:index"),
         "refresh_url": f"{reverse('dashboard')}?periodo={periodo_atual}",

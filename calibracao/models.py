@@ -8,6 +8,13 @@ from django.utils.text import slugify
 from dateutil.relativedelta import relativedelta
 from clientes.models import Cliente
 from qualidade.models import Documento
+from .services.ph_meter_calculation import (
+    average as ph_average,
+    calcular_incerteza as ph_calcular_incerteza,
+    error as ph_error,
+    teorico_ph_from_mv as ph_teorico_ph_from_mv,
+    stdev as ph_stdev,
+)
 
 
 PRESSAO_UNIDADE_FATORES = {
@@ -2291,3 +2298,79 @@ class PressaoIncertezaPonto(models.Model):
 
     def __str__(self):
         return f"Incerteza pressão {self.ordem}"
+
+class CalibracaoCondutividade(models.Model):
+    LOCAL_CALIBRACAO_CHOICES = (
+        ("laboratorio", "Laboratório"),
+        ("externo", "Externo"),
+    )
+
+    STATUS_CHOICES = (
+        ("rascunho", "Rascunho"),
+        ("em_analise", "Em análise"),
+        ("emitida", "Emitida"),
+        ("cancelada", "Cancelada"),
+    )
+
+    RESULTADO_CHOICES = (
+        ("aprovado", "Aprovado"),
+        ("aprovado_ressalva", "Aprovado com ressalva"),
+        ("reprovado", "Reprovado"),
+    )
+
+    cliente = models.ForeignKey(
+        Cliente,
+        on_delete=models.PROTECT,
+        related_name="calibracoes_condutividade",
+    )
+    instrumento = models.ForeignKey(
+        Instrumento,
+        on_delete=models.PROTECT,
+        related_name="calibracoes_condutividade",
+    )
+    ordem_servico = models.CharField(max_length=50, blank=True)
+    numero_certificado = models.CharField(max_length=80, unique=True)
+    revisao = models.CharField(max_length=20, blank=True)
+    data_calibracao = models.DateField()
+    data_emissao = models.DateField(null=True, blank=True)
+    local_calibracao = models.CharField(max_length=20, choices=LOCAL_CALIBRACAO_CHOICES, default="laboratorio")
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="rascunho")
+    resultado_final = models.CharField(max_length=30, choices=RESULTADO_CHOICES, default="aprovado")
+    contratante = models.CharField(max_length=255, blank=True)
+    endereco_contratante = models.CharField(max_length=255, blank=True)
+    endereco_cliente = models.CharField(max_length=255, blank=True)
+    equipamento_calibrado = models.CharField(max_length=255, blank=True)
+    numero_identificacao = models.CharField(max_length=100, blank=True)
+    marca = models.CharField(max_length=100, blank=True)
+    modelo = models.CharField(max_length=100, blank=True)
+    numero_serie = models.CharField(max_length=100, blank=True)
+    faixa_capacidade = models.CharField(max_length=120, blank=True)
+    resolucao = models.CharField(max_length=50, blank=True)
+    unidade_indicacao = models.CharField(max_length=20, blank=True, default="mS/cm")
+    unidade_padrao = models.CharField(max_length=20, blank=True, default="mS/cm")
+    unidade_leitura = models.CharField(max_length=20, blank=True, default="mS/cm")
+    temperatura_referencia = models.DecimalField(max_digits=8, decimal_places=3, null=True, blank=True)
+    identificacao_celula = models.CharField(max_length=100, blank=True)
+    constante_celula = models.DecimalField(max_digits=12, decimal_places=6, null=True, blank=True)
+    compensacao_temperatura = models.CharField(max_length=100, blank=True)
+    tecnico_responsavel = models.CharField(max_length=255, blank=True)
+    responsavel_conferencia = models.CharField(max_length=255, blank=True)
+    signatario_autorizado = models.CharField(max_length=255, blank=True)
+    funcao_signatario = models.CharField(max_length=255, blank=True)
+    temperatura_ambiente = models.DecimalField(max_digits=8, decimal_places=3, null=True, blank=True)
+    umidade_ambiente = models.DecimalField(max_digits=8, decimal_places=3, null=True, blank=True)
+    observacoes = models.TextField(blank=True)
+    snapshot_json = models.JSONField(default=dict, blank=True)
+    pdf_arquivo = models.FileField(upload_to="calibracoes/condutividade/", null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Calibração de Condutividade"
+        verbose_name_plural = "Calibrações de Condutividade"
+        ordering = ("-data_calibracao", "-created_at")
+
+    def __str__(self):
+        return f"{self.numero_certificado} - {self.instrumento}"
+
+from . import ph_models
