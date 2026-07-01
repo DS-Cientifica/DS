@@ -1,0 +1,63 @@
+{% extends "admin/base_site.html" %}
+{% load i18n static %}
+
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+<a href="{% url 'admin:index' %}">{% translate 'Home' %}</a>
+&rsaquo; <a href="{% url 'admin:app_list' app_label=opts.app_label %}">{{ opts.app_config.verbose_name }}</a>
+&rsaquo; <a href="{% url 'admin:calibracao_instrumento_changelist' %}">{{ opts.verbose_name_plural|capfirst }}</a>
+&rsaquo; {{ title }}
+</div>
+{% endblock %}
+
+{% block content %}
+<div id="content-main">
+    <div class="module aligned">
+        <h1>{{ title }}</h1>
+        <p>Use esta tela para cadastrar instrumentos em lote por planilha Excel.</p>
+        <p>
+            Identificacao do cliente aceita, nesta ordem:
+            <strong>cliente_codigo</strong>,
+            <strong>cliente_cnpj</strong> ou
+            <strong>cliente_razao_social</strong>.
+        </p>
+        <p>
+            Colunas obrigatorias:
+            <strong>codigo</strong> e
+            <strong>descricao</strong>.
+        </p>
+        <p>
+            Duplicidade bloqueada:
+            <strong>codigo</strong> ja existente e combinacao
+            <strong>cliente + tag</strong>.
+        </p>
+        <p>
+            A coluna <strong>tag</strong> pode ficar vazia, mas isso nao e recomendado quando o cliente possui identificacao em campo.
+        </p>
+        <div class="module" style="margin: 16px 0; padding: 12px 16px;">
+            <h2 style="margin-top: 0;">Legenda das colunas</h2>
+            <p><strong>codigo</strong>: identificador interno do instrumento no sistema. Ex.: <code>EQ-0001</code>.</p>
+            <p><strong>tag</strong>: identificacao operacional ou fisica do equipamento na planta. Ex.: <code>PT-101</code>.</p>
+            <p><strong>tag vazia</strong>: permitida para clientes que nao adotam TAG, porem com menor rastreabilidade operacional.</p>
+            <p><strong>status</strong>: estado operacional do cadastro. Valores aceitos: <code>ativo</code>, <code>inativo</code> ou <code>manutencao</code>.</p>
+            <p><strong>ativo</strong>: indica se o cadastro permanece ativo no sistema. Valores aceitos: <code>sim</code> ou <code>nao</code>.</p>
+            <p><strong>cliente_codigo</strong>: codigo interno do cliente. Ex.: <code>CL-0001</code>.</p>
+            <p><strong>cliente_cnpj</strong>: CNPJ do cliente, usado como alternativa de identificacao.</p>
+            <p><strong>cliente_razao_social</strong>: razao social do cliente, usada como alternativa quando nao houver codigo ou CNPJ.</p>
+        </div>
+        <p>
+            <a class="button" href="{{ download_model_url }}">Baixar modelo .xlsx</a>
+        </p>
+        <form method="post" enctype="multipart/form-data" novalidate>
+            {% csrf_token %}
+            <fieldset class="module aligned">
+                {{ form.as_p }}
+            </fieldset>
+            <div class="submit-row">
+                <input type="submit" value="Importar planilha" class="default">
+                <a href="{% url 'admin:calibracao_instrumento_changelist' %}" class="button cancel-link">Voltar</a>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

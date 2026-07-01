@@ -162,7 +162,8 @@ class Instrumento(models.Model):
     modelo = models.CharField(max_length=100, blank=True)
     local_instalacao = models.CharField(max_length=200, blank=True)
 
-    numero_serie = models.CharField(max_length=100, blank=True, null=True)
+    numero_serie = models.CharField(max_length=100, blank=True, null=True)
+    tag = models.CharField(max_length=100, blank=True)
 
     cliente = models.ForeignKey(
         Cliente,
@@ -213,7 +214,63 @@ class Instrumento(models.Model):
 # =========================
 # INSTRUMENTO TÉCNICO
 # =========================
-class InstrumentoTecnico(models.Model):
+def _instrumento_clean(self):
+    super(Instrumento, self).clean()
+    if not self.cliente_id:
+        return
+
+    tag = (self.tag or "").strip()
+
+    if tag:
+        duplicado = Instrumento.objects.filter(
+            cliente_id=self.cliente_id,
+            tag__iexact=tag,
+        )
+        if self.pk:
+            duplicado = duplicado.exclude(pk=self.pk)
+        if duplicado.exists():
+            raise ValidationError(
+                {
+                    "tag": (
+                        "Já existe um instrumento cadastrado para este cliente com o mesmo número de série "
+                        "e a mesma TAG."
+                    )
+                }
+            )
+
+
+Instrumento.clean = _instrumento_clean
+
+
+def _instrumento_clean_por_cliente_tag(self):
+    super(Instrumento, self).clean()
+    if not self.cliente_id:
+        return
+
+    tag = (self.tag or "").strip()
+    if not tag:
+        return
+
+    duplicado = Instrumento.objects.filter(
+        cliente_id=self.cliente_id,
+        tag__iexact=tag,
+    )
+    if self.pk:
+        duplicado = duplicado.exclude(pk=self.pk)
+    if duplicado.exists():
+        raise ValidationError(
+            {
+                "tag": (
+                    "JÃ¡ existe um instrumento cadastrado para este cliente com a mesma TAG."
+                )
+            }
+        )
+
+
+Instrumento.clean = _instrumento_clean_por_cliente_tag
+
+
+class InstrumentoTecnico(models.Model):
 
     instrumento = models.OneToOneField(
         Instrumento,

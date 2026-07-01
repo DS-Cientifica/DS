@@ -1,11 +1,18 @@
+from datetime import datetime
+from decimal import Decimal, InvalidOperation
+from io import BytesIO
+
 from django import forms
-from django.contrib import admin
-from django.http import JsonResponse
-from django.shortcuts import get_object_or_404
+from django.contrib import admin, messages
+from django.db import transaction
+from django.http import HttpResponse, JsonResponse
+from django.shortcuts import get_object_or_404, redirect, render
 from django.utils.html import format_html, format_html_join
 from django.utils.safestring import mark_safe
 from django.urls import path, reverse
+from openpyxl import Workbook, load_workbook
 
+from clientes.models import Cliente
 from qualidade.models import Documento
 
 from .models import (
@@ -64,6 +71,22 @@ class InstrumentoTecnicoInline(admin.StackedInline):
     )
 
 
+class InstrumentoAdminForm(forms.ModelForm):
+    class Meta:
+        model = Instrumento
+        fields = "__all__"
+
+    class Media:
+        js = ("js/admin_instrumento_duplicate_alert.js",)
+
+
+class InstrumentoImportForm(forms.Form):
+    arquivo = forms.FileField(
+        label="Planilha Excel",
+        help_text="Envie um arquivo .xlsx seguindo o modelo disponibilizado.",
+    )
+
+
 # =========================
 # RESPONSÁVEIS
 # =========================
@@ -82,6 +105,8 @@ class ResponsavelCertificadoAdmin(admin.ModelAdmin):
 
 @admin.register(Instrumento)
 class InstrumentoAdmin(admin.ModelAdmin):
+    form = InstrumentoAdminForm
+    change_list_template = "admin/calibracao/instrumento/change_list.html"
 
     list_display = (
         "codigo",
@@ -89,6 +114,7 @@ class InstrumentoAdmin(admin.ModelAdmin):
         "marca",
         "modelo",
         "numero_serie",
+        "tag",
         "cliente",
         "status",
         "ver_certificados_padroes",
@@ -105,6 +131,7 @@ class InstrumentoAdmin(admin.ModelAdmin):
         "marca",
         "modelo",
         "numero_serie",
+        "tag",
         "cliente__razao_social",
     )
 
@@ -134,6 +161,7 @@ class InstrumentoAdmin(admin.ModelAdmin):
                 "marca",
                 "modelo",
                 "numero_serie",
+                "tag",
             )
         }),
 
@@ -165,6 +193,470 @@ class InstrumentoAdmin(admin.ModelAdmin):
         InstrumentoTecnicoInline,
         PeriodicidadeInline,
     ]
+
+    def get_urls(self):
+        urls = super().get_urls()
+        custom_urls = [
+            path(
+                "importar-excel/",
+                self.admin_site.admin_view(self.importar_excel_view),
+                name="calibracao_instrumento_importar_excel",
+            ),
+            path(
+                "modelo-importacao/",
+                self.admin_site.admin_view(self.download_modelo_importacao_view),
+                name="calibracao_instrumento_modelo_importacao",
+            ),
+            path(
+                "exportar-excel/",
+                self.admin_site.admin_view(self.exportar_excel_view),
+                name="calibracao_instrumento_exportar_excel",
+            ),
+            path(
+                "check-duplicate/",
+                self.admin_site.admin_view(self.check_duplicate_view),
+                name="calibracao_instrumento_check_duplicate",
+            )
+        ]
+        return custom_urls + urls
+
+    def check_duplicate_view(self, request):
+        cliente_id = request.GET.get("cliente_id")
+        numero_serie = (request.GET.get("numero_serie") or "").strip()
+        codigo = ""
+        tag = (request.GET.get("tag") or "").strip()
+        object_id = request.GET.get("object_id")
+
+        if not cliente_id:
+            return JsonResponse({"duplicate": False})
+
+        if numero_serie and tag:
+            qs_serie = Instrumento.objects.filter(
+                cliente_id=cliente_id,
+                numero_serie__iexact=numero_serie,
+                tag__iexact=tag,
+            )
+            if object_id:
+                qs_serie = qs_serie.exclude(pk=object_id)
+            if qs_serie.exists():
+                return JsonResponse(
+                    {
+                        "duplicate": True,
+                        "message": "Já existe instrumento cadastrado para este cliente com o mesmo número de série e a mesma TAG.",
+                    }
+                )
+
+        if codigo:
+            qs_codigo = Instrumento.objects.filter(codigo__iexact=codigo)
+            if object_id:
+                qs_codigo = qs_codigo.exclude(pk=object_id)
+            if qs_codigo.exists():
+                return JsonResponse(
+                    {
+                        "duplicate": True,
+                        "message": "Já existe instrumento cadastrado com a mesma TAG/código.",
+                    }
+                )
+
+        return JsonResponse({"duplicate": False})
+
+    def importar_excel_view(self, request):
+        if not self.has_add_permission(request):
+            return redirect("admin:calibracao_instrumento_changelist")
+
+        form = InstrumentoImportForm(request.POST or None, request.FILES or None)
+        if request.method == "POST" and form.is_valid():
+            try:
+                resultado = self._processar_planilha_importacao(form.cleaned_data["arquivo"])
+            except ValueError as exc:
+                self.message_user(request, str(exc), level=messages.ERROR)
+            else:
+                if resultado["criados"]:
+                    self.message_user(
+                        request,
+                        f'{resultado["criados"]} instrumento(s) importado(s) com sucesso.',
+                        level=messages.SUCCESS,
+                    )
+                if resultado["ignorados"]:
+                    self.message_user(
+                        request,
+                        f'{resultado["ignorados"]} linha(s) ignorada(s) por estarem vazias.',
+                        level=messages.WARNING,
+                    )
+                if resultado.get("sem_tag"):
+                    self.message_user(
+                        request,
+                        f'{resultado["sem_tag"]} linha(s) importada(s) sem TAG. Isso e permitido, mas reduz a rastreabilidade operacional.',
+                        level=messages.WARNING,
+                    )
+                if resultado["erros"]:
+                    resumo = " | ".join(resultado["erros"][:10])
+                    if len(resultado["erros"]) > 10:
+                        resumo += f' | ... e mais {len(resultado["erros"]) - 10} erro(s).'
+                    self.message_user(request, resumo, level=messages.ERROR)
+                if not any(resultado.values()):
+                    self.message_user(
+                        request,
+                        "Nenhuma linha válida foi encontrada na planilha.",
+                        level=messages.WARNING,
+                    )
+                return redirect("admin:calibracao_instrumento_changelist")
+
+        context = {
+            **self.admin_site.each_context(request),
+            "opts": self.model._meta,
+            "title": "Importar instrumentos por Excel",
+            "subtitle": "Cadastro em lote de instrumentos",
+            "form": form,
+            "download_model_url": reverse("admin:calibracao_instrumento_modelo_importacao"),
+        }
+        return render(request, "admin/calibracao/instrumento/importar_excel.html", context)
+
+    def download_modelo_importacao_view(self, request):
+        workbook = Workbook()
+        worksheet = workbook.active
+        worksheet.title = "Instrumentos"
+        headers = [
+            "cliente_codigo",
+            "cliente_cnpj",
+            "cliente_razao_social",
+            "codigo",
+            "descricao",
+            "marca",
+            "modelo",
+            "numero_serie",
+            "tag",
+            "local_instalacao",
+            "status",
+            "proxima_calibracao",
+            "ativo",
+            "faixa_medicao",
+            "capacidade_total",
+            "menor_resolucao",
+            "unidade",
+            "classe",
+            "observacoes",
+        ]
+        worksheet.append(headers)
+        worksheet.append(
+            [
+                "CL-0001",
+                "",
+                "",
+                "EQ-0001",
+                "Manômetro analógico",
+                "Wika",
+                "232.50",
+                "SN-12345",
+                "PT-101",
+                "Linha 1",
+                "ativo",
+                "2026-12-31",
+                "sim",
+                "0 a 10 bar",
+                "10 bar",
+                "0.1000",
+                "bar",
+                "A",
+                "Cadastro inicial via importação",
+            ]
+        )
+        for column_cells in worksheet.columns:
+            max_length = max(len(str(cell.value or "")) for cell in column_cells)
+            worksheet.column_dimensions[column_cells[0].column_letter].width = min(max(max_length + 2, 15), 28)
+
+        output = BytesIO()
+        workbook.save(output)
+        output.seek(0)
+
+        response = HttpResponse(
+            output.getvalue(),
+            content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+        response["Content-Disposition"] = 'attachment; filename="modelo_importacao_instrumentos.xlsx"'
+        return response
+
+    def exportar_excel_view(self, request):
+        changelist = self.get_changelist_instance(request)
+        queryset = changelist.get_queryset(request).select_related("cliente").prefetch_related("padroes")
+
+        workbook = Workbook()
+        worksheet = workbook.active
+        worksheet.title = "Instrumentos"
+        headers = [
+            "cliente_codigo",
+            "cliente_razao_social",
+            "cliente_cnpj",
+            "codigo",
+            "descricao",
+            "marca",
+            "modelo",
+            "numero_serie",
+            "tag",
+            "local_instalacao",
+            "status",
+            "proxima_calibracao",
+            "ativo",
+            "faixa_medicao",
+            "capacidade_total",
+            "menor_resolucao",
+            "unidade",
+            "classe",
+            "observacoes",
+            "metodo_calibracao",
+            "padroes",
+        ]
+        worksheet.append(headers)
+
+        for instrumento in queryset:
+            try:
+                tecnico = instrumento.tecnico
+            except InstrumentoTecnico.DoesNotExist:
+                tecnico = None
+
+            worksheet.append(
+                [
+                    getattr(instrumento.cliente, "codigo", ""),
+                    getattr(instrumento.cliente, "razao_social", ""),
+                    getattr(instrumento.cliente, "cnpj", ""),
+                    instrumento.codigo,
+                    instrumento.descricao,
+                    instrumento.marca,
+                    instrumento.modelo,
+                    instrumento.numero_serie,
+                    instrumento.tag,
+                    instrumento.local_instalacao,
+                    instrumento.status,
+                    instrumento.proxima_calibracao.isoformat() if instrumento.proxima_calibracao else "",
+                    "sim" if instrumento.ativo else "nao",
+                    getattr(tecnico, "faixa_medicao", "") if tecnico else "",
+                    getattr(tecnico, "capacidade_total", "") if tecnico else "",
+                    str(getattr(tecnico, "menor_resolucao", "") or "") if tecnico else "",
+                    getattr(tecnico, "unidade", "") if tecnico else "",
+                    getattr(tecnico, "classe", "") if tecnico else "",
+                    getattr(tecnico, "observacoes", "") if tecnico else "",
+                    getattr(instrumento.metodo_calibracao, "codigo", "") if instrumento.metodo_calibracao else "",
+                    ", ".join(instrumento.padroes.values_list("codigo", flat=True)),
+                ]
+            )
+
+        for column_cells in worksheet.columns:
+            max_length = max(len(str(cell.value or "")) for cell in column_cells)
+            worksheet.column_dimensions[column_cells[0].column_letter].width = min(max(max_length + 2, 15), 32)
+
+        output = BytesIO()
+        workbook.save(output)
+        output.seek(0)
+
+        response = HttpResponse(
+            output.getvalue(),
+            content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+        response["Content-Disposition"] = 'attachment; filename="instrumentos_exportados.xlsx"'
+        return response
+
+    def _processar_planilha_importacao(self, arquivo):
+        nome = (getattr(arquivo, "name", "") or "").lower()
+        if not nome.endswith(".xlsx"):
+            raise ValueError("Formato inválido. Envie uma planilha .xlsx.")
+
+        try:
+            workbook = load_workbook(arquivo, data_only=True)
+        except Exception as exc:
+            raise ValueError(f"Não foi possível ler a planilha enviada: {exc}") from exc
+
+        worksheet = workbook.active
+        linhas = list(worksheet.iter_rows(values_only=True))
+        if not linhas:
+            raise ValueError("A planilha está vazia.")
+
+        headers = [self._normalizar_cabecalho_excel(valor) for valor in linhas[0]]
+        obrigatorios = {"codigo", "descricao"}
+        ausentes = sorted(campo for campo in obrigatorios if campo not in headers)
+        if ausentes:
+            raise ValueError(
+                "A planilha não contém as colunas obrigatórias: " + ", ".join(ausentes) + "."
+            )
+
+        criados = 0
+        ignorados = 0
+        sem_tag = 0
+        erros = []
+        for indice, valores in enumerate(linhas[1:], start=2):
+            registro = {
+                headers[posicao]: valores[posicao] if posicao < len(valores) else None
+                for posicao in range(len(headers))
+                if headers[posicao]
+            }
+            if self._linha_excel_vazia(registro):
+                ignorados += 1
+                continue
+            if not self._texto_excel(registro.get("tag")):
+                sem_tag += 1
+            try:
+                with transaction.atomic():
+                    self._criar_instrumento_importado(registro)
+                criados += 1
+            except Exception as exc:
+                erros.append(f"Linha {indice}: {exc}")
+
+        return {"criados": criados, "ignorados": ignorados, "sem_tag": sem_tag, "erros": erros}
+
+    def _criar_instrumento_importado(self, registro):
+        cliente = self._resolver_cliente_importacao(registro)
+        codigo = self._texto_excel(registro.get("codigo"))
+        descricao = self._texto_excel(registro.get("descricao"))
+        numero_serie = self._texto_excel(registro.get("numero_serie"))
+        tag = self._texto_excel(registro.get("tag"))
+
+        if not codigo:
+            raise ValueError("campo 'codigo' é obrigatório.")
+        if not descricao:
+            raise ValueError("campo 'descricao' é obrigatório.")
+        if not cliente:
+            raise ValueError(
+                "cliente não encontrado. Informe 'cliente_codigo', 'cliente_cnpj' ou 'cliente_razao_social'."
+            )
+        if Instrumento.objects.filter(codigo__iexact=codigo).exists():
+            raise ValueError(f"já existe instrumento cadastrado com o código '{codigo}'.")
+        if tag and Instrumento.objects.filter(
+            cliente=cliente,
+            tag__iexact=tag,
+        ).exists():
+            raise ValueError(
+                "já existe instrumento para este cliente com o mesmo número de série e a mesma TAG."
+            )
+
+        instrumento = Instrumento(
+            cliente=cliente,
+            codigo=codigo,
+            descricao=descricao,
+            marca=self._texto_excel(registro.get("marca")),
+            modelo=self._texto_excel(registro.get("modelo")),
+            numero_serie=numero_serie or None,
+            tag=tag,
+            local_instalacao=self._texto_excel(registro.get("local_instalacao")),
+            status=self._normalizar_status_importacao(registro.get("status")),
+            proxima_calibracao=self._normalizar_data_excel(registro.get("proxima_calibracao")),
+            ativo=self._normalizar_booleano_excel(registro.get("ativo"), default=True),
+        )
+        instrumento.full_clean()
+        instrumento.save()
+
+        tecnico_campos = {
+            "faixa_medicao": self._texto_excel(registro.get("faixa_medicao")),
+            "capacidade_total": self._texto_excel(registro.get("capacidade_total")),
+            "menor_resolucao": self._normalizar_decimal_excel(registro.get("menor_resolucao")),
+            "unidade": self._texto_excel(registro.get("unidade")),
+            "classe": self._texto_excel(registro.get("classe")),
+            "observacoes": self._texto_excel(registro.get("observacoes")),
+        }
+        if any(valor not in (None, "") for valor in tecnico_campos.values()):
+            InstrumentoTecnico.objects.update_or_create(
+                instrumento=instrumento,
+                defaults=tecnico_campos,
+            )
+
+    def _resolver_cliente_importacao(self, registro):
+        cliente_codigo = self._texto_excel(registro.get("cliente_codigo"))
+        cliente_cnpj = self._texto_excel(registro.get("cliente_cnpj"))
+        cliente_razao = self._texto_excel(registro.get("cliente_razao_social"))
+
+        if cliente_codigo:
+            cliente = Cliente.objects.filter(codigo__iexact=cliente_codigo).first()
+            if cliente:
+                return cliente
+        if cliente_cnpj:
+            cliente = Cliente.objects.filter(cnpj__iexact=cliente_cnpj).first()
+            if cliente:
+                return cliente
+        if cliente_razao:
+            cliente = Cliente.objects.filter(razao_social__iexact=cliente_razao).first()
+            if cliente:
+                return cliente
+        return None
+
+    @staticmethod
+    def _texto_excel(valor):
+        if valor is None:
+            return ""
+        if isinstance(valor, str):
+            return valor.strip()
+        return str(valor).strip()
+
+    @staticmethod
+    def _normalizar_cabecalho_excel(valor):
+        texto = InstrumentoAdmin._texto_excel(valor).lower()
+        substituicoes = {
+            "á": "a",
+            "à": "a",
+            "ã": "a",
+            "â": "a",
+            "é": "e",
+            "ê": "e",
+            "í": "i",
+            "ó": "o",
+            "ô": "o",
+            "õ": "o",
+            "ú": "u",
+            "ç": "c",
+        }
+        for origem, destino in substituicoes.items():
+            texto = texto.replace(origem, destino)
+        return texto.replace(" ", "_")
+
+    @staticmethod
+    def _linha_excel_vazia(registro):
+        return not any(valor not in (None, "") for valor in registro.values())
+
+    @staticmethod
+    def _normalizar_status_importacao(valor):
+        texto = InstrumentoAdmin._texto_excel(valor).lower()
+        if texto in {"", "ativo"}:
+            return "ativo"
+        if texto == "inativo":
+            return "inativo"
+        if texto in {"manutencao", "manutenção", "em manutencao", "em manutenção"}:
+            return "manutencao"
+        raise ValueError(f"status inválido: '{valor}'. Use ativo, inativo ou manutencao.")
+
+    @staticmethod
+    def _normalizar_booleano_excel(valor, default=True):
+        texto = InstrumentoAdmin._texto_excel(valor).lower()
+        if texto == "":
+            return default
+        if texto in {"1", "sim", "s", "true", "verdadeiro", "ativo"}:
+            return True
+        if texto in {"0", "nao", "não", "n", "false", "falso", "inativo"}:
+            return False
+        raise ValueError(f"valor booleano inválido: '{valor}'. Use sim/não.")
+
+    @staticmethod
+    def _normalizar_data_excel(valor):
+        if valor in (None, ""):
+            return None
+        if isinstance(valor, datetime):
+            return valor.date()
+        if hasattr(valor, "year") and hasattr(valor, "month") and hasattr(valor, "day"):
+            return valor
+        texto = InstrumentoAdmin._texto_excel(valor)
+        for formato in ("%Y-%m-%d", "%d/%m/%Y", "%d-%m-%Y"):
+            try:
+                return datetime.strptime(texto, formato).date()
+            except ValueError:
+                continue
+        raise ValueError(f"data inválida: '{valor}'. Use YYYY-MM-DD ou DD/MM/AAAA.")
+
+    @staticmethod
+    def _normalizar_decimal_excel(valor):
+        if valor in (None, ""):
+            return None
+        if isinstance(valor, Decimal):
+            return valor
+        try:
+            return Decimal(str(valor).replace(",", "."))
+        except (InvalidOperation, TypeError, ValueError) as exc:
+            raise ValueError(f"valor decimal inválido: '{valor}'.") from exc
 
     def ver_certificados_padroes(self, obj):
         links = [
