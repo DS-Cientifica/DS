@@ -1,0 +1,98 @@
+{% extends "admin/change_form.html" %}
+{% load i18n admin_urls static admin_modify %}
+
+{% block extrastyle %}
+{{ block.super }}
+<style>
+    .campanha-tabs {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin: 18px 0 20px;
+    }
+
+    .campanha-tab {
+        appearance: none;
+        background: #fff;
+        border: 1px solid #17324d;
+        border-radius: 8px;
+        color: #17324d;
+        cursor: pointer;
+        font-size: 14px;
+        font-weight: 700;
+        padding: 10px 16px;
+    }
+
+    .campanha-tab.is-active {
+        background: #17324d;
+        color: #fff;
+    }
+
+    .campanha-panel {
+        display: none;
+    }
+
+    .campanha-panel.is-active {
+        display: block;
+    }
+
+    .campanha-panel .inline-group,
+    .campanha-panel .module {
+        margin-top: 0;
+    }
+
+    .campanha-panel .tabular.inline-related thead th {
+        white-space: normal;
+    }
+</style>
+{% endblock %}
+
+{% block field_sets %}
+    <nav class="campanha-tabs" aria-label="Etapas da campanha">
+        <button type="button" class="campanha-tab is-active" data-tab-target="dados-campanha">Campanha</button>
+        <button type="button" class="campanha-tab" data-tab-target="midias-campanha">Midias</button>
+    </nav>
+
+    <section class="campanha-panel is-active" data-tab-panel="dados-campanha">
+        {% for fieldset in adminform %}
+            {% include "admin/includes/fieldset.html" with heading_level=2 prefix="fieldset" id_prefix=0 id_suffix=forloop.counter0 %}
+        {% endfor %}
+    </section>
+{% endblock %}
+
+{% block inline_field_sets %}
+    {% for inline_admin_formset in inline_admin_formsets %}
+        {% if forloop.counter0 == 0 %}
+            <section class="campanha-panel" data-tab-panel="midias-campanha">
+                {% include inline_admin_formset.opts.template %}
+            </section>
+        {% else %}
+            {% include inline_admin_formset.opts.template %}
+        {% endif %}
+    {% endfor %}
+{% endblock %}
+
+{% block admin_change_form_document_ready %}
+    {{ block.super }}
+    <script>
+        document.addEventListener("DOMContentLoaded", function () {
+            const tabs = Array.from(document.querySelectorAll(".campanha-tab"));
+            const panels = Array.from(document.querySelectorAll(".campanha-panel"));
+
+            function activateTab(target) {
+                tabs.forEach((tab) => {
+                    tab.classList.toggle("is-active", tab.dataset.tabTarget === target);
+                });
+                panels.forEach((panel) => {
+                    panel.classList.toggle("is-active", panel.dataset.tabPanel === target);
+                });
+            }
+
+            tabs.forEach((tab) => {
+                tab.addEventListener("click", function () {
+                    activateTab(tab.dataset.tabTarget);
+                });
+            });
+        });
+    </script>
+{% endblock %}

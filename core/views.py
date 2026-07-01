@@ -14,6 +14,7 @@ from comercial.models import CRMRegistro, CRMTicket, ProdutoServico, Proposta
 from financeiro.models import ContaPagar, ContaReceber, Imposto
 from manutencao.models import Manutencao
 from planejamento.models import PlanejamentoServico
+from projetos.models import CampanhaMarketing, Projeto
 from qualidade.models import Documento
 
 
@@ -441,17 +442,31 @@ def dashboard(request):
         "manutencao": _has_any_perm(user, ["manutencao.view_manutencao"]),
         "qualidade": _has_any_perm(user, ["qualidade.view_documento", "qualidade.view_documentorevisao"]),
         "planejamento": _has_any_perm(user, ["planejamento.view_planejamentoservico"]),
+        "projetos": _has_any_perm(
+            user,
+            [
+                "projetos.view_projeto",
+                "projetos.view_projetotarefa",
+                "projetos.view_projetoteste",
+                "projetos.view_projetocusto",
+                "projetos.view_projetoarquivo",
+                "projetos.view_campanhamarketing",
+                "projetos.view_midiamarketing",
+            ],
+        ),
     }
 
     atalho_defs = [
         {"rotulo": "Nova proposta", "url": reverse("admin:comercial_proposta_add"), "icone": "PR", "modulo": "comercial"},
         {"rotulo": "Novo cliente", "url": reverse("admin:clientes_cliente_add"), "icone": "CL", "modulo": "clientes"},
         {"rotulo": "Novo instrumento", "url": reverse("admin:calibracao_instrumento_add"), "icone": "IN", "modulo": "calibracao"},
-        {"rotulo": "Nova calibraÃ§Ã£o pH", "url": reverse("admin:calibracao_calibracaoph_add"), "icone": "PH", "modulo": "calibracao"},
-        {"rotulo": "Nova manutenÃ§Ã£o", "url": reverse("admin:manutencao_manutencao_add"), "icone": "MN", "modulo": "manutencao"},
+        {"rotulo": "Nova calibra\u00e7\u00e3o pH", "url": reverse("admin:calibracao_calibracaoph_add"), "icone": "PH", "modulo": "calibracao"},
+        {"rotulo": "Nova manuten\u00e7\u00e3o", "url": reverse("admin:manutencao_manutencao_add"), "icone": "MN", "modulo": "manutencao"},
         {"rotulo": "Conta a receber", "url": reverse("admin:financeiro_contareceber_add"), "icone": "RC", "modulo": "financeiro"},
         {"rotulo": "Conta a pagar", "url": reverse("admin:financeiro_contapagar_add"), "icone": "PG", "modulo": "financeiro"},
         {"rotulo": "Planejamento", "url": reverse("admin:planejamento_planejamentoservico_calendario"), "icone": "PL", "modulo": "planejamento"},
+        {"rotulo": "Projetos", "url": reverse("admin:projetos_projeto_changelist"), "icone": "PD", "modulo": "projetos"},
+        {"rotulo": "Marketing", "url": reverse("admin:projetos_campanhamarketing_changelist"), "icone": "MK", "modulo": "projetos"},
         {"rotulo": "Documento", "url": reverse("admin:qualidade_documento_add"), "icone": "DOC", "modulo": "qualidade"},
         {"rotulo": "Gestão documental", "url": "#qualidade-section", "icone": "QD", "modulo": "qualidade"},
     ]
@@ -473,7 +488,7 @@ def dashboard(request):
         alertas = [
             alerta for alerta in alertas
             if (
-                (alerta["titulo"] in ("CalibraÃ§Ãµes vencidas", "PadrÃµes vencidos", "PrÃ³ximos 7 dias") and modulos["calibracao"]) or
+                (alerta["titulo"] in ("Calibra\u00e7\u00f5es vencidas", "Padr\u00f5es vencidos", "Pr\u00f3ximos 7 dias") and modulos["calibracao"]) or
                 (alerta["titulo"] in ("Contas atrasadas", "Impostos vencidos") and modulos["financeiro"]) or
                 (alerta["titulo"] in ("Docs vencendo", "Docs vencidos") and modulos["qualidade"]) or
                 (alerta["titulo"] == "Tickets urgentes" and modulos["comercial"]) or
@@ -500,10 +515,12 @@ def dashboard(request):
             {"rotulo": "Nova proposta", "url": reverse("admin:comercial_proposta_add"), "icone": "PR"},
             {"rotulo": "Novo cliente", "url": reverse("admin:clientes_cliente_add"), "icone": "CL"},
             {"rotulo": "Novo instrumento", "url": reverse("admin:calibracao_instrumento_add"), "icone": "IN"},
-            {"rotulo": "Nova calibraÃ§Ã£o pH", "url": reverse("admin:calibracao_calibracaoph_add"), "icone": "PH"},
+            {"rotulo": "Nova calibra\u00e7\u00e3o pH", "url": reverse("admin:calibracao_calibracaoph_add"), "icone": "PH"},
             {"rotulo": "Conta a receber", "url": reverse("admin:financeiro_contareceber_add"), "icone": "RC"},
             {"rotulo": "Conta a pagar", "url": reverse("admin:financeiro_contapagar_add"), "icone": "PG"},
             {"rotulo": "Planejamento", "url": reverse("admin:planejamento_planejamentoservico_calendario"), "icone": "PL"},
+            {"rotulo": "Projetos", "url": reverse("admin:projetos_projeto_changelist"), "icone": "PD"},
+            {"rotulo": "Marketing", "url": reverse("admin:projetos_campanhamarketing_changelist"), "icone": "MK"},
             {"rotulo": "Documento", "url": reverse("admin:qualidade_documento_add"), "icone": "DOC"},
             {"rotulo": "Gestão documental", "url": "#qualidade-section", "icone": "QD"},
         ],
@@ -531,6 +548,8 @@ def dashboard(request):
             "tickets": tickets_abertos.count(),
             "planejamentos": PlanejamentoServico.objects.count(),
             "manutencoes": Manutencao.objects.count(),
+            "projetos": Projeto.objects.count(),
+            "campanhas": CampanhaMarketing.objects.count(),
         },
         "admin_url": reverse("admin:index"),
         "refresh_url": f"{reverse('dashboard')}?periodo={periodo_atual}",

@@ -1,0 +1,117 @@
+{% extends "admin/change_form.html" %}
+{% load i18n admin_urls static admin_modify %}
+
+{% block extrastyle %}
+{{ block.super }}
+<style>
+    .projeto-tabs {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin: 18px 0 20px;
+    }
+
+    .projeto-tab {
+        appearance: none;
+        background: #fff;
+        border: 1px solid #17324d;
+        border-radius: 8px;
+        color: #17324d;
+        cursor: pointer;
+        font-size: 14px;
+        font-weight: 700;
+        padding: 10px 16px;
+    }
+
+    .projeto-tab.is-active {
+        background: #17324d;
+        color: #fff;
+    }
+
+    .projeto-panel {
+        display: none;
+    }
+
+    .projeto-panel.is-active {
+        display: block;
+    }
+
+    .projeto-panel .inline-group,
+    .projeto-panel .module {
+        margin-top: 0;
+    }
+
+    .projeto-panel .tabular.inline-related thead th {
+        white-space: normal;
+    }
+
+    .projeto-panel .help {
+        font-size: 12px;
+    }
+</style>
+{% endblock %}
+
+{% block field_sets %}
+    <nav class="projeto-tabs" aria-label="Etapas do projeto">
+        <button type="button" class="projeto-tab is-active" data-tab-target="dados-projeto">Projeto</button>
+        <button type="button" class="projeto-tab" data-tab-target="etapas-tarefas">Etapas/Tarefas</button>
+        <button type="button" class="projeto-tab" data-tab-target="custos-viabilidade">Custos e viabilidade</button>
+        <button type="button" class="projeto-tab" data-tab-target="testes-validacoes">Testes e validacoes</button>
+        <button type="button" class="projeto-tab" data-tab-target="arquivos-projeto">Arquivos do projeto</button>
+    </nav>
+
+    <section class="projeto-panel is-active" data-tab-panel="dados-projeto">
+        {% for fieldset in adminform %}
+            {% include "admin/includes/fieldset.html" with heading_level=2 prefix="fieldset" id_prefix=0 id_suffix=forloop.counter0 %}
+        {% endfor %}
+    </section>
+{% endblock %}
+
+{% block inline_field_sets %}
+    {% for inline_admin_formset in inline_admin_formsets %}
+        {% if forloop.counter0 == 0 %}
+            <section class="projeto-panel" data-tab-panel="etapas-tarefas">
+                {% include inline_admin_formset.opts.template %}
+            </section>
+        {% elif forloop.counter0 == 1 %}
+            <section class="projeto-panel" data-tab-panel="custos-viabilidade">
+                {% include inline_admin_formset.opts.template %}
+            </section>
+        {% elif forloop.counter0 == 2 %}
+            <section class="projeto-panel" data-tab-panel="testes-validacoes">
+                {% include inline_admin_formset.opts.template %}
+            </section>
+        {% elif forloop.counter0 == 3 %}
+            <section class="projeto-panel" data-tab-panel="arquivos-projeto">
+                {% include inline_admin_formset.opts.template %}
+            </section>
+        {% else %}
+            {% include inline_admin_formset.opts.template %}
+        {% endif %}
+    {% endfor %}
+{% endblock %}
+
+{% block admin_change_form_document_ready %}
+    {{ block.super }}
+    <script>
+        document.addEventListener("DOMContentLoaded", function () {
+            const tabs = Array.from(document.querySelectorAll(".projeto-tab"));
+            const panels = Array.from(document.querySelectorAll(".projeto-panel"));
+
+            function activateTab(target) {
+                tabs.forEach((tab) => {
+                    tab.classList.toggle("is-active", tab.dataset.tabTarget === target);
+                });
+                panels.forEach((panel) => {
+                    panel.classList.toggle("is-active", panel.dataset.tabPanel === target);
+                });
+            }
+
+            tabs.forEach((tab) => {
+                tab.addEventListener("click", function () {
+                    activateTab(tab.dataset.tabTarget);
+                });
+            });
+        });
+    </script>
+{% endblock %}
