@@ -125,8 +125,8 @@ class PlanejamentoServico(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        verbose_name = "Planejamento de Servico"
-        verbose_name_plural = "Planejamentos de Servico"
+        verbose_name = "Agenda t\u00e9cnica"
+        verbose_name_plural = "Agendas t\u00e9cnicas"
         ordering = ("data_inicio", "hora_inicio", "cliente__razao_social")
 
     def __str__(self):

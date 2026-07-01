@@ -36,9 +36,13 @@ document.addEventListener("DOMContentLoaded", function () {
             const cnpj = cnpjField.value.replace(/\D/g, "");
 
             if (cnpj.length === 14) {
-                fetch(`https://brasilapi.com.br/api/cnpj/v1/${cnpj}`)
+                fetch(`/clientes/api/cnpj/${cnpj}/`)
                     .then(response => response.json())
-                    .then(data => {
+                    .then(payload => {
+                        if (!payload.ok) {
+                            throw new Error(payload.erro || "Falha ao consultar CNPJ.");
+                        }
+                        const data = payload.dados || {};
                         const telefone1 = formatPhone(data.ddd_telefone_1 || "");
                         const telefone2 = formatPhone(data.ddd_telefone_2 || "");
                         const inscricaoEstadual = data.inscricao_estadual || data.ie || "";
@@ -59,7 +63,10 @@ document.addEventListener("DOMContentLoaded", function () {
                         setFieldValue("#id_email", data.email || "");
 
                     })
-                    .catch(error => console.log("Erro ao buscar CNPJ:", error));
+                    .catch(error => {
+                        console.log("Erro ao buscar CNPJ:", error);
+                        window.alert("Não foi possível consultar o CNPJ automaticamente.");
+                    });
             }
         });
     }

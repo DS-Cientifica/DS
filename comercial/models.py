@@ -23,7 +23,27 @@ class ProdutoServico(models.Model):
         blank=True
     )
 
-    nome = models.CharField(max_length=200)
+    nome = models.CharField(max_length=200)
+
+    tipo = models.CharField(
+        max_length=20,
+        choices=(
+            ("imagem", "Imagem"),
+            ("documento", "Documento"),
+            ("outro", "Outro"),
+        ),
+        default="imagem"
+    )
+
+    tipo = models.CharField(
+        max_length=20,
+        choices=(
+            ("imagem", "Imagem"),
+            ("documento", "Documento"),
+            ("outro", "Outro"),
+        ),
+        default="imagem"
+    )
 
     tipo = models.CharField(
         max_length=20,
@@ -366,12 +386,31 @@ class PropostaAnexo(models.Model):
 
     nome = models.CharField(max_length=200)
 
-    arquivo = models.FileField(upload_to="propostas/anexos/")
+    tipo = models.CharField(
+        max_length=20,
+        choices=(
+            ("imagem", "Imagem"),
+            ("documento", "Documento"),
+            ("outro", "Outro"),
+        ),
+        default="imagem"
+    )
+
+    arquivo = models.FileField(upload_to="propostas/anexos/")
+
+    legenda = models.CharField(max_length=255, blank=True)
+
+    ordem = models.PositiveIntegerField(default=1)
+
+    exibir_no_pdf = models.BooleanField(default=False)
 
     data_upload = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
-        return f"{self.nome} - {self.proposta.codigo}"
+        return f"{self.nome} - {self.proposta.codigo}"
+
+    class Meta:
+        ordering = ("ordem", "data_upload", "nome")
 
 
 # =========================

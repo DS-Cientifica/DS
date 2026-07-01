@@ -45,11 +45,17 @@ def _contato_principal(proposta):
     )
 
 
+def _is_image_file(nome_arquivo):
+    extensoes = (".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp", ".svg")
+    return str(nome_arquivo or "").lower().endswith(extensoes)
+
+
 def pdf_proposta(request, pk):
     proposta = get_object_or_404(
         Proposta.objects.select_related("cliente", "responsavel").prefetch_related(
             "itens__produto",
             "cliente__contatos",
+            "anexos",
         ),
         pk=pk,
     )
@@ -76,6 +82,32 @@ def pdf_proposta(request, pk):
             }
         )
 
+    imagens_pdf = []
+    for anexo in proposta.anexos.all():
+        if not anexo.exibir_no_pdf:
+            continue
+        if anexo.tipo != "imagem" and not _is_image_file(getattr(anexo.arquivo, "name", "")):
+            continue
+        if not getattr(anexo, "arquivo", None):
+            continue
+        imagens_pdf.append(
+            {
+                "nome": anexo.nome,
+                "legenda": anexo.legenda,
+                "url": anexo.arquivo.url,
+            }
+        )
+
+    proxima_secao = 7
+    secao_imagens_numero = None
+    if imagens_pdf:
+        secao_imagens_numero = proxima_secao
+        proxima_secao += 1
+
+    secao_tecnica_numero = None
+    if proposta.metodo or proposta.padroes_utilizados:
+        secao_tecnica_numero = proxima_secao
+
     contexto = {
         "empresa": EMPRESA_PROPOSTA,
         "proposta": proposta,
@@ -89,6 +121,9 @@ def pdf_proposta(request, pk):
         "local_execucao": proposta.get_local_execucao_display(),
         "frete": proposta.get_frete_display(),
         "status": proposta.get_status_display(),
+        "imagens_pdf": imagens_pdf,
+        "secao_imagens_numero": secao_imagens_numero,
+        "secao_tecnica_numero": secao_tecnica_numero,
     }
 
     return render(

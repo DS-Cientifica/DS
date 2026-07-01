@@ -32,6 +32,7 @@ class ProdutoAnexoInline(admin.TabularInline):
 class PropostaAnexoInline(admin.TabularInline):
     model = PropostaAnexo
     extra = 1
+    fields = ("nome", "tipo", "arquivo", "legenda", "ordem", "exibir_no_pdf")
 
 
 # =========================

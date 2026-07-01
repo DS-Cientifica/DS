@@ -352,6 +352,37 @@
             border-top: 0;
         }
 
+        .image-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            padding: 8px;
+            border: 1px solid var(--line);
+            border-top: 0;
+        }
+
+        .image-card {
+            border: 1px solid var(--line);
+            padding: 8px;
+            break-inside: avoid;
+            page-break-inside: avoid;
+        }
+
+        .image-card img {
+            width: 100%;
+            max-height: 75mm;
+            object-fit: contain;
+            display: block;
+            margin: 0 auto;
+        }
+
+        .image-caption {
+            margin-top: 6px;
+            color: var(--muted);
+            font-size: 10px;
+            text-align: center;
+        }
+
         .technical-box {
             min-height: 24mm;
             padding: 8px;
@@ -600,7 +631,7 @@
                                     {% if item.obj.produto %}
                                         {{ item.obj.produto.get_tipo_display }}
                                     {% else %}
-                                        Serviço
+                                        Produto
                                     {% endif %}
                                 </td>
                                 <td class="money">{{ item.valor_unitario }}</td>
@@ -655,9 +686,25 @@
                 </div>
             </section>
 
+            {% if imagens_pdf %}
+                <section class="proposal-section">
+                    <h2 class="section-title">{{ secao_imagens_numero }}. Imagens da proposta</h2>
+                    <div class="image-grid">
+                        {% for imagem in imagens_pdf %}
+                            <div class="image-card">
+                                <img src="{{ imagem.url }}" alt="{{ imagem.nome }}">
+                                {% if imagem.legenda or imagem.nome %}
+                                    <div class="image-caption">{{ imagem.legenda|default:imagem.nome }}</div>
+                                {% endif %}
+                            </div>
+                        {% endfor %}
+                    </div>
+                </section>
+            {% endif %}
+
             {% if proposta.metodo or proposta.padroes_utilizados %}
                 <section class="proposal-section">
-                    <h2 class="section-title">VII. Informações técnicas</h2>
+                    <h2 class="section-title">{{ secao_tecnica_numero }}. Informações técnicas</h2>
                     <div class="technical-grid">
                         <div class="technical-box">
                             <strong>Método</strong>

@@ -12,6 +12,7 @@ from calibracao.models import Calibracao, Instrumento, OrdemServico, Padrao
 from clientes.models import Cliente
 from comercial.models import CRMRegistro, CRMTicket, ProdutoServico, Proposta
 from financeiro.models import ContaPagar, ContaReceber, Imposto
+from gestao.models import Colaborador, Treinamento
 from manutencao.models import Manutencao
 from planejamento.models import PlanejamentoServico
 from projetos.models import CampanhaMarketing, Projeto
@@ -442,6 +443,15 @@ def dashboard(request):
         "manutencao": _has_any_perm(user, ["manutencao.view_manutencao"]),
         "qualidade": _has_any_perm(user, ["qualidade.view_documento", "qualidade.view_documentorevisao"]),
         "planejamento": _has_any_perm(user, ["planejamento.view_planejamentoservico"]),
+        "gestao": _has_any_perm(
+            user,
+            [
+                "gestao.view_colaborador",
+                "gestao.view_cargofuncao",
+                "gestao.view_competenciatecnica",
+                "gestao.view_treinamento",
+            ],
+        ),
         "projetos": _has_any_perm(
             user,
             [
@@ -464,7 +474,8 @@ def dashboard(request):
         {"rotulo": "Nova manuten\u00e7\u00e3o", "url": reverse("admin:manutencao_manutencao_add"), "icone": "MN", "modulo": "manutencao"},
         {"rotulo": "Conta a receber", "url": reverse("admin:financeiro_contareceber_add"), "icone": "RC", "modulo": "financeiro"},
         {"rotulo": "Conta a pagar", "url": reverse("admin:financeiro_contapagar_add"), "icone": "PG", "modulo": "financeiro"},
-        {"rotulo": "Planejamento", "url": reverse("admin:planejamento_planejamentoservico_calendario"), "icone": "PL", "modulo": "planejamento"},
+        {"rotulo": "RH", "url": reverse("admin:gestao_colaborador_changelist"), "icone": "RH", "modulo": "gestao"},
+        {"rotulo": "Planejamento & Logistica", "url": reverse("admin:planejamento_planejamentoservico_calendario"), "icone": "PL", "modulo": "planejamento"},
         {"rotulo": "Projetos", "url": reverse("admin:projetos_projeto_changelist"), "icone": "PD", "modulo": "projetos"},
         {"rotulo": "Marketing", "url": reverse("admin:projetos_campanhamarketing_changelist"), "icone": "MK", "modulo": "projetos"},
         {"rotulo": "Documento", "url": reverse("admin:qualidade_documento_add"), "icone": "DOC", "modulo": "qualidade"},
@@ -518,7 +529,8 @@ def dashboard(request):
             {"rotulo": "Nova calibra\u00e7\u00e3o pH", "url": reverse("admin:calibracao_calibracaoph_add"), "icone": "PH"},
             {"rotulo": "Conta a receber", "url": reverse("admin:financeiro_contareceber_add"), "icone": "RC"},
             {"rotulo": "Conta a pagar", "url": reverse("admin:financeiro_contapagar_add"), "icone": "PG"},
-            {"rotulo": "Planejamento", "url": reverse("admin:planejamento_planejamentoservico_calendario"), "icone": "PL"},
+            {"rotulo": "RH", "url": reverse("admin:gestao_colaborador_changelist"), "icone": "RH"},
+            {"rotulo": "Planejamento & Logistica", "url": reverse("admin:planejamento_planejamentoservico_calendario"), "icone": "PL"},
             {"rotulo": "Projetos", "url": reverse("admin:projetos_projeto_changelist"), "icone": "PD"},
             {"rotulo": "Marketing", "url": reverse("admin:projetos_campanhamarketing_changelist"), "icone": "MK"},
             {"rotulo": "Documento", "url": reverse("admin:qualidade_documento_add"), "icone": "DOC"},
@@ -548,6 +560,8 @@ def dashboard(request):
             "tickets": tickets_abertos.count(),
             "planejamentos": PlanejamentoServico.objects.count(),
             "manutencoes": Manutencao.objects.count(),
+            "colaboradores": Colaborador.objects.count(),
+            "treinamentos": Treinamento.objects.count(),
             "projetos": Projeto.objects.count(),
             "campanhas": CampanhaMarketing.objects.count(),
         },
