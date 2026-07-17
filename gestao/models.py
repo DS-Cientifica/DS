@@ -1,4 +1,5 @@
 import uuid
+from datetime import date
 from decimal import Decimal
 
 from django.db import models
@@ -201,4 +202,63 @@ class Treinamento(models.Model):
     def save(self, *args, **kwargs):
         if not self.codigo:
             self.codigo = self.gerar_codigo()
+        super().save(*args, **kwargs)
+
+
+class DocumentoEmpresa(models.Model):
+    TIPO_CHOICES = (
+        ("cartao_cnpj", "Cartão CNPJ"),
+        ("inscricao_estadual", "Inscrição Estadual"),
+        ("inscricao_municipal", "Inscrição Municipal"),
+        ("contrato_social", "Contrato Social"),
+        ("alvara", "Alvará"),
+        ("certidao", "Certidão"),
+        ("comprovante_endereco", "Comprovante de Endereço"),
+        ("bancario", "Documento Bancário"),
+        ("fiscal", "Documento Fiscal"),
+        ("licenca", "Licença"),
+        ("outro", "Outro"),
+    )
+
+    STATUS_CHOICES = (
+        ("vigente", "Vigente"),
+        ("vencendo", "Vencendo"),
+        ("vencido", "Vencido"),
+        ("inativo", "Inativo"),
+    )
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    codigo = models.CharField(max_length=20, unique=True, blank=True)
+    titulo = models.CharField(max_length=150)
+    tipo = models.CharField(max_length=30, choices=TIPO_CHOICES, default="outro")
+    numero_identificacao = models.CharField(max_length=80, blank=True)
+    orgao_emissor = models.CharField(max_length=120, blank=True)
+    data_emissao = models.DateField(null=True, blank=True)
+    validade = models.DateField(null=True, blank=True)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="vigente")
+    arquivo = models.FileField(upload_to="gestao/documentos_empresa/")
+    observacoes = models.TextField(blank=True)
+    ativo = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Gestão - Documento da empresa"
+        verbose_name_plural = "Gestão - Documentos da empresa"
+        ordering = ("titulo", "-created_at")
+
+    def __str__(self):
+        return f"{self.codigo} - {self.titulo}" if self.codigo else self.titulo
+
+    def gerar_codigo(self):
+        numero = DocumentoEmpresa.objects.exclude(codigo="").count() + 1
+        return f"GDO-{numero:04d}"
+
+    def save(self, *args, **kwargs):
+        if not self.codigo:
+            self.codigo = self.gerar_codigo()
+        if self.validade:
+            hoje = date.today()
+            if self.validade < hoje:
+                self.status = "vencido"
         super().save(*args, **kwargs)

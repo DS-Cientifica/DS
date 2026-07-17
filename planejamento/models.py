@@ -247,3 +247,229 @@ class PlanejamentoServico(models.Model):
                 vistos.add(chave)
                 nomes.append(nome)
         return nomes
+
+
+class EnvioEquipamentoSemNota(models.Model):
+    TIPO_FORMULARIO_CHOICES = (
+        ("envio", "Envio"),
+        ("recebimento", "Recebimento"),
+    )
+
+    FINALIDADE_CHOICES = (
+        ("calibracao", "Calibracao"),
+        ("manutencao_preventiva", "Manutencao preventiva"),
+        ("manutencao_corretiva", "Manutencao corretiva"),
+        ("avaliacao_tecnica", "Avaliacao tecnica / diagnostico"),
+        ("orcamento", "Orcamento"),
+        ("outro", "Outro"),
+    )
+
+    FUNCIONAMENTO_CHOICES = (
+        ("funcionando", "Equipamento funcionando normalmente"),
+        ("defeito", "Equipamento com defeito"),
+        ("liga_falha", "Equipamento liga, mas apresenta falha"),
+        ("nao_liga", "Equipamento nao liga"),
+    )
+
+    ACESSORIOS_CHOICES = (
+        ("com_acessorios", "Equipamento enviado com acessorios"),
+        ("sem_acessorios", "Equipamento enviado sem acessorios"),
+    )
+
+    EMBALAGEM_ENVIO_CHOICES = (
+        ("integra", "Embalagem integra"),
+        ("danificada", "Embalagem danificada"),
+    )
+
+    FRETE_CHOICES = (
+        ("remetente", "Remetente"),
+        ("destinatario", "Destinatario"),
+        ("combinar", "A combinar"),
+    )
+
+    EMBALAGEM_RECEBIMENTO_CHOICES = (
+        ("integra", "Integra"),
+        ("danificada", "Danificada"),
+        ("violada", "Violada"),
+        ("molhada", "Molhada"),
+        ("amassada", "Amassada"),
+        ("outro", "Outro"),
+    )
+
+    CONDICAO_RECEBIMENTO_CHOICES = (
+        ("sem_avarias", "Sem avarias aparentes"),
+        ("com_avarias", "Com avarias aparentes"),
+        ("divergente", "Divergente da descricao informada"),
+        ("aguardando_avaliacao", "Aguardando avaliacao tecnica"),
+    )
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    codigo = models.CharField("Codigo", max_length=30, unique=True, blank=True)
+    tipo_formulario = models.CharField(
+        "Tipo do formulario",
+        max_length=20,
+        choices=TIPO_FORMULARIO_CHOICES,
+        default="envio",
+    )
+    data_envio_formulario = models.DateField("Data de envio", default=timezone.localdate)
+
+    cliente_remetente = models.ForeignKey(
+        Cliente,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="envios_sem_nota",
+        verbose_name="Cliente remetente",
+    )
+    empresa_remetente = models.CharField("Empresa remetente", max_length=255, blank=True)
+    cnpj_cpf_remetente = models.CharField("CNPJ/CPF", max_length=20, blank=True)
+    endereco_remetente = models.CharField("Endereco", max_length=255, blank=True)
+    cidade_uf_remetente = models.CharField("Cidade/UF", max_length=120, blank=True)
+    responsavel_envio = models.CharField("Responsavel pelo envio", max_length=120, blank=True)
+    telefone_whatsapp = models.CharField("Telefone/WhatsApp", max_length=30, blank=True)
+    email_remetente = models.EmailField("E-mail", blank=True)
+
+    empresa_destinataria = models.CharField("Empresa destinataria", max_length=255, blank=True)
+    cnpj_destinatario = models.CharField("CNPJ destinatario", max_length=20, blank=True)
+    endereco_destinatario = models.CharField("Endereco destinatario", max_length=255, blank=True)
+    cidade_uf_destinatario = models.CharField("Cidade/UF destinatario", max_length=120, blank=True)
+    responsavel_recebimento_destino = models.CharField(
+        "Responsavel pelo recebimento",
+        max_length=120,
+        blank=True,
+    )
+
+    finalidade = models.CharField("Finalidade do envio", max_length=30, choices=FINALIDADE_CHOICES)
+    finalidade_outro = models.CharField("Outro motivo", max_length=255, blank=True)
+    descricao_solicitacao = models.TextField(
+        "Descricao da solicitacao",
+        blank=True,
+        help_text="Descreva o servico solicitado, pontos de calibracao, faixa de uso, defeito apresentado ou informacoes relevantes.",
+    )
+
+    condicao_funcionamento = models.CharField(
+        "Condicao de funcionamento",
+        max_length=20,
+        choices=FUNCIONAMENTO_CHOICES,
+        blank=True,
+    )
+    condicao_acessorios = models.CharField(
+        "Acessorios",
+        max_length=20,
+        choices=ACESSORIOS_CHOICES,
+        blank=True,
+    )
+    condicao_embalagem_envio = models.CharField(
+        "Condicao da embalagem",
+        max_length=20,
+        choices=EMBALAGEM_ENVIO_CHOICES,
+        blank=True,
+    )
+    acessorios_enviados = models.TextField("Acessorios enviados", blank=True)
+    observacoes_estado = models.TextField("Observacoes sobre o estado do equipamento", blank=True)
+
+    transportadora = models.CharField("Transportadora / Correios / Portador", max_length=255, blank=True)
+    codigo_rastreamento = models.CharField("Codigo de rastreamento", max_length=120, blank=True)
+    data_envio_transporte = models.DateField("Data do envio no transporte", blank=True, null=True)
+    responsavel_frete = models.CharField(
+        "Responsavel pelo frete",
+        max_length=20,
+        choices=FRETE_CHOICES,
+        default="remetente",
+    )
+
+    nome_declarante = models.CharField("Nome do responsavel", max_length=120, blank=True)
+    cargo_declarante = models.CharField("Cargo", max_length=120, blank=True)
+    cpf_declarante = models.CharField("CPF", max_length=20, blank=True)
+    assinatura_declarante = models.CharField(
+        "Assinatura",
+        max_length=255,
+        blank=True,
+        help_text="Campo textual para identificacao do assinante no PDF.",
+    )
+    data_declaracao = models.DateField("Data da declaracao", blank=True, null=True)
+
+    data_recebimento = models.DateField("Data de recebimento", blank=True, null=True)
+    recebido_por = models.CharField("Recebido por", max_length=120, blank=True)
+    condicao_embalagem_recebimento = models.CharField(
+        "Condicao da embalagem no recebimento",
+        max_length=20,
+        choices=EMBALAGEM_RECEBIMENTO_CHOICES,
+        blank=True,
+    )
+    condicao_embalagem_recebimento_outro = models.CharField("Outro detalhe da embalagem", max_length=255, blank=True)
+    condicao_aparente_recebimento = models.CharField(
+        "Condicao aparente do equipamento no recebimento",
+        max_length=25,
+        choices=CONDICAO_RECEBIMENTO_CHOICES,
+        blank=True,
+    )
+    observacoes_recebimento = models.TextField("Observacoes do recebimento", blank=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Formulario logistico sem NF"
+        verbose_name_plural = "Formularios logisticos sem NF"
+        ordering = ("-data_envio_formulario", "-created_at")
+
+    def __str__(self):
+        return f"{self.codigo} - {self.get_tipo_formulario_display()} - {self.empresa_remetente or self.cliente_remetente or 'Sem remetente'}"
+
+    def gerar_codigo(self):
+        ano = datetime.now().strftime("%y")
+        numero = EnvioEquipamentoSemNota.objects.exclude(codigo="").count() + 1
+        prefixo = "ENV" if self.tipo_formulario == "envio" else "REC"
+        return f"LOG-{prefixo}-{numero:04d}/{ano}"
+
+    def save(self, *args, **kwargs):
+        if not self.codigo:
+            self.codigo = self.gerar_codigo()
+
+        if self.cliente_remetente_id:
+            cliente = self.cliente_remetente
+            if not self.empresa_remetente:
+                self.empresa_remetente = cliente.razao_social
+            if not self.cnpj_cpf_remetente:
+                self.cnpj_cpf_remetente = cliente.cnpj
+            if not self.endereco_remetente:
+                partes = [cliente.endereco, cliente.numero, cliente.bairro]
+                self.endereco_remetente = ", ".join([parte for parte in partes if parte])
+            if not self.cidade_uf_remetente:
+                cidade_uf = " / ".join([parte for parte in [cliente.cidade, cliente.uf] if parte])
+                self.cidade_uf_remetente = cidade_uf
+            if not self.telefone_whatsapp:
+                self.telefone_whatsapp = cliente.telefone or cliente.telefone2
+            if not self.email_remetente:
+                self.email_remetente = cliente.email
+
+        if not self.data_declaracao:
+            self.data_declaracao = self.data_envio_formulario
+        if not self.data_envio_transporte:
+            self.data_envio_transporte = self.data_envio_formulario
+
+        super().save(*args, **kwargs)
+
+
+class EnvioEquipamentoSemNotaItem(models.Model):
+    envio = models.ForeignKey(
+        EnvioEquipamentoSemNota,
+        on_delete=models.CASCADE,
+        related_name="itens",
+        verbose_name="Formulario",
+    )
+    ordem = models.PositiveIntegerField("Item", default=1)
+    equipamento = models.CharField("Equipamento", max_length=255)
+    marca = models.CharField("Marca", max_length=120, blank=True)
+    modelo = models.CharField("Modelo", max_length=120, blank=True)
+    numero_serie_patrimonio = models.CharField("N de serie / patrimonio", max_length=120, blank=True)
+    quantidade = models.PositiveIntegerField("Quantidade", default=1)
+
+    class Meta:
+        verbose_name = "Item do envio sem NF"
+        verbose_name_plural = "Itens do envio sem NF"
+        ordering = ("ordem", "equipamento")
+
+    def __str__(self):
+        return f"{self.ordem} - {self.equipamento}"

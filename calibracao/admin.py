@@ -4,7 +4,7 @@ from io import BytesIO
 
 from django import forms
 from django.contrib import admin, messages
-from django.db import transaction
+from django.db import connection, transaction
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils.html import format_html, format_html_join
@@ -49,6 +49,104 @@ from .ph_models import (
 )
 
 
+def _decimal_places_for_form(field):
+    decimal_places = getattr(field, "decimal_places", None)
+    if decimal_places is None:
+        return 3
+    return min(int(decimal_places), 3)
+
+
+def _quantize_decimal_form_value(value, decimal_places=3):
+    if value in (None, ""):
+        return value
+    try:
+        decimal_value = value if isinstance(value, Decimal) else Decimal(str(value))
+    except (InvalidOperation, TypeError, ValueError):
+        return value
+    quantizer = Decimal("1").scaleb(-decimal_places)
+    return decimal_value.quantize(quantizer)
+
+
+class ThreeDecimalAdminForm(forms.ModelForm):
+    class Meta:
+        fields = "__all__"
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        for name, field in self.fields.items():
+            if isinstance(field, forms.DecimalField):
+                attrs = dict(getattr(field.widget, "attrs", {}))
+                field.widget = forms.TextInput(attrs=attrs)
+                decimal_places = _decimal_places_for_form(field)
+                field.localize = True
+                field.widget.is_localized = True
+                field.widget.attrs["inputmode"] = "decimal"
+                field.widget.attrs["data-decimal-places"] = str(decimal_places)
+                if name in self.initial:
+                    self.initial[name] = _quantize_decimal_form_value(self.initial[name], decimal_places)
+
+    def clean(self):
+        cleaned_data = super().clean()
+        for name, field in self.fields.items():
+            if isinstance(field, forms.DecimalField) and cleaned_data.get(name) not in (None, ""):
+                cleaned_data[name] = _quantize_decimal_form_value(
+                    cleaned_data[name],
+                    _decimal_places_for_form(field),
+                )
+        return cleaned_data
+
+
+def build_three_decimal_form(model):
+    meta = type("Meta", (), {"model": model, "fields": "__all__"})
+    return type(f"{model.__name__}ThreeDecimalAdminForm", (ThreeDecimalAdminForm,), {"Meta": meta})
+
+
+class OrdemServicoNumeroFilter(admin.SimpleListFilter):
+    title = "Ordem de servico"
+    parameter_name = "ordem_servico_numero"
+
+    def lookups(self, request, model_admin):
+        numeros = (
+            OrdemServico.objects.exclude(numero="")
+            .order_by("-data_abertura")
+            .values_list("numero", flat=True)
+        )
+        return [(numero, numero) for numero in numeros]
+
+    def queryset(self, request, queryset):
+        if self.value():
+            return queryset.filter(ordem_servico=self.value())
+        return queryset
+
+
+CalibracaoAdminForm = build_three_decimal_form(Calibracao)
+CalibracaoTurbidezAdminForm = build_three_decimal_form(CalibracaoTurbidez)
+TurbidezPadraoAdminForm = build_three_decimal_form(TurbidezPadraoUtilizado)
+TurbidezVerificacaoAdminForm = build_three_decimal_form(TurbidezVerificacaoPonto)
+TurbidezCalibracaoAdminForm = build_three_decimal_form(TurbidezCalibracaoPonto)
+TurbidezIncertezaAdminForm = build_three_decimal_form(TurbidezIncertezaPonto)
+CalibracaoColorimetroBaseAdminForm = build_three_decimal_form(CalibracaoColorimetro)
+ColorimetroPadraoAdminForm = build_three_decimal_form(ColorimetroPadraoUtilizado)
+ColorimetroVerificacaoAdminForm = build_three_decimal_form(ColorimetroVerificacaoPonto)
+ColorimetroCalibracaoAdminForm = build_three_decimal_form(ColorimetroCalibracaoPonto)
+ColorimetroIncertezaAdminForm = build_three_decimal_form(ColorimetroIncertezaPonto)
+CalibracaoPressaoAdminForm = build_three_decimal_form(CalibracaoPressao)
+PressaoPadraoAdminForm = build_three_decimal_form(PressaoPadraoUtilizado)
+PressaoCalibracaoAdminForm = build_three_decimal_form(PressaoCalibracaoPonto)
+PressaoIncertezaAdminForm = build_three_decimal_form(PressaoIncertezaPonto)
+CalibracaoPHAdminForm = build_three_decimal_form(CalibracaoPH)
+PHPadraoAdminForm = build_three_decimal_form(CalibracaoPHPadraoUtilizado)
+PHPontoAdminForm = build_three_decimal_form(CalibracaoPHPonto)
+PHIncertezaAdminForm = build_three_decimal_form(CalibracaoPHIncertezaPonto)
+CalibracaoCondutividadeAdminForm = build_three_decimal_form(CalibracaoCondutividade)
+
+
+class CalibracaoColorimetroAdminForm(CalibracaoColorimetroBaseAdminForm):
+    class Meta(CalibracaoColorimetroBaseAdminForm.Meta):
+        model = CalibracaoColorimetro
+        fields = "__all__"
+
+
 # =========================
 # INLINES
 # =========================
@@ -75,6 +173,12 @@ class InstrumentoAdminForm(forms.ModelForm):
     class Meta:
         model = Instrumento
         fields = "__all__"
+        labels = {
+            "descricao": "Nome do serviço",
+        }
+        help_texts = {
+            "descricao": "Ex.: Medidor de espessura, medidor de pH, condutividade, manômetro.",
+        }
 
     class Media:
         js = ("js/admin_instrumento_duplicate_alert.js",)
@@ -171,9 +275,8 @@ class InstrumentoAdmin(admin.ModelAdmin):
             )
         }),
 
-        ("Metrologia", {
+        ("Referências técnicas", {
             "fields": (
-                "metodo_calibracao",
                 "padroes",
                 "ver_certificados_padroes",
             )
@@ -321,7 +424,7 @@ class InstrumentoAdmin(admin.ModelAdmin):
             "cliente_cnpj",
             "cliente_razao_social",
             "codigo",
-            "descricao",
+            "nome_servico",
             "marca",
             "modelo",
             "numero_serie",
@@ -388,7 +491,7 @@ class InstrumentoAdmin(admin.ModelAdmin):
             "cliente_razao_social",
             "cliente_cnpj",
             "codigo",
-            "descricao",
+            "nome_servico",
             "marca",
             "modelo",
             "numero_serie",
@@ -403,7 +506,6 @@ class InstrumentoAdmin(admin.ModelAdmin):
             "unidade",
             "classe",
             "observacoes",
-            "metodo_calibracao",
             "padroes",
         ]
         worksheet.append(headers)
@@ -435,7 +537,6 @@ class InstrumentoAdmin(admin.ModelAdmin):
                     getattr(tecnico, "unidade", "") if tecnico else "",
                     getattr(tecnico, "classe", "") if tecnico else "",
                     getattr(tecnico, "observacoes", "") if tecnico else "",
-                    getattr(instrumento.metodo_calibracao, "codigo", "") if instrumento.metodo_calibracao else "",
                     ", ".join(instrumento.padroes.values_list("codigo", flat=True)),
                 ]
             )
@@ -471,11 +572,13 @@ class InstrumentoAdmin(admin.ModelAdmin):
             raise ValueError("A planilha está vazia.")
 
         headers = [self._normalizar_cabecalho_excel(valor) for valor in linhas[0]]
-        obrigatorios = {"codigo", "descricao"}
-        ausentes = sorted(campo for campo in obrigatorios if campo not in headers)
-        if ausentes:
+        if "codigo" not in headers:
             raise ValueError(
-                "A planilha não contém as colunas obrigatórias: " + ", ".join(ausentes) + "."
+                "A planilha não contém a coluna obrigatória: codigo."
+            )
+        if "descricao" not in headers and "nome_servico" not in headers:
+            raise ValueError(
+                "A planilha deve conter a coluna obrigatória 'nome_servico' ou 'descricao'."
             )
 
         criados = 0
@@ -505,14 +608,14 @@ class InstrumentoAdmin(admin.ModelAdmin):
     def _criar_instrumento_importado(self, registro):
         cliente = self._resolver_cliente_importacao(registro)
         codigo = self._texto_excel(registro.get("codigo"))
-        descricao = self._texto_excel(registro.get("descricao"))
+        descricao = self._texto_excel(registro.get("nome_servico")) or self._texto_excel(registro.get("descricao"))
         numero_serie = self._texto_excel(registro.get("numero_serie"))
         tag = self._texto_excel(registro.get("tag"))
 
         if not codigo:
             raise ValueError("campo 'codigo' é obrigatório.")
         if not descricao:
-            raise ValueError("campo 'descricao' é obrigatório.")
+            raise ValueError("campo 'nome_servico' é obrigatório.")
         if not cliente:
             raise ValueError(
                 "cliente não encontrado. Informe 'cliente_codigo', 'cliente_cnpj' ou 'cliente_razao_social'."
@@ -685,6 +788,7 @@ class CalibracaoAnexoInline(admin.TabularInline):
 
 class TurbidezPadraoInline(admin.TabularInline):
     model = TurbidezPadraoUtilizado
+    form = TurbidezPadraoAdminForm
     extra = 1
     autocomplete_fields = ("padrao",)
     fields = (
@@ -710,6 +814,7 @@ class TurbidezPadraoInline(admin.TabularInline):
 
 class TurbidezVerificacaoInline(admin.TabularInline):
     model = TurbidezVerificacaoPonto
+    form = TurbidezVerificacaoAdminForm
     extra = 5
     fields = ("ordem", "valor_padrao", "leitura", "erro", "criterio", "resultado")
     readonly_fields = ("erro",)
@@ -719,6 +824,7 @@ class TurbidezVerificacaoInline(admin.TabularInline):
 
 class TurbidezCalibracaoInline(admin.TabularInline):
     model = TurbidezCalibracaoPonto
+    form = TurbidezCalibracaoAdminForm
     extra = 9
     fields = (
         "ordem",
@@ -738,6 +844,7 @@ class TurbidezCalibracaoInline(admin.TabularInline):
 
 class TurbidezIncertezaInline(admin.TabularInline):
     model = TurbidezIncertezaPonto
+    form = TurbidezIncertezaAdminForm
     extra = 9
     fields = (
         "ordem",
@@ -776,6 +883,7 @@ class TurbidezIncertezaInline(admin.TabularInline):
 
 class ColorimetroPadraoInline(admin.TabularInline):
     model = ColorimetroPadraoUtilizado
+    form = ColorimetroPadraoAdminForm
     extra = 1
     autocomplete_fields = ("padrao",)
     fields = (
@@ -801,8 +909,9 @@ class ColorimetroPadraoInline(admin.TabularInline):
 
 class ColorimetroVerificacaoInline(admin.TabularInline):
     model = ColorimetroVerificacaoPonto
+    form = ColorimetroVerificacaoAdminForm
     extra = 5
-    fields = ("ordem", "valor_padrao", "leitura", "erro", "criterio", "criterio_origem", "resultado")
+    fields = ("ordem", "valor_padrao", "leitura", "erro", "criterio", "criterio_tipo", "criterio_origem", "resultado")
     readonly_fields = ("erro",)
     verbose_name = "Ponto de verificação"
     verbose_name_plural = "Verificação"
@@ -810,6 +919,7 @@ class ColorimetroVerificacaoInline(admin.TabularInline):
 
 class ColorimetroCalibracaoInline(admin.TabularInline):
     model = ColorimetroCalibracaoPonto
+    form = ColorimetroCalibracaoAdminForm
     extra = 9
     fields = (
         "ordem",
@@ -821,6 +931,7 @@ class ColorimetroCalibracaoInline(admin.TabularInline):
         "erro",
         "ema",
         "criterio",
+        "criterio_tipo",
         "criterio_origem",
     )
     readonly_fields = ("media", "erro", "ema")
@@ -830,6 +941,7 @@ class ColorimetroCalibracaoInline(admin.TabularInline):
 
 class ColorimetroIncertezaInline(admin.TabularInline):
     model = ColorimetroIncertezaPonto
+    form = ColorimetroIncertezaAdminForm
     extra = 9
     fields = (
         "ordem",
@@ -848,7 +960,7 @@ class ColorimetroIncertezaInline(admin.TabularInline):
     verbose_name_plural = "Incerteza"
 
 
-class PressaoPadraoInlineForm(forms.ModelForm):
+class PressaoPadraoInlineForm(ThreeDecimalAdminForm):
     class Meta:
         model = PressaoPadraoUtilizado
         fields = "__all__"
@@ -924,7 +1036,7 @@ class PressaoPadraoInline(admin.TabularInline):
     verbose_name_plural = "Padrões"
 
 
-class PressaoCalibracaoInlineForm(forms.ModelForm):
+class PressaoCalibracaoInlineForm(ThreeDecimalAdminForm):
     class Meta:
         model = PressaoCalibracaoPonto
         fields = "__all__"
@@ -955,7 +1067,7 @@ class PressaoCalibracaoInlineForm(forms.ModelForm):
         return cleaned_data
 
 
-class CalibracaoPressaoAdminForm(forms.ModelForm):
+class CalibracaoPressaoAdminForm(ThreeDecimalAdminForm):
     class Meta:
         model = CalibracaoPressao
         fields = "__all__"
@@ -1017,6 +1129,7 @@ class PressaoCalibracaoInline(admin.TabularInline):
 
 class PressaoIncertezaInline(admin.TabularInline):
     model = PressaoIncertezaPonto
+    form = PressaoIncertezaAdminForm
     extra = 10
     fields = (
         "ordem",
@@ -1034,8 +1147,47 @@ class PressaoIncertezaInline(admin.TabularInline):
     verbose_name = "Ponto de incerteza"
     verbose_name_plural = "Incerteza"
 
+
+class CalibracaoEmpresaFilter(admin.SimpleListFilter):
+    title = "empresa"
+    parameter_name = "empresa"
+
+    def lookups(self, request, model_admin):
+        clientes = (
+            Cliente.objects.filter(instrumentos__calibracoes__isnull=False)
+            .distinct()
+            .order_by("codigo", "razao_social")
+        )
+        return [(cliente.pk, str(cliente)) for cliente in clientes]
+
+    def queryset(self, request, queryset):
+        if self.value():
+            return queryset.filter(instrumento__cliente_id=self.value())
+        return queryset
+
+
+class CalibracaoEquipamentoFilter(admin.SimpleListFilter):
+    title = "equipamento"
+    parameter_name = "equipamento"
+
+    def lookups(self, request, model_admin):
+        instrumentos = (
+            Instrumento.objects.filter(calibracoes__isnull=False)
+            .distinct()
+            .order_by("codigo", "descricao")
+        )
+        return [(instrumento.pk, str(instrumento)) for instrumento in instrumentos]
+
+    def queryset(self, request, queryset):
+        if self.value():
+            return queryset.filter(instrumento_id=self.value())
+        return queryset
+
+
 @admin.register(Calibracao)
 class CalibracaoAdmin(admin.ModelAdmin):
+    form = CalibracaoAdminForm
+    change_list_template = "admin/calibracao/calibracao/change_list.html"
 
     list_display = (
         "instrumento",
@@ -1049,6 +1201,9 @@ class CalibracaoAdmin(admin.ModelAdmin):
     )
 
     list_filter = (
+        CalibracaoEmpresaFilter,
+        "data_calibracao",
+        CalibracaoEquipamentoFilter,
         "resultado",
         "empresa_emissora",
         "status",
@@ -1056,12 +1211,68 @@ class CalibracaoAdmin(admin.ModelAdmin):
     )
 
     search_fields = (
+        "instrumento__cliente__codigo",
+        "instrumento__cliente__razao_social",
+        "instrumento__cliente__cnpj",
         "instrumento__codigo",
         "instrumento__descricao",
         "certificado_numero",
     )
 
     autocomplete_fields = ("instrumento",)
+    list_select_related = ("instrumento", "instrumento__cliente")
+    date_hierarchy = "data_calibracao"
+
+    def has_delete_permission(self, request, obj=None):
+        return True
+
+    def _delete_legacy_turbidimetro_relations(self, calibracao_id):
+        legacy_tables = (
+            "calibracao_turbidimetroverificacaoponto",
+            "calibracao_turbidimetrocalibracaoponto",
+            "calibracao_calibracaoturbidimetro",
+        )
+        with connection.cursor() as cursor:
+            for table_name in legacy_tables:
+                cursor.execute(
+                    f"DELETE FROM {table_name} WHERE calibracao_id = %s",
+                    [calibracao_id],
+                )
+
+    def delete_model(self, request, obj):
+        with transaction.atomic():
+            self._delete_legacy_turbidimetro_relations(obj.pk)
+            obj.delete()
+
+    def delete_queryset(self, request, queryset):
+        with transaction.atomic():
+            for obj in queryset:
+                self._delete_legacy_turbidimetro_relations(obj.pk)
+                obj.delete()
+
+    def changelist_view(self, request, extra_context=None):
+        extra_context = extra_context or {}
+        empresa_atual = request.GET.get("empresa", "")
+        equipamentos = Instrumento.objects.filter(calibracoes__isnull=False).distinct()
+        if empresa_atual:
+            equipamentos = equipamentos.filter(cliente_id=empresa_atual)
+
+        extra_context.update({
+            "filtro_empresa_atual": empresa_atual,
+            "filtro_data_calibracao_atual": request.GET.get("data_calibracao__exact", ""),
+            "filtro_equipamento_atual": request.GET.get("equipamento", ""),
+            "empresas_certificado_rapido": (
+                Cliente.objects.filter(instrumentos__calibracoes__isnull=False)
+                .distinct()
+                .order_by("codigo", "razao_social")
+            ),
+            "equipamentos_certificado_rapido": equipamentos.order_by("codigo", "descricao"),
+        })
+        response = super().changelist_view(request, extra_context=extra_context)
+        if hasattr(response, "context_data") and response.context_data and "cl" in response.context_data:
+            changelist = response.context_data["cl"]
+            response.context_data["quantidade_filtrada_certificados"] = changelist.result_count
+        return response
 
     readonly_fields = (
         "validade",
@@ -1200,6 +1411,7 @@ class CalibracaoAdmin(admin.ModelAdmin):
 
 @admin.register(CalibracaoTurbidez)
 class CalibracaoTurbidezAdmin(admin.ModelAdmin):
+    form = CalibracaoTurbidezAdminForm
 
     change_form_template = "admin/calibracao/calibracaoturbidez/change_form.html"
 
@@ -1330,7 +1542,15 @@ class CalibracaoTurbidezAdmin(admin.ModelAdmin):
                 tipo__in=("procedimento", "instrucao", "metodo"),
                 status="vigente",
             ).order_by("codigo", "titulo")
+        if db_field.name == "padrao_referencia":
+            kwargs["queryset"] = Padrao.objects.order_by("codigo", "descricao")
         return super().formfield_for_foreignkey(db_field, request, **kwargs)
+
+    def save_related(self, request, form, formsets, change):
+        super().save_related(request, form, formsets, change)
+        calibracao = form.instance
+        calibracao.sincronizar_padrao_referencia_utilizado()
+        calibracao.sincronizar_pontos_incerteza()
 
     def get_urls(self):
         urls = super().get_urls()
@@ -1404,6 +1624,7 @@ class CalibracaoTurbidezAdmin(admin.ModelAdmin):
 
 @admin.register(CalibracaoColorimetro)
 class CalibracaoColorimetroAdmin(admin.ModelAdmin):
+    form = CalibracaoColorimetroAdminForm
 
     change_form_template = "admin/calibracao/calibracaocolorimetro/change_form.html"
 
@@ -1496,11 +1717,10 @@ class CalibracaoColorimetroAdmin(admin.ModelAdmin):
         ColorimetroPadraoInline,
         ColorimetroVerificacaoInline,
         ColorimetroCalibracaoInline,
-        ColorimetroIncertezaInline,
     ]
 
     class Media:
-        js = ("js/calibracao_turbidez.js",)
+        js = ("js/calibracao_colorimetro.js",)
 
     def get_form(self, request, obj=None, change=False, **kwargs):
         form = super().get_form(request, obj=obj, change=change, **kwargs)
@@ -1539,6 +1759,11 @@ class CalibracaoColorimetroAdmin(admin.ModelAdmin):
                 status="vigente",
             ).order_by("codigo", "titulo")
         return super().formfield_for_foreignkey(db_field, request, **kwargs)
+
+    def save_related(self, request, form, formsets, change):
+        super().save_related(request, form, formsets, change)
+        calibracao = form.instance
+        calibracao.sincronizar_pontos_incerteza()
 
     def get_urls(self):
         urls = super().get_urls()
@@ -1791,8 +2016,8 @@ class PadraoAdmin(admin.ModelAdmin):
 
 @admin.register(CalibracaoPressao)
 class CalibracaoPressaoAdmin(admin.ModelAdmin):
-    change_form_template = "admin/calibracao/calibracaopressao/change_form.html"
     form = CalibracaoPressaoAdminForm
+    change_form_template = "admin/calibracao/calibracaopressao/change_form.html"
 
     list_display = (
         "numero_certificado",
@@ -1988,6 +2213,7 @@ class CalibracaoPressaoAdmin(admin.ModelAdmin):
 
 class PHPadraoInline(admin.TabularInline):
     model = CalibracaoPHPadraoUtilizado
+    form = PHPadraoAdminForm
     extra = 1
     autocomplete_fields = ("padrao",)
     fields = (
@@ -2013,6 +2239,7 @@ class PHPadraoInline(admin.TabularInline):
 
 class PHCalibracaoEletricaInline(admin.TabularInline):
     model = CalibracaoPHPonto
+    form = PHPontoAdminForm
     extra = 3
     fields = (
         "ordem",
@@ -2039,6 +2266,7 @@ class PHCalibracaoEletricaInline(admin.TabularInline):
 
 class PHCalibracaoMRCInline(admin.TabularInline):
     model = CalibracaoPHPonto
+    form = PHPontoAdminForm
     extra = 5
     fields = (
         "ordem",
@@ -2078,6 +2306,7 @@ class PHCalibracaoMRCInline(admin.TabularInline):
 
 class PHIncertezaInline(admin.TabularInline):
     model = CalibracaoPHIncertezaPonto
+    form = PHIncertezaAdminForm
     extra = 1
     fields = (
         "ordem",
@@ -2102,6 +2331,7 @@ class PHIncertezaInline(admin.TabularInline):
 
 @admin.register(CalibracaoPH)
 class CalibracaoPHAdmin(admin.ModelAdmin):
+    form = CalibracaoPHAdminForm
 
     change_form_template = "admin/calibracao/calibracaoph/change_form.html"
 
@@ -2115,7 +2345,7 @@ class CalibracaoPHAdmin(admin.ModelAdmin):
         "pdf_certificado",
     )
 
-    list_filter = ("tipo_calibracao", "local_calibracao", "data_calibracao", "cliente")
+    list_filter = ("tipo_calibracao", "local_calibracao", "data_calibracao", "cliente", OrdemServicoNumeroFilter)
 
     search_fields = (
         "numero_certificado",
@@ -2168,10 +2398,14 @@ class CalibracaoPHAdmin(admin.ModelAdmin):
                 "identificacao_eletrodo",
                 "resolucao_termometro",
                 "temperatura_referencia",
-                "slope_indicado",
                 "id_sensor_temperatura",
                 "unidade_leitura",
                 "tipo_sensor_temperatura",
+            )
+        }),
+        ("Calibracao - Parte quimica", {
+            "fields": (
+                "slope_indicado",
             )
         }),
         ("Certificado - Procedimento e Ambiente", {
@@ -2306,6 +2540,7 @@ class CalibracaoPHAdmin(admin.ModelAdmin):
 
 @admin.register(CalibracaoCondutividade)
 class CalibracaoCondutividadeAdmin(admin.ModelAdmin):
+    form = CalibracaoCondutividadeAdminForm
     list_display = (
         "numero_certificado",
         "cliente",

@@ -34,7 +34,10 @@ class DocumentoAdmin(admin.ModelAdmin):
     inlines = [DocumentoRevisaoInline]
     readonly_fields = ("created_at", "updated_at", "data_proxima_revisao")
     fieldsets = (
-        ("Identificação", {"fields": ("codigo", "titulo", "tipo", "area", "arquivo")}),
+        (
+            "Identificação",
+            {"fields": ("codigo", "titulo", "tipo", "area", "arquivo", "arquivo_rascunho_pdf")},
+        ),
         (
             "Controle documental",
             {

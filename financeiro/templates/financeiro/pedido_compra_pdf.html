@@ -426,6 +426,16 @@
                             <th>Observações</th>
                             <td>{{ pedido.observacoes|default:"-" }}</td>
                         </tr>
+                        {% if pedido.incluir_nome_anexo_pdf and anexo_nome %}
+                        <tr>
+                            <th>Anexo</th>
+                            <td colspan="3">
+                                <a href="{{ pedido.anexo.url }}" target="_blank" rel="noopener">
+                                    {{ anexo_nome }}
+                                </a>
+                            </td>
+                        </tr>
+                        {% endif %}
                     </tbody>
                 </table>
             </section>

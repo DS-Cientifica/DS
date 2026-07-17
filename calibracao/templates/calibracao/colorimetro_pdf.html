@@ -343,7 +343,7 @@
                     <div>{{ calibracao.faixa_calibrada|default:"NÃO CONSTA" }}</div>
 
                     <div class="equipment-label">Menor Resolução:</div>
-                    <div>{% if calibracao.menor_resolucao %}{{ calibracao.menor_resolucao|decimal_br:4 }}{% else %}NÃO CONSTA{% endif %}{% if unit_label %} {{ unit_label }}{% endif %}</div>
+                    <div>{{ menor_resolucao_fmt }}{% if calibracao.menor_resolucao and unit_label %} {{ unit_label }}{% endif %}</div>
 
                     <div class="equipment-label">Local de Calibração:</div>
                     <div>{{ calibracao.get_local_calibracao_display|default:"NÃO CONSTA" }}</div>
@@ -399,7 +399,6 @@
                         <th>Descrição do padrão</th>
                         <th>Número do certificado</th>
                         <th>Laboratório</th>
-                        <th>Data da calibração</th>
                         <th>Data da validade</th>
                     </tr>
                 </thead>
@@ -411,13 +410,12 @@
                                 <td class="{% if not item.descricao %}alert-cell{% endif %}">{% if item.descricao %}{{ item.descricao }}{% else %}<span class="alert-chip">Alerta</span>{% endif %}</td>
                                 <td class="{% if not item.numero_certificado %}alert-cell{% endif %}">{% if item.numero_certificado %}{{ item.numero_certificado }}{% else %}<span class="alert-chip">Alerta</span>{% endif %}</td>
                                 <td class="{% if not item.laboratorio_emitente %}alert-cell{% endif %}">{% if item.laboratorio_emitente %}{{ item.laboratorio_emitente }}{% else %}<span class="alert-chip">Alerta</span>{% endif %}</td>
-                                <td class="{% if not item.data_calibracao %}alert-cell{% endif %}">{% if item.data_calibracao %}{{ item.data_calibracao|date:"d/m/Y" }}{% else %}<span class="alert-chip">Alerta</span>{% endif %}</td>
                                 <td class="{% if not item.validade %}alert-cell{% endif %}">{% if item.validade %}{{ item.validade|date:"d/m/Y" }}{% else %}<span class="alert-chip">Alerta</span>{% endif %}</td>
                             </tr>
                         {% endfor %}
                     {% empty %}
                         <tr>
-                            <td colspan="6" class="alert-cell"><span class="alert-chip">Alerta</span> Nenhum padrão cadastrado.</td>
+                            <td colspan="5" class="alert-cell"><span class="alert-chip">Alerta</span> Nenhum padrão cadastrado.</td>
                         </tr>
                     {% endfor %}
                 </tbody>
@@ -440,10 +438,9 @@
             <table>
                 <thead>
                     <tr>
-                        <th>Ponto</th>
-                        <th>Valor do padrão</th>
-                        <th>Leitura</th>
-                        <th>Erro</th>
+                        <th>Valor do padrão<br>{{ unit_label }}</th>
+                        <th>Leitura<br>{{ unit_label }}</th>
+                        <th>Erro<br>{{ unit_label }}</th>
                         <th>Critério</th>
                         <th>Origem do critério</th>
                         <th>Status</th>
@@ -452,16 +449,15 @@
                 <tbody>
                     {% for ponto in verificacoes %}
                         <tr>
-                            <td>{{ ponto.ordem }}</td>
-                            <td>{{ ponto.valor_padrao|decimal_br:4 }}</td>
-                            <td>{{ ponto.leitura|decimal_br:4 }}</td>
-                            <td>{{ ponto.erro|decimal_br:4 }}</td>
-                            <td>{{ ponto.criterio|default:"-" }}</td>
-                            <td>{{ ponto.get_criterio_origem_display|default:"-" }}</td>
+                            <td>{{ ponto.valor_padrao_fmt }}</td>
+                            <td>{{ ponto.leitura_fmt }}</td>
+                            <td>{{ ponto.erro_fmt }}</td>
+                            <td>{{ ponto.criterio_formatado|default:"-" }}</td>
+                            <td>{{ ponto.criterio_origem_display|default:"-" }}</td>
                             <td>{{ ponto.resultado|default:"-" }}</td>
                         </tr>
                     {% empty %}
-                        <tr><td colspan="7" class="alert-cell"><span class="alert-chip">Alerta</span> Nenhum ponto de verificação cadastrado.</td></tr>
+                        <tr><td colspan="6" class="alert-cell"><span class="alert-chip">Alerta</span> Nenhum ponto de verificação cadastrado.</td></tr>
                     {% endfor %}
                 </tbody>
             </table>
@@ -483,15 +479,15 @@
                 <tbody>
                     {% for ponto in resultados_calibracao %}
                         <tr>
-                            <td>{{ ponto.valor_referencia|decimal_br:4 }}</td>
-                            <td>{{ ponto.leitura_equipamento|decimal_br:4 }}</td>
-                            <td>{{ ponto.erro|decimal_br:4 }}</td>
-                            <td>{{ ponto.incerteza_expandida|decimal_br:6 }}</td>
-                            <td>{{ ponto.fator_k|decimal_br:3 }}</td>
-                            <td>{{ ponto.graus_liberdade|decimal_br:2 }}</td>
+                            <td>{{ ponto.valor_referencia_fmt }}</td>
+                            <td>{{ ponto.leitura_equipamento_fmt }}</td>
+                            <td>{{ ponto.erro_fmt }}</td>
+                            <td>{{ ponto.incerteza_expandida_fmt }}</td>
+                            <td>{{ ponto.fator_k_fmt }}</td>
+                            <td>{{ ponto.graus_liberdade_fmt }}</td>
                         </tr>
                     {% empty %}
-                        <tr><td colspan="6" class="alert-cell"><span class="alert-chip">Alerta</span> Nenhum ponto de calibração cadastrado.</td></tr>
+                        <tr><td colspan="8" class="alert-cell"><span class="alert-chip">Alerta</span> Nenhum ponto de calibração cadastrado.</td></tr>
                     {% endfor %}
                 </tbody>
             </table>
@@ -501,15 +497,15 @@
             <div class="technical-text">
                 A calibração foi realizada efetuando três leituras em cada ponto de calibração. O resultado expresso é a média destas leituras.
                 A incerteza expandida de medição relatada é declarada como incerteza padrão de medição multiplicada pelo fator de abrangência
-                k={{ fator_k_certificado|decimal_br:3 }}, o qual, para uma distribuição t com
-                Veff={{ graus_liberdade_certificado|decimal_br:2 }} graus de liberdade efetivos, corresponde a uma probabilidade
+                k={{ fator_k_certificado_fmt }}, o qual, para uma distribuição t com
+                Veff={{ graus_liberdade_certificado_fmt }} graus de liberdade efetivos, corresponde a uma probabilidade
                 de abrangência de aproximadamente 95%.
             </div>
         </section>
 
         <section class="section">
             <h2 class="section-title">9. Resultado Final</h2>
-            <p>{{ calibracao.resultado_final_resolvido|default:"Sem resultado final informado." }}</p>
+            <p>{{ resultado_final_pdf|default:"Sem resultado final informado." }}</p>
         </section>
 
         <section class="section">

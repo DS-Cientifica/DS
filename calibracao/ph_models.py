@@ -16,6 +16,8 @@ from .models import (
     _fator_abrangencia_95,
     _obter_ou_criar_responsavel_padrao,
     _para_decimal,
+    _quantize_decimal,
+    _quantize_instance_decimal_fields,
 )
 from .services.ph_meter_calculation import (
     average as ph_average,
@@ -360,6 +362,7 @@ class CalibracaoPH(models.Model):
         if not self.numero_certificado:
             self.numero_certificado = self._gerar_numero_certificado()
 
+        _quantize_instance_decimal_fields(self)
         super().save(*args, **kwargs)
 
         status_final = self.calcular_status_final()
@@ -454,6 +457,7 @@ class CalibracaoPHPadraoUtilizado(models.Model):
                 self.valor_nominal = self.padrao.valor_nominal
         if not self.unidade:
             self.unidade = self.calibracao.unidade_leitura
+        _quantize_instance_decimal_fields(self)
         super().save(*args, **kwargs)
 
     def __str__(self):
@@ -522,16 +526,16 @@ class CalibracaoPHPonto(models.Model):
         if leituras:
             media = ph_average(leituras)
             if media is not None:
-                self.media = Decimal(str(round(float(media), 6)))
+                self.media = _quantize_decimal(media)
             self.desvio_padrao = ph_stdev(leituras)
             if self.desvio_padrao is not None:
-                self.desvio_padrao = Decimal(str(round(float(self.desvio_padrao), 6)))
+                self.desvio_padrao = _quantize_decimal(self.desvio_padrao)
 
         referencia = self._referencia()
         if self.media is not None and referencia is not None:
             self.erro = ph_error(self.media, referencia)
             if self.erro is not None:
-                self.erro = Decimal(str(round(float(self.erro), 6)))
+                self.erro = _quantize_decimal(self.erro)
 
         tolerancia = _extrair_decimal_criterio(self.criterio)
         if tolerancia is not None and self.erro is not None:
@@ -545,8 +549,9 @@ class CalibracaoPHPonto(models.Model):
             .first()
         )
         if self.erro is not None and incerteza is not None:
-            self.ema = Decimal(str(round(float(abs(self.erro)) + float(incerteza), 6)))
+            self.ema = _quantize_decimal(abs(self.erro) + incerteza)
 
+        _quantize_instance_decimal_fields(self)
         super().save(*args, **kwargs)
 
         status_final = self.calibracao.calcular_status_final()
@@ -644,12 +649,11 @@ class CalibracaoPHIncertezaPonto(models.Model):
             if self.graus_liberdade in (None, ""):
                 self.graus_liberdade = Decimal("999999.00")
 
+        _quantize_instance_decimal_fields(self)
         super().save(*args, **kwargs)
 
         if ponto_calibracao and ponto_calibracao.erro is not None and self.incerteza_expandida is not None:
-            ponto_calibracao.ema = Decimal(
-                str(round(float(abs(ponto_calibracao.erro)) + float(self.incerteza_expandida), 6))
-            )
+            ponto_calibracao.ema = _quantize_decimal(abs(ponto_calibracao.erro) + self.incerteza_expandida)
             ponto_calibracao.save(update_fields=["ema"])
 
     def __str__(self):

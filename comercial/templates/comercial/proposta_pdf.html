@@ -4,7 +4,7 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Proposta {{ proposta.codigo }}</title>
+    <title>{{ pdf_filename }}</title>
     <style>
         :root {
             --ink: #172033;
@@ -72,7 +72,22 @@
             padding: 8px 14px;
         }
 
-        .toolbar-actions button.secondary {
+        .toolbar-actions a {
+            border: 1px solid var(--primary);
+            border-radius: 4px;
+            background: var(--primary);
+            color: #fff;
+            cursor: pointer;
+            font: inherit;
+            font-weight: 700;
+            padding: 8px 14px;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+        }
+
+        .toolbar-actions button.secondary,
+        .toolbar-actions a.secondary {
             background: #fff;
             color: var(--primary);
         }
@@ -404,18 +419,34 @@
 
         .signature-area {
             margin-top: 10mm;
-            display: flex;
-            justify-content: center;
-            text-align: center;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 14mm;
+            align-items: end;
             break-inside: avoid;
             page-break-inside: avoid;
         }
 
+        .signature-block {
+            text-align: center;
+        }
+
+        .signature-space {
+            min-height: 24mm;
+        }
+
         .signature-line {
-            width: 82mm;
-            padding-top: 7mm;
+            width: 100%;
+            padding-top: 4mm;
             border-top: 1px solid var(--ink);
             font-weight: 700;
+        }
+
+        .signature-role {
+            margin-top: 2mm;
+            color: var(--muted);
+            font-size: 9px;
+            text-transform: uppercase;
         }
 
         .document-footer {
@@ -476,8 +507,14 @@
 <body>
     <div class="print-toolbar no-print">
         <div class="toolbar-inner">
-            <div class="toolbar-title">Proposta {{ proposta.codigo }}</div>
+            <div class="toolbar-title">{{ pdf_filename }}</div>
             <div class="toolbar-actions">
+                <form method="post" action="{{ send_email_url }}" style="display:inline;">
+                    {% csrf_token %}
+                    <button type="submit">Enviar por e-mail</button>
+                </form>
+                <a href="{{ whatsapp_url }}" target="_blank" rel="noopener">Compartilhar no WhatsApp</a>
+                <a href="{{ download_pdf_url }}">Baixar PDF</a>
                 <button type="button" onclick="window.print()">Imprimir / PDF</button>
                 <button type="button" class="secondary" onclick="window.close()">Fechar</button>
             </div>
@@ -486,6 +523,15 @@
 
     <main class="proposal-shell">
         <article class="proposal-sheet">
+            {% if messages %}
+                <div class="no-print" style="margin-bottom:12px;">
+                    {% for message in messages %}
+                        <div style="padding:10px 12px; margin-bottom:8px; border-radius:4px; border:1px solid #d8dde6; background:{% if message.tags == 'success' %}#edf8f0{% else %}#fff4e5{% endif %}; color:#172033;">
+                            {{ message }}
+                        </div>
+                    {% endfor %}
+                </div>
+            {% endif %}
             <header class="document-header">
                 <div class="logo-wrap">
                     <img src="{% static 'img/logo_ds.png' %}" alt="DS Científica">
@@ -506,6 +552,10 @@
                         <tr>
                             <th>Data</th>
                             <td>{{ proposta.data_emissao|date:"d/m/Y" }}</td>
+                        </tr>
+                        <tr>
+                            <th>Revisão</th>
+                            <td>{{ proposta.revisao|default:"00" }}</td>
                         </tr>
                         <tr>
                             <th>Status</th>
@@ -579,8 +629,14 @@
                         <tr>
                             <th>Execução</th>
                             <td>{{ local_execucao }}</td>
+                            <th>Prazo para atendimento</th>
+                            <td>{{ proposta.prazo_execucao|default:"10 dias úteis" }}</td>
+                        </tr>
+                        <tr>
                             <th>Validade</th>
                             <td>{{ proposta.validade|date:"d/m/Y"|default:"-" }}</td>
+                            <th></th>
+                            <td></td>
                         </tr>
                     </tbody>
                 </table>
@@ -646,8 +702,34 @@
                 </table>
             </section>
 
+            {% if historico_itens %}
+                <section class="proposal-section">
+                    <h2 class="section-title">{{ secao_historico_numero }}. Hist&oacute;rico dos itens da proposta</h2>
+                    <table class="info-table">
+                        <thead>
+                            <tr>
+                                <th>Data</th>
+                                <th>Revis&atilde;o</th>
+                                <th>Usu&aacute;rio</th>
+                                <th>Movimenta&ccedil;&atilde;o</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for movimento in historico_itens %}
+                                <tr>
+                                    <td>{{ movimento.data|date:"d/m/Y H:i" }}</td>
+                                    <td>{{ movimento.revisao|default:"00" }}</td>
+                                    <td>{% if movimento.usuario %}{{ movimento.usuario.get_full_name|default:movimento.usuario.username }}{% else %}-{% endif %}</td>
+                                    <td>{{ movimento.descricao }}</td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </section>
+            {% endif %}
+
             <section class="proposal-section">
-                <h2 class="section-title">V. Despesas e totais</h2>
+                <h2 class="section-title">{{ secao_despesas_numero }}. Despesas e totais</h2>
                 <div class="totals-layout">
                     <div class="commercial-note">
                         Valores expressos em reais. Tributos e demais condições seguem o cadastro desta proposta.
@@ -659,8 +741,24 @@
                                 <td>{{ subtotal }}</td>
                             </tr>
                             <tr>
-                                <th>Desconto</th>
-                                <td>{{ desconto_total }}</td>
+                                <th>Desconto itens</th>
+                                <td>{{ desconto_itens }}</td>
+                            </tr>
+                            <tr>
+                                <th>Desconto geral</th>
+                                <td>{{ desconto_geral }}</td>
+                            </tr>
+                            <tr>
+                                <th>Frete</th>
+                                <td>{{ frete_valor }}</td>
+                            </tr>
+                            <tr>
+                                <th>Outras despesas</th>
+                                <td>{{ outras_despesas }}</td>
+                            </tr>
+                            <tr>
+                                <th>Seguro</th>
+                                <td>{{ seguro_valor }}</td>
                             </tr>
                             <tr>
                                 <th>Total</th>
@@ -672,7 +770,7 @@
             </section>
 
             <section class="proposal-section">
-                <h2 class="section-title">VI. Observações</h2>
+                <h2 class="section-title">{{ secao_observacoes_numero }}. Observações</h2>
                 <div class="text-box">
                     {% if proposta.observacoes %}
                         {% if proposta.observacoes == "Esta proposta não inclui despesas de deslocamento técnico nem frete. Caso aplicáveis, esses custos serão informados e aprovados previamente pelo cliente." %}
@@ -718,8 +816,26 @@
                 </section>
             {% endif %}
 
+            <section class="proposal-section">
+                <h2 class="section-title">Condi&ccedil;&otilde;es gerais da proposta</h2>
+                <div class="text-box">{{ condicoes_gerais_proposta }}</div>
+            </section>
+
             <div class="signature-area">
-                <div class="signature-line">DIEGO H. A. SALDANHA</div>
+                <div class="signature-block">
+                    <div class="signature-space"></div>
+                    <div class="signature-line">
+                        {% if contato %}
+                            {{ contato.nome|default:"" }}
+                        {% endif %}
+                    </div>
+                    <div class="signature-role">Aprova&ccedil;&atilde;o do cliente</div>
+                </div>
+                <div class="signature-block">
+                    <div class="signature-space"></div>
+                    <div class="signature-line">DIEGO H. A. SALDANHA</div>
+                    <div class="signature-role">DS Cient&iacute;fica</div>
+                </div>
             </div>
 
             <footer class="document-footer">

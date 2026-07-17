@@ -33,6 +33,9 @@ def apply_default_access_groups(Group, Permission):
             "imposto",
             "pedidocompra",
             "pedidocompraitem",
+            "notafiscal",
+            "itemnotafiscal",
+            "anexonotafiscal",
         ],
         "calibracao": [
             "instrumento",
@@ -64,6 +67,13 @@ def apply_default_access_groups(Group, Permission):
         ],
         "manutencao": [
             "manutencao",
+        ],
+        "gestao": [
+            "colaborador",
+            "colaboradoranexo",
+            "competenciatecnica",
+            "treinamento",
+            "documentoempresa",
         ],
         "qualidade": ["documento", "documentorevisao"],
     }
@@ -105,6 +115,9 @@ def apply_default_access_groups(Group, Permission):
                     "imposto",
                     "pedidocompra",
                     "pedidocompraitem",
+                    "notafiscal",
+                    "itemnotafiscal",
+                    "anexonotafiscal",
                 ],
             },
             "actions": ("view", "add", "change"),

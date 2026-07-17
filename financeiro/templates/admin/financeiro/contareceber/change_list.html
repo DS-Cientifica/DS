@@ -1,0 +1,154 @@
+{% extends "admin/change_list.html" %}
+
+{% block object-tools-items %}
+  <li>
+    <a href="{% url 'admin:financeiro_contareceber_calendario' %}" class="historylink">Ver calendario</a>
+  </li>
+  {{ block.super }}
+{% endblock %}
+
+{% block search %}
+{{ block.super }}
+<div class="conta-receber-quick-filters">
+  <form method="get" class="conta-receber-quick-filters__form" id="conta-receber-quick-filters-form">
+    {% if cl.query %}
+      <input type="hidden" name="q" value="{{ cl.query }}">
+    {% endif %}
+
+    <label>
+      Status
+      <select name="status__exact">
+        <option value="">Todos</option>
+        {% for value, label in status_choices_rapido %}
+          <option value="{{ value }}" {% if filtro_status_atual == value %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </label>
+
+    <button type="submit" class="button">Filtrar</button>
+    <a class="button conta-receber-quick-filters__clear" href="?{% if cl.query %}q={{ cl.query|urlencode }}{% endif %}">Limpar filtros rapidos</a>
+  </form>
+
+  <div class="conta-receber-quick-filters__summary">
+    <strong>Total filtrado:</strong>
+    R$ {{ total_filtrado_contas_receber|floatformat:2 }}
+    <span>({{ quantidade_filtrada_contas_receber|default:0 }} conta{{ quantidade_filtrada_contas_receber|pluralize }})</span>
+    <span class="conta-receber-quick-filters__selected">
+      <strong>Total selecionado:</strong>
+      <span id="conta-receber-total-selecionado">R$ 0,00</span>
+      <span id="conta-receber-quantidade-selecionada">(0 contas)</span>
+    </span>
+  </div>
+</div>
+
+<style>
+  .conta-receber-quick-filters {
+    margin: 10px 0 14px;
+    padding: 12px;
+    border: 1px solid var(--hairline-color, #ddd);
+    border-radius: 4px;
+    background: var(--darkened-bg, #f8f8f8);
+  }
+
+  .conta-receber-quick-filters__form {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px 14px;
+    align-items: flex-end;
+  }
+
+  .conta-receber-quick-filters label {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    font-weight: 600;
+  }
+
+  .conta-receber-quick-filters select {
+    min-width: 180px;
+    height: 32px;
+  }
+
+  .conta-receber-quick-filters__summary {
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px solid var(--hairline-color, #ddd);
+    font-size: 14px;
+  }
+
+  .conta-receber-quick-filters__selected {
+    display: inline-block;
+    margin-left: 18px;
+  }
+</style>
+
+<script>
+  (function () {
+    const form = document.getElementById("conta-receber-quick-filters-form");
+    if (form) {
+      form.addEventListener("submit", function () {
+        form.querySelectorAll("select").forEach(function (select) {
+          if (!select.value) {
+            select.disabled = true;
+          }
+        });
+      });
+    }
+
+    function parseMoney(value) {
+      if (!value) {
+        return 0;
+      }
+      var normalized = String(value).replace(/[^\d,.-]/g, "").replace(/\./g, "").replace(",", ".");
+      var parsed = Number(normalized);
+      return Number.isFinite(parsed) ? parsed : 0;
+    }
+
+    function formatMoney(value) {
+      return "R$ " + value.toFixed(2).replace(".", ",");
+    }
+
+    function updateSelectedTotal() {
+      var total = 0;
+      var count = 0;
+      document.querySelectorAll("#result_list tbody tr").forEach(function (row) {
+        var checkbox = row.querySelector('input.action-select[type="checkbox"]');
+        if (!checkbox || !checkbox.checked) {
+          return;
+        }
+
+        var totalCell = row.querySelector(".field-valor");
+        if (!totalCell) {
+          return;
+        }
+
+        total += parseMoney(totalCell.textContent);
+        count += 1;
+      });
+
+      var totalElement = document.getElementById("conta-receber-total-selecionado");
+      var countElement = document.getElementById("conta-receber-quantidade-selecionada");
+      if (totalElement) {
+        totalElement.textContent = formatMoney(total);
+      }
+      if (countElement) {
+        countElement.textContent = "(" + count + " conta" + (count === 1 ? "" : "s") + ")";
+      }
+    }
+
+    document.addEventListener("change", function (event) {
+      if (event.target.matches('#result_list input[type="checkbox"], input#action-toggle')) {
+        setTimeout(updateSelectedTotal, 0);
+      }
+    });
+
+    document.addEventListener("click", function (event) {
+      if (event.target.matches(".actions .all, .actions .clear, .actions .question")) {
+        setTimeout(updateSelectedTotal, 0);
+      }
+    });
+
+    updateSelectedTotal();
+  })();
+</script>
+{% endblock %}

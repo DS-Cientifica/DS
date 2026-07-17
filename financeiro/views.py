@@ -33,6 +33,7 @@ def _pedido_contexto(pedido):
         "frete": formatar_moeda(pedido.frete),
         "outros_custos": formatar_moeda(pedido.outros_custos),
         "total": formatar_moeda(pedido.total),
+        "anexo_nome": pedido.anexo.name.split("/")[-1] if pedido.anexo else "",
     }
 
 
@@ -69,6 +70,8 @@ def pedido_compra_duplicar(request, pk):
         prazo_entrega=pedido.prazo_entrega,
         condicao_pagamento=pedido.condicao_pagamento,
         observacoes=pedido.observacoes,
+        anexo=pedido.anexo,
+        incluir_nome_anexo_pdf=pedido.incluir_nome_anexo_pdf,
         frete=pedido.frete,
         outros_custos=pedido.outros_custos,
     )

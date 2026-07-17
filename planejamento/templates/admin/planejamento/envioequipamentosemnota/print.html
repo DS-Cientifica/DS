@@ -1,0 +1,616 @@
+{% load static %}
+<!doctype html>
+<html lang="pt-br">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{{ formulario.codigo }} | {{ formulario.get_tipo_formulario_display }} sem NF</title>
+    <style>
+        :root {
+            --ink: #172033;
+            --muted: #5f6b7a;
+            --line: #b9c1cd;
+            --line-strong: #788599;
+            --paper: #ffffff;
+            --soft: #f4f6f9;
+            --primary: #283864;
+        }
+
+        * { box-sizing: border-box; }
+
+        html, body {
+            margin: 0;
+            color: var(--ink);
+            background: #e9edf3;
+            font-family: Arial, Helvetica, sans-serif;
+            font-size: 11px;
+            line-height: 1.35;
+        }
+
+        .print-toolbar {
+            position: sticky;
+            top: 0;
+            z-index: 5;
+            display: flex;
+            justify-content: center;
+            padding: 12px;
+            background: rgba(255, 255, 255, 0.96);
+            border-bottom: 1px solid #d8dde6;
+        }
+
+        .toolbar-inner {
+            width: 210mm;
+            max-width: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+        }
+
+        .toolbar-title {
+            font-size: 13px;
+            font-weight: 700;
+        }
+
+        .toolbar-actions {
+            display: flex;
+            gap: 8px;
+        }
+
+        .toolbar-actions button {
+            border: 1px solid var(--primary);
+            border-radius: 4px;
+            background: var(--primary);
+            color: #fff;
+            cursor: pointer;
+            font: inherit;
+            font-weight: 700;
+            padding: 8px 14px;
+        }
+
+        .toolbar-actions button.secondary {
+            background: #fff;
+            color: var(--primary);
+        }
+
+        .document-shell {
+            padding: 18px 0 32px;
+        }
+
+        .document-sheet {
+            width: 210mm;
+            min-height: 297mm;
+            margin: 0 auto;
+            padding: 11mm 12mm 10mm;
+            background: var(--paper);
+            box-shadow: 0 18px 50px rgba(23, 32, 51, 0.18);
+        }
+
+        .document-header {
+            display: grid;
+            grid-template-columns: 30mm 1fr 54mm;
+            gap: 7mm;
+            align-items: center;
+            padding-bottom: 5mm;
+            border-bottom: 2px solid var(--primary);
+        }
+
+        .logo-wrap img {
+            width: 27mm;
+            height: 27mm;
+            object-fit: contain;
+            display: block;
+        }
+
+        .company-name {
+            margin: 0 0 3px;
+            color: var(--primary);
+            font-size: 18px;
+            font-weight: 800;
+            text-transform: uppercase;
+        }
+
+        .company-line {
+            margin: 0;
+            color: var(--muted);
+            font-size: 10.5px;
+        }
+
+        .document-meta {
+            width: 100%;
+            border-collapse: collapse;
+            border: 1px solid var(--line-strong);
+            table-layout: fixed;
+        }
+
+        .document-meta th,
+        .document-meta td {
+            padding: 5px 7px;
+            border-bottom: 1px solid var(--line);
+            text-align: left;
+            vertical-align: middle;
+        }
+
+        .document-meta th {
+            width: 38%;
+            background: var(--soft);
+            color: var(--primary);
+            font-size: 9px;
+            text-transform: uppercase;
+        }
+
+        .document-meta td {
+            font-weight: 700;
+        }
+
+        .document-title {
+            margin: 5mm 0 4mm;
+            display: flex;
+            align-items: end;
+            justify-content: space-between;
+            gap: 10mm;
+        }
+
+        .document-title h1 {
+            margin: 0;
+            color: var(--primary);
+            font-size: 20px;
+            line-height: 1;
+            text-transform: uppercase;
+        }
+
+        .document-title span {
+            color: var(--muted);
+            font-weight: 700;
+        }
+
+        .section {
+            margin-top: 3.5mm;
+            break-inside: avoid;
+            page-break-inside: avoid;
+        }
+
+        .section-title {
+            margin: 0;
+            padding: 5px 8px;
+            background: var(--primary);
+            color: #fff;
+            border: 1px solid var(--primary);
+            font-size: 10px;
+            font-weight: 800;
+            text-transform: uppercase;
+        }
+
+        .info-table,
+        .items-table {
+            width: 100%;
+            border-collapse: collapse;
+            table-layout: fixed;
+        }
+
+        .info-table th,
+        .info-table td {
+            padding: 6px 7px;
+            border: 1px solid var(--line);
+            vertical-align: top;
+        }
+
+        .info-table th {
+            width: 28mm;
+            background: var(--soft);
+            color: var(--primary);
+            font-size: 9px;
+            font-weight: 800;
+            text-align: left;
+            text-transform: uppercase;
+        }
+
+        .info-table td,
+        .items-table td {
+            overflow-wrap: anywhere;
+        }
+
+        .items-table {
+            border: 1px solid var(--line-strong);
+        }
+
+        .items-table th {
+            padding: 6px 5px;
+            background: var(--soft);
+            border: 1px solid var(--line);
+            color: var(--primary);
+            font-size: 9px;
+            font-weight: 800;
+            text-align: center;
+            text-transform: uppercase;
+        }
+
+        .items-table td {
+            padding: 7px 6px;
+            border: 1px solid var(--line);
+            vertical-align: top;
+        }
+
+        .items-table thead {
+            display: table-header-group;
+        }
+
+        .items-table tr,
+        .info-table tr {
+            break-inside: avoid;
+            page-break-inside: avoid;
+        }
+
+        .options-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 0;
+            border-left: 1px solid var(--line);
+            border-right: 1px solid var(--line);
+            border-bottom: 1px solid var(--line);
+        }
+
+        .option-block {
+            padding: 8px 10px;
+            border-right: 1px solid var(--line);
+        }
+
+        .option-block:last-child {
+            border-right: 0;
+        }
+
+        .option-line {
+            margin: 0 0 5px;
+        }
+
+        .text-box {
+            border: 1px solid var(--line);
+            border-top: 0;
+            padding: 8px 10px;
+            min-height: 26mm;
+            white-space: pre-line;
+        }
+
+        .text-box.compact {
+            min-height: 15mm;
+        }
+
+        .declaration-box {
+            border: 1px solid var(--line);
+            border-top: 0;
+            padding: 10px 12px;
+        }
+
+        .declaration-box p,
+        .declaration-box ul {
+            margin: 0 0 8px;
+        }
+
+        .declaration-box ul {
+            padding-left: 18px;
+        }
+
+        .signature-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 14px;
+            margin-top: 10mm;
+        }
+
+        .signature-card {
+            padding-top: 18mm;
+        }
+
+        .signature-line {
+            border-top: 1px solid var(--ink);
+            padding-top: 6px;
+            text-align: center;
+            font-weight: 700;
+        }
+
+        .signature-role {
+            color: var(--muted);
+            font-size: 10px;
+            text-align: center;
+            margin-top: 4px;
+        }
+
+        @page {
+            size: A4;
+            margin: 10mm;
+        }
+
+        @media print {
+            html, body {
+                background: #fff;
+            }
+
+            .print-toolbar {
+                display: none;
+            }
+
+            .document-shell {
+                padding: 0;
+            }
+
+            .document-sheet {
+                box-shadow: none;
+                margin: 0;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="print-toolbar">
+        <div class="toolbar-inner">
+            <div class="toolbar-title">Formulario {{ formulario.codigo }}</div>
+            <div class="toolbar-actions">
+                <button onclick="window.print()">Imprimir / PDF</button>
+                <button class="secondary" onclick="window.close()">Fechar</button>
+            </div>
+        </div>
+    </div>
+
+    <main class="document-shell">
+        <section class="document-sheet">
+            <header class="document-header">
+                <div class="logo-wrap">
+                    <img src="{% static 'img/logo_ds.png' %}" alt="DS Cientifica">
+                </div>
+                <div>
+                    <h2 class="company-name">DS Cientifica</h2>
+                    <p class="company-line">www.dscientifica.com.br | (11) 98859-9577</p>
+                    <p class="company-line">Jundiai-SP | CNPJ: 63.669.660/0001-80</p>
+                </div>
+                <table class="document-meta">
+                    <tr>
+                        <th>Formulario</th>
+                        <td>{{ formulario.codigo }}</td>
+                    </tr>
+                    <tr>
+                        <th>Data</th>
+                        <td>{{ formulario.data_envio_formulario|date:"d/m/Y" }}</td>
+                    </tr>
+                    <tr>
+                        <th>Finalidade</th>
+                        <td>
+                            {% if formulario.finalidade == "outro" and formulario.finalidade_outro %}
+                                {{ formulario.finalidade_outro }}
+                            {% else %}
+                                {{ formulario.get_finalidade_display|default:"-" }}
+                            {% endif %}
+                        </td>
+                    </tr>
+                </table>
+            </header>
+
+            <div class="document-title">
+                <h1>Formulario logístico sem nota fiscal</h1>
+                <span>Destinacao: {{ formulario.empresa_destinataria|default:"Nao informado" }}</span>
+            </div>
+
+            <section class="section">
+                <h2 class="section-title">I. Dados do remetente</h2>
+                <table class="info-table">
+                    <tr>
+                        <th>Empresa</th>
+                        <td>{{ formulario.empresa_remetente|default:"-" }}</td>
+                        <th>CNPJ / CPF</th>
+                        <td>{{ formulario.cnpj_cpf_remetente|default:"-" }}</td>
+                    </tr>
+                    <tr>
+                        <th>Endereco</th>
+                        <td colspan="3">{{ formulario.endereco_remetente|default:"-" }}</td>
+                    </tr>
+                    <tr>
+                        <th>Cidade / UF</th>
+                        <td>{{ formulario.cidade_uf_remetente|default:"-" }}</td>
+                        <th>Responsavel</th>
+                        <td>{{ formulario.responsavel_envio|default:"-" }}</td>
+                    </tr>
+                    <tr>
+                        <th>Telefone</th>
+                        <td>{{ formulario.telefone_whatsapp|default:"-" }}</td>
+                        <th>E-mail</th>
+                        <td>{{ formulario.email_remetente|default:"-" }}</td>
+                    </tr>
+                </table>
+            </section>
+
+            <section class="section">
+                <h2 class="section-title">II. Dados do destinatario</h2>
+                <table class="info-table">
+                    <tr>
+                        <th>Empresa</th>
+                        <td>{{ formulario.empresa_destinataria|default:"-" }}</td>
+                        <th>CNPJ</th>
+                        <td>{{ formulario.cnpj_destinatario|default:"-" }}</td>
+                    </tr>
+                    <tr>
+                        <th>Endereco</th>
+                        <td colspan="3">{{ formulario.endereco_destinatario|default:"-" }}</td>
+                    </tr>
+                    <tr>
+                        <th>Cidade / UF</th>
+                        <td>{{ formulario.cidade_uf_destinatario|default:"-" }}</td>
+                        <th>Responsavel</th>
+                        <td>{{ formulario.responsavel_recebimento_destino|default:"-" }}</td>
+                    </tr>
+                </table>
+            </section>
+
+            <section class="section">
+                <h2 class="section-title">III. Dados do equipamento enviado</h2>
+                <table class="items-table">
+                    <thead>
+                        <tr>
+                            <th style="width: 7%;">Item</th>
+                            <th style="width: 28%;">Equipamento</th>
+                            <th style="width: 16%;">Marca</th>
+                            <th style="width: 16%;">Modelo</th>
+                            <th style="width: 23%;">N serie / patrimonio</th>
+                            <th style="width: 10%;">Qtd.</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for item in formulario.itens.all %}
+                            <tr>
+                                <td style="text-align:center;">{{ item.ordem }}</td>
+                                <td>{{ item.equipamento }}</td>
+                                <td>{{ item.marca|default:"-" }}</td>
+                                <td>{{ item.modelo|default:"-" }}</td>
+                                <td>{{ item.numero_serie_patrimonio|default:"-" }}</td>
+                                <td style="text-align:center;">{{ item.quantidade }}</td>
+                            </tr>
+                        {% empty %}
+                            <tr>
+                                <td colspan="6">Nenhum item informado.</td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </section>
+
+            <section class="section">
+                <h2 class="section-title">IV. Finalidade do envio</h2>
+                <div class="options-grid">
+                    <div class="option-block">
+                        <p class="option-line">{% if formulario.finalidade == "calibracao" %}[x]{% else %}[ ]{% endif %} Calibracao</p>
+                        <p class="option-line">{% if formulario.finalidade == "manutencao_preventiva" %}[x]{% else %}[ ]{% endif %} Manutencao preventiva</p>
+                        <p class="option-line">{% if formulario.finalidade == "manutencao_corretiva" %}[x]{% else %}[ ]{% endif %} Manutencao corretiva</p>
+                    </div>
+                    <div class="option-block">
+                        <p class="option-line">{% if formulario.finalidade == "avaliacao_tecnica" %}[x]{% else %}[ ]{% endif %} Avaliacao tecnica / diagnostico</p>
+                        <p class="option-line">{% if formulario.finalidade == "orcamento" %}[x]{% else %}[ ]{% endif %} Orcamento</p>
+                        <p class="option-line">{% if formulario.finalidade == "outro" %}[x]{% else %}[ ]{% endif %} Outro: {{ formulario.finalidade_outro|default:"-" }}</p>
+                    </div>
+                </div>
+            </section>
+
+            <section class="section">
+                <h2 class="section-title">V. Descricao da solicitacao</h2>
+                <div class="text-box">{{ formulario.descricao_solicitacao|default:"-" }}</div>
+            </section>
+
+            <section class="section">
+                <h2 class="section-title">VI. Condicao de envio</h2>
+                <div class="options-grid">
+                    <div class="option-block">
+                        <p class="option-line">{% if formulario.condicao_funcionamento == "funcionando" %}[x]{% else %}[ ]{% endif %} Equipamento funcionando normalmente</p>
+                        <p class="option-line">{% if formulario.condicao_funcionamento == "defeito" %}[x]{% else %}[ ]{% endif %} Equipamento com defeito</p>
+                        <p class="option-line">{% if formulario.condicao_funcionamento == "liga_falha" %}[x]{% else %}[ ]{% endif %} Equipamento liga, mas apresenta falha</p>
+                        <p class="option-line">{% if formulario.condicao_funcionamento == "nao_liga" %}[x]{% else %}[ ]{% endif %} Equipamento nao liga</p>
+                    </div>
+                    <div class="option-block">
+                        <p class="option-line">{% if formulario.condicao_acessorios == "com_acessorios" %}[x]{% else %}[ ]{% endif %} Equipamento enviado com acessorios</p>
+                        <p class="option-line">{% if formulario.condicao_acessorios == "sem_acessorios" %}[x]{% else %}[ ]{% endif %} Equipamento enviado sem acessorios</p>
+                        <p class="option-line">{% if formulario.condicao_embalagem_envio == "integra" %}[x]{% else %}[ ]{% endif %} Embalagem integra</p>
+                        <p class="option-line">{% if formulario.condicao_embalagem_envio == "danificada" %}[x]{% else %}[ ]{% endif %} Embalagem danificada</p>
+                    </div>
+                </div>
+                <table class="info-table">
+                    <tr>
+                        <th>Acessorios</th>
+                        <td>{{ formulario.acessorios_enviados|default:"-"|linebreaksbr }}</td>
+                    </tr>
+                    <tr>
+                        <th>Observacoes</th>
+                        <td>{{ formulario.observacoes_estado|default:"-"|linebreaksbr }}</td>
+                    </tr>
+                </table>
+            </section>
+
+            <section class="section">
+                <h2 class="section-title">VII. Declaracoes e responsabilidades</h2>
+                <div class="declaration-box">
+                    <p>O equipamento descrito neste formulario esta sendo enviado ao destinatario informado, sem Nota Fiscal de Remessa, exclusivamente para fins de prestacao de servico tecnico, orcamento, calibracao, manutencao ou avaliacao.</p>
+                    <ul>
+                        <li>O equipamento e de propriedade do remetente ou esta sob sua responsabilidade.</li>
+                        <li>O envio sem Nota Fiscal de Remessa e de responsabilidade do remetente.</li>
+                        <li>O destinatario nao se responsabiliza por eventuais problemas fiscais decorrentes da ausencia da Nota Fiscal de Remessa.</li>
+                        <li>O transporte, salvo acordo formal em contrario, e de responsabilidade do remetente.</li>
+                        <li>Danos, extravios, furtos, roubos ou avarias ocorridas durante o transporte devem ser tratados com a transportadora, Correios ou responsavel pelo envio.</li>
+                        <li>O equipamento sera recebido e avaliado conforme as condicoes fisicas apresentadas no ato do recebimento.</li>
+                    </ul>
+                </div>
+            </section>
+
+            <section class="section">
+                <h2 class="section-title">VIII. Dados do transporte</h2>
+                <table class="info-table">
+                    <tr>
+                        <th>Transportadora</th>
+                        <td>{{ formulario.transportadora|default:"-" }}</td>
+                        <th>Rastreamento</th>
+                        <td>{{ formulario.codigo_rastreamento|default:"-" }}</td>
+                    </tr>
+                    <tr>
+                        <th>Data do envio</th>
+                        <td>{{ formulario.data_envio_transporte|date:"d/m/Y"|default:"-" }}</td>
+                        <th>Frete</th>
+                        <td>{{ formulario.get_responsavel_frete_display|default:"-" }}</td>
+                    </tr>
+                </table>
+            </section>
+
+            <section class="section">
+                <h2 class="section-title">IX. Declaracao do remetente</h2>
+                <div class="declaration-box">
+                    <p>Declaro, para os devidos fins, que estou enviando o(s) equipamento(s) descrito(s) neste formulario ao destinatario informado, sem emissao de Nota Fiscal de Remessa, assumindo integral responsabilidade pelas informacoes prestadas, pela origem do equipamento e pelos eventuais riscos fiscais e logisticos relacionados ao envio.</p>
+                </div>
+                <table class="info-table">
+                    <tr>
+                        <th>Nome</th>
+                        <td>{{ formulario.nome_declarante|default:"-" }}</td>
+                        <th>Cargo</th>
+                        <td>{{ formulario.cargo_declarante|default:"-" }}</td>
+                    </tr>
+                    <tr>
+                        <th>CPF</th>
+                        <td>{{ formulario.cpf_declarante|default:"-" }}</td>
+                        <th>Data</th>
+                        <td>{{ formulario.data_declaracao|date:"d/m/Y"|default:"-" }}</td>
+                    </tr>
+                    <tr>
+                        <th>Assinatura</th>
+                        <td colspan="3">{{ formulario.assinatura_declarante|default:"-" }}</td>
+                    </tr>
+                </table>
+            </section>
+
+            <section class="section">
+                <h2 class="section-title">X. Recebimento pelo destinatario</h2>
+                <table class="info-table">
+                    <tr>
+                        <th>Data de recebimento</th>
+                        <td>{{ formulario.data_recebimento|date:"d/m/Y"|default:"-" }}</td>
+                        <th>Recebido por</th>
+                        <td>{{ formulario.recebido_por|default:"-" }}</td>
+                    </tr>
+                    <tr>
+                        <th>Embalagem</th>
+                        <td>{% if formulario.condicao_embalagem_recebimento == "outro" %}Outro - {{ formulario.condicao_embalagem_recebimento_outro|default:"-" }}{% else %}{{ formulario.get_condicao_embalagem_recebimento_display|default:"-" }}{% endif %}</td>
+                        <th>Condicao aparente</th>
+                        <td>{{ formulario.get_condicao_aparente_recebimento_display|default:"-" }}</td>
+                    </tr>
+                    <tr>
+                        <th>Observacoes</th>
+                        <td colspan="3">{{ formulario.observacoes_recebimento|default:"-"|linebreaksbr }}</td>
+                    </tr>
+                </table>
+            </section>
+
+            <section class="signature-grid">
+                <div class="signature-card">
+                    <div class="signature-line">{{ formulario.nome_declarante|default:"Responsavel pelo envio" }}</div>
+                    <div class="signature-role">Remetente</div>
+                </div>
+                <div class="signature-card">
+                    <div class="signature-line">{{ formulario.recebido_por|default:"Responsavel pelo recebimento" }}</div>
+                    <div class="signature-role">Destinatario / recebedor</div>
+                </div>
+            </section>
+        </section>
+    </main>
+</body>
+</html>

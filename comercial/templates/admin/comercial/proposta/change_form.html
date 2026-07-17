@@ -1,0 +1,156 @@
+{% extends "admin/change_form.html" %}
+{% load i18n admin_urls %}
+
+{% block object-tools-items %}
+    {{ block.super }}
+    {% if original %}
+        <li>
+            <a href="{% url 'admin:comercial_proposta_criar_revisao' original.pk %}" class="historylink">
+                Criar revisão
+            </a>
+        </li>
+    {% endif %}
+{% endblock %}
+
+{% block after_field_sets %}
+    {{ block.super }}
+    <fieldset class="module aligned proposta-calculadora">
+        <h2>Calculadora de valores</h2>
+        <div class="form-row">
+            <div>
+                <label for="calc_custo_unitario">Custo unitário</label>
+                <input type="text" id="calc_custo_unitario" placeholder="0,00">
+            </div>
+            <div>
+                <label for="calc_quantidade">Quantidade</label>
+                <input type="number" id="calc_quantidade" min="1" step="1" value="1">
+            </div>
+            <div>
+                <label for="calc_margem">Margem (%)</label>
+                <input type="text" id="calc_margem" placeholder="0,00">
+            </div>
+            <div>
+                <label for="calc_desconto">Desconto</label>
+                <input type="text" id="calc_desconto" placeholder="0,00">
+            </div>
+        </div>
+        <div class="form-row proposta-calculadora__resultado">
+            <div><strong>Preço unitário sugerido:</strong> <span id="calc_preco_unitario">R$ 0,00</span></div>
+            <div><strong>Total bruto:</strong> <span id="calc_total_bruto">R$ 0,00</span></div>
+            <div><strong>Total líquido:</strong> <span id="calc_total_liquido">R$ 0,00</span></div>
+            <div><strong>Lucro estimado:</strong> <span id="calc_lucro">R$ 0,00</span></div>
+        </div>
+        <div class="form-row proposta-calculadora__acoes">
+            <button type="button" class="button" id="calc_aplicar_margem">Aplicar margem na proposta</button>
+        </div>
+        <p class="help">
+            Fórmula usada: preço de venda = custo / (1 - margem). Exemplo: custo R$ 100,00 com margem de 20% resulta em preço de venda R$ 125,00.
+        </p>
+    </fieldset>
+
+    <style>
+        .proposta-calculadora {
+            margin-top: 16px;
+        }
+
+        .proposta-calculadora .form-row {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 12px;
+            align-items: end;
+        }
+
+        .proposta-calculadora label {
+            display: block;
+            margin-bottom: 4px;
+            font-weight: 600;
+        }
+
+        .proposta-calculadora input {
+            width: 100%;
+            max-width: 220px;
+        }
+
+        .proposta-calculadora__resultado {
+            margin-top: 10px;
+            padding: 10px;
+            background: var(--darkened-bg, #f8f8f8);
+            border: 1px solid var(--hairline-color, #ddd);
+        }
+
+        .proposta-calculadora__acoes {
+            margin-top: 8px;
+        }
+    </style>
+
+    <script>
+        (function () {
+            function parseDecimal(value) {
+                if (value === null || value === undefined) {
+                    return 0;
+                }
+                var normalized = String(value).trim().replace(/\./g, "").replace(",", ".");
+                var parsed = Number(normalized);
+                return Number.isFinite(parsed) ? parsed : 0;
+            }
+
+            function formatMoney(value) {
+                return "R$ " + value.toFixed(2).replace(".", ",");
+            }
+
+            function setText(id, value) {
+                var element = document.getElementById(id);
+                if (element) {
+                    element.textContent = value;
+                }
+            }
+
+            function calcular() {
+                var custo = parseDecimal(document.getElementById("calc_custo_unitario").value);
+                var quantidade = parseDecimal(document.getElementById("calc_quantidade").value || 1);
+                var margem = parseDecimal(document.getElementById("calc_margem").value);
+                var desconto = parseDecimal(document.getElementById("calc_desconto").value);
+                var margemDecimal = margem / 100;
+                var precoUnitario = margemDecimal >= 1 ? custo : custo / (1 - margemDecimal);
+                var totalBruto = precoUnitario * quantidade;
+                var totalLiquido = totalBruto - desconto;
+                var custoTotal = custo * quantidade;
+                var lucro = totalLiquido - custoTotal;
+
+                if (totalLiquido < 0) {
+                    totalLiquido = 0;
+                }
+
+                setText("calc_preco_unitario", formatMoney(precoUnitario));
+                setText("calc_total_bruto", formatMoney(totalBruto));
+                setText("calc_total_liquido", formatMoney(totalLiquido));
+                setText("calc_lucro", formatMoney(lucro));
+            }
+
+            document.addEventListener("DOMContentLoaded", function () {
+                ["calc_custo_unitario", "calc_quantidade", "calc_margem", "calc_desconto"].forEach(function (id) {
+                    var field = document.getElementById(id);
+                    if (field) {
+                        field.addEventListener("input", calcular);
+                        field.addEventListener("change", calcular);
+                    }
+                });
+
+                var aplicarMargem = document.getElementById("calc_aplicar_margem");
+                if (aplicarMargem) {
+                    aplicarMargem.addEventListener("click", function () {
+                        var margemField = document.getElementById("id_margem_percentual");
+                        var margemCalculadora = document.getElementById("calc_margem");
+                        if (margemField && margemCalculadora) {
+                            margemField.value = margemCalculadora.value;
+                            margemField.dispatchEvent(new Event("input", { bubbles: true }));
+                            margemField.dispatchEvent(new Event("change", { bubbles: true }));
+                        }
+                    });
+                }
+
+                calcular();
+            });
+        })();
+    </script>
+{% endblock %}

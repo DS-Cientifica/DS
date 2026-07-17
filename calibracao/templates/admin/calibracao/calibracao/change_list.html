@@ -1,0 +1,153 @@
+{% extends "admin/change_list.html" %}
+
+{% block search %}
+{{ block.super }}
+<div class="certificado-quick-filters">
+  <form method="get" class="certificado-quick-filters__form" id="certificado-quick-filters-form">
+    {% if cl.query %}
+      <input type="hidden" name="q" value="{{ cl.query }}">
+    {% endif %}
+
+    <label>
+      Empresa
+      <select name="empresa">
+        <option value="">Todas</option>
+        {% for empresa in empresas_certificado_rapido %}
+          <option value="{{ empresa.pk }}" {% if filtro_empresa_atual == empresa.pk|stringformat:"s" %}selected{% endif %}>{{ empresa }}</option>
+        {% endfor %}
+      </select>
+    </label>
+
+    <label>
+      Data de calibração
+      <input type="date" name="data_calibracao__exact" value="{{ filtro_data_calibracao_atual }}">
+    </label>
+
+    <label>
+      Equipamento
+      <select name="equipamento">
+        <option value="">Todos</option>
+        {% for equipamento in equipamentos_certificado_rapido %}
+          <option value="{{ equipamento.pk }}" {% if filtro_equipamento_atual == equipamento.pk|stringformat:"s" %}selected{% endif %}>{{ equipamento }}</option>
+        {% endfor %}
+      </select>
+    </label>
+
+    <button type="submit" class="button">Filtrar</button>
+    <a class="button certificado-quick-filters__clear" href="?{% if cl.query %}q={{ cl.query|urlencode }}{% endif %}">Limpar filtros rápidos</a>
+  </form>
+
+  <div class="certificado-quick-filters__summary">
+    <strong>Total filtrado:</strong>
+    {{ quantidade_filtrada_certificados|default:0 }} certificado{{ quantidade_filtrada_certificados|default:0|pluralize }}
+    <span class="certificado-quick-filters__selected">
+      <strong>Total selecionado:</strong>
+      <span id="certificado-quantidade-selecionada">0 certificados</span>
+    </span>
+  </div>
+</div>
+
+<style>
+  .certificado-quick-filters {
+    margin: 10px 0 14px;
+    padding: 12px;
+    border: 1px solid var(--hairline-color, #ddd);
+    border-radius: 4px;
+    background: var(--darkened-bg, #f8f8f8);
+  }
+
+  .certificado-quick-filters__form {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px 14px;
+    align-items: flex-end;
+  }
+
+  .certificado-quick-filters label {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    font-weight: 600;
+  }
+
+  .certificado-quick-filters select,
+  .certificado-quick-filters input[type="date"] {
+    min-width: 190px;
+    height: 32px;
+  }
+
+  .certificado-quick-filters select[name="empresa"] {
+    min-width: 280px;
+  }
+
+  .certificado-quick-filters select[name="equipamento"] {
+    min-width: 300px;
+  }
+
+  .certificado-quick-filters__clear {
+    line-height: 20px;
+  }
+
+  .certificado-quick-filters__summary {
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px solid var(--hairline-color, #ddd);
+    font-size: 14px;
+  }
+
+  .certificado-quick-filters__summary strong {
+    color: var(--body-fg, #333);
+  }
+
+  .certificado-quick-filters__selected {
+    display: inline-block;
+    margin-left: 18px;
+  }
+</style>
+
+<script>
+  (function () {
+    const form = document.getElementById("certificado-quick-filters-form");
+    if (!form) {
+      return;
+    }
+
+    form.addEventListener("submit", function () {
+      form.querySelectorAll("select, input[type='date']").forEach(function (field) {
+        if (!field.value) {
+          field.disabled = true;
+        }
+      });
+    });
+
+    function updateSelectedCount() {
+      var count = 0;
+      document.querySelectorAll("#result_list tbody tr").forEach(function (row) {
+        var checkbox = row.querySelector('input.action-select[type="checkbox"]');
+        if (checkbox && checkbox.checked) {
+          count += 1;
+        }
+      });
+
+      var countElement = document.getElementById("certificado-quantidade-selecionada");
+      if (countElement) {
+        countElement.textContent = count + " certificado" + (count === 1 ? "" : "s");
+      }
+    }
+
+    document.addEventListener("change", function (event) {
+      if (event.target.matches('#result_list input[type="checkbox"], input#action-toggle')) {
+        setTimeout(updateSelectedCount, 0);
+      }
+    });
+
+    document.addEventListener("click", function (event) {
+      if (event.target.matches(".actions .all, .actions .clear, .actions .question")) {
+        setTimeout(updateSelectedCount, 0);
+      }
+    });
+
+    updateSelectedCount();
+  })();
+</script>
+{% endblock %}

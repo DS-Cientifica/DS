@@ -36,6 +36,7 @@ class Documento(models.Model):
     observacoes = models.TextField(blank=True, default="")
     obsoleto_motivo = models.TextField(blank=True, default="")
     arquivo = models.FileField(upload_to="documentos/")
+    arquivo_rascunho_pdf = models.FileField(upload_to="documentos/rascunhos/", blank=True, null=True)
     created_at = models.DateTimeField(default=timezone.now)
     updated_at = models.DateTimeField(default=timezone.now)
 

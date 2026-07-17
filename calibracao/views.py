@@ -4,7 +4,15 @@ from django.contrib.auth.decorators import login_required
 from django.http import FileResponse
 from django.shortcuts import get_object_or_404, render
 
-from .models import Calibracao, CalibracaoColorimetro, CalibracaoPressao, CalibracaoTurbidez, _converter_pressao
+from .models import (
+    Calibracao,
+    CalibracaoColorimetro,
+    CalibracaoPressao,
+    CalibracaoTurbidez,
+    _casas_decimais_por_resolucao,
+    _converter_pressao,
+    _formatar_decimal_por_resolucao,
+)
 from .ph_models import CalibracaoPH
 from .pdf import gerar_pdf_calibracao
 
@@ -45,6 +53,28 @@ def _valor_ou_traco(valor, casas=6):
         return str(valor)
 
 
+def _formatar_graus_liberdade_pdf(valor, *, texto_infinito="Infinito", vazio="------"):
+    if valor in (None, ""):
+        return vazio
+    try:
+        valor_decimal = Decimal(str(valor))
+    except Exception:
+        return str(valor)
+    if valor_decimal >= Decimal("999999"):
+        return texto_infinito
+    return f"{valor_decimal:.2f}".replace(".", ",")
+
+
+def _colorimetro_resolucao_base(calibracao):
+    if getattr(calibracao, "menor_resolucao", None) not in (None, ""):
+        return calibracao.menor_resolucao
+    try:
+        tecnico = calibracao.instrumento.tecnico
+    except Exception:
+        tecnico = None
+    return getattr(tecnico, "menor_resolucao", None)
+
+
 def _alerta_ou_valor(valor, vazio="ALERTA"):
     if valor in (None, ""):
         return vazio
@@ -79,6 +109,10 @@ def pdf_calibracao_turbidez(request, pk):
 
     padroes_por_tipo = {}
     for padrao in calibracao.padroes_utilizados.all():
+        padrao.graus_liberdade_fmt = _formatar_graus_liberdade_pdf(
+            getattr(padrao, "graus_liberdade", None),
+            texto_infinito="Infinito",
+        )
         padroes_por_tipo.setdefault(padrao.get_tipo_display(), []).append(padrao)
 
     pontos_incerteza = list(calibracao.pontos_incerteza.all())
@@ -122,6 +156,7 @@ def pdf_calibracao_turbidez(request, pk):
     return render(request, "calibracao/turbidez_pdf.html", context)
 
 
+
 @login_required
 def pdf_calibracao_colorimetro(request, pk):
     calibracao = get_object_or_404(
@@ -138,6 +173,13 @@ def pdf_calibracao_colorimetro(request, pk):
     for padrao in calibracao.padroes_utilizados.all():
         padroes_por_tipo.setdefault(padrao.get_tipo_display(), []).append(padrao)
 
+    resolucao_base = _colorimetro_resolucao_base(calibracao)
+    menor_resolucao_fmt = (
+        _formatar_decimal_por_resolucao(resolucao_base, resolucao_base, default=4)
+        if resolucao_base not in (None, "")
+        else "NAO CONSTA"
+    )
+
     pontos_incerteza = list(calibracao.pontos_incerteza.all())
     pontos_incerteza_por_ordem = {ponto.ordem: ponto for ponto in pontos_incerteza}
     fator_k_certificado = next(
@@ -148,21 +190,80 @@ def pdf_calibracao_colorimetro(request, pk):
         (ponto.graus_liberdade for ponto in pontos_incerteza if ponto.graus_liberdade not in (None, "")),
         None,
     )
+    graus_liberdade_certificado_fmt = (
+        _formatar_graus_liberdade_pdf(graus_liberdade_certificado, texto_infinito="Infinito")
+        if graus_liberdade_certificado not in (None, "")
+        else (
+            "Infinito"
+            if fator_k_certificado not in (None, "") and pontos_incerteza
+            else "------"
+        )
+    )
+
+    verificacoes = []
+    for ponto in calibracao.pontos_verificacao.all():
+        verificacoes.append(
+            {
+                "ordem": ponto.ordem,
+                "valor_padrao_fmt": _formatar_decimal_por_resolucao(ponto.valor_padrao, resolucao_base, default=4),
+                "leitura_fmt": _formatar_decimal_por_resolucao(ponto.leitura, resolucao_base, default=4),
+                "erro_fmt": _formatar_decimal_por_resolucao(ponto.erro, resolucao_base, default=4),
+                "criterio_formatado": getattr(ponto, "criterio_formatado", "") or "-",
+                "criterio_origem_display": ponto.get_criterio_origem_display() if getattr(ponto, "criterio_origem", "") else "-",
+                "resultado": ponto.resultado or "-",
+            }
+        )
 
     resultados_calibracao = []
     for ponto in calibracao.pontos_calibracao.all():
         incerteza = pontos_incerteza_por_ordem.get(ponto.ordem)
+        graus_liberdade = getattr(incerteza, "graus_liberdade", None)
+        graus_liberdade_fmt = (
+            _formatar_graus_liberdade_pdf(graus_liberdade, texto_infinito="Infinito")
+            if graus_liberdade not in (None, "")
+            else (
+                "Infinito"
+                if incerteza and getattr(incerteza, "fator_k", None) not in (None, "")
+                and getattr(incerteza, "incerteza_expandida", None) not in (None, "")
+                else "------"
+            )
+        )
         resultados_calibracao.append(
             {
                 "ordem": ponto.ordem,
-                "valor_referencia": ponto.valor_referencia,
-                "leitura_equipamento": ponto.media,
-                "erro": ponto.erro,
-                "incerteza_expandida": getattr(incerteza, "incerteza_expandida", None),
-                "fator_k": getattr(incerteza, "fator_k", None),
-                "graus_liberdade": getattr(incerteza, "graus_liberdade", None),
-                "ema": ponto.ema,
+                "valor_referencia_fmt": _formatar_decimal_por_resolucao(ponto.valor_referencia, resolucao_base, default=4),
+                "leitura_equipamento_fmt": _formatar_decimal_por_resolucao(ponto.media, resolucao_base, default=4),
+                "erro_fmt": _formatar_decimal_por_resolucao(ponto.erro, resolucao_base, default=4),
+                "incerteza_expandida_fmt": _formatar_decimal_por_resolucao(
+                    getattr(incerteza, "incerteza_expandida", None),
+                    resolucao_base,
+                    default=4,
+                ),
+                "fator_k_fmt": _formatar_decimal_por_resolucao(
+                    getattr(incerteza, "fator_k", None),
+                    resolucao_base,
+                    default=4,
+                ),
+                "graus_liberdade_fmt": graus_liberdade_fmt,
             }
+        )
+
+    resultado_final_pdf = calibracao.resultado_final_resolvido
+    pontos_resultado = list(calibracao.pontos_calibracao.all())
+    erros_resultado = [abs(ponto.erro) for ponto in pontos_resultado if ponto.erro is not None]
+    referencias_resultado = [ponto.valor_referencia for ponto in pontos_resultado if ponto.valor_referencia is not None]
+    if not calibracao.resultado_final_status and erros_resultado and referencias_resultado:
+        erro_maximo_fmt = _formatar_decimal_por_resolucao(max(erros_resultado), resolucao_base, default=4)
+        referencia_min_fmt = _formatar_decimal_por_resolucao(min(referencias_resultado), resolucao_base, default=4)
+        referencia_max_fmt = _formatar_decimal_por_resolucao(max(referencias_resultado), resolucao_base, default=4)
+        resultados_verificacao = [ponto.resultado for ponto in calibracao.pontos_verificacao.all() if ponto.resultado]
+        conforme = all(resultado == "OK" for resultado in resultados_verificacao) if resultados_verificacao else True
+        status_texto = "encontra-se conforme" if conforme else "nao se encontra conforme"
+        resultado_final_pdf = (
+            f"O instrumento apresentou erro maximo de {erro_maximo_fmt} "
+            f"{calibracao.unidade_leitura or 'mg/L'} na faixa calibrada de "
+            f"{referencia_min_fmt} a {referencia_max_fmt} "
+            f"{calibracao.unidade_leitura or 'mg/L'} e {status_texto} os criterios estabelecidos."
         )
 
     context = {
@@ -171,23 +272,28 @@ def pdf_calibracao_colorimetro(request, pk):
             "codigo_documento": calibracao.codigo_documento,
         },
         "calibracao": calibracao,
+        "menor_resolucao_fmt": menor_resolucao_fmt,
         "padroes_por_tipo": padroes_por_tipo,
-        "verificacoes": calibracao.pontos_verificacao.all(),
+        "verificacoes": verificacoes,
         "resultados_calibracao": resultados_calibracao,
         "pontos_incerteza": pontos_incerteza,
         "fator_k_certificado": fator_k_certificado,
+        "fator_k_certificado_fmt": _formatar_decimal_por_resolucao(fator_k_certificado, resolucao_base, default=4),
         "graus_liberdade_certificado": graus_liberdade_certificado,
+        "graus_liberdade_certificado_fmt": graus_liberdade_certificado_fmt,
+        "resultado_final_pdf": resultado_final_pdf,
         "formatar_decimal": _formatar_decimal,
-        "document_title": "Certificado de Calibração",
+        "document_title": "Certificado de Calibracao",
         "document_subtitle": calibracao.titulo_certificado,
         "unit_label": calibracao.unidade_leitura or "mg/L",
         "procedure_text": (
-            "Os padrões utilizados na calibração são preparados a partir de materiais de referência "
-            "adequados à aplicação. Todos os materiais e equipamentos utilizados são calibrados em "
-            "laboratórios acreditados ou rastreáveis à RBC."
+            "Os padroes utilizados na calibracao sao preparados a partir de materiais de referencia "
+            "adequados a aplicacao. Todos os materiais e equipamentos utilizados sao calibrados em "
+            "laboratorios acreditados ou rastreaveis a RBC."
         ),
     }
     return render(request, "calibracao/colorimetro_pdf.html", context)
+
 
 
 @login_required

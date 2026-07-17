@@ -17,6 +17,28 @@ from .services.ph_meter_calculation import (
 )
 
 
+THREE_DECIMAL_PLACES = Decimal("0.001")
+SQRT_12 = Decimal(12).sqrt()
+
+
+def _quantize_decimal(value, quantizer=THREE_DECIMAL_PLACES):
+    if value is None or value == "":
+        return value
+    try:
+        decimal_value = value if isinstance(value, Decimal) else Decimal(str(value))
+    except (InvalidOperation, TypeError, ValueError):
+        return value
+    return decimal_value.quantize(quantizer)
+
+
+def _quantize_instance_decimal_fields(instance, quantizer=THREE_DECIMAL_PLACES):
+    for field in instance._meta.fields:
+        if isinstance(field, models.DecimalField):
+            value = getattr(instance, field.attname, None)
+            if value is not None:
+                setattr(instance, field.attname, _quantize_decimal(value, quantizer))
+
+
 PRESSAO_UNIDADE_FATORES = {
     "pa": Decimal("1"),
     "hpa": Decimal("100"),
@@ -96,6 +118,39 @@ def _extrair_decimal_criterio(texto):
         return None
 
 
+def _formatar_decimal_criterio_texto(valor, casas=3):
+    if valor in (None, ""):
+        return ""
+    try:
+        decimal_value = valor if isinstance(valor, Decimal) else Decimal(str(valor))
+    except (InvalidOperation, TypeError, ValueError):
+        return str(valor)
+    return f"{decimal_value:.{casas}f}".replace(".", ",")
+
+
+def _casas_decimais_por_resolucao(resolucao, default=4):
+    if resolucao in (None, ""):
+        return default
+    try:
+        decimal_value = resolucao if isinstance(resolucao, Decimal) else Decimal(str(resolucao))
+    except (InvalidOperation, TypeError, ValueError):
+        return default
+    normalized = decimal_value.normalize()
+    exponent = normalized.as_tuple().exponent
+    return max(0, -exponent)
+
+
+def _formatar_decimal_por_resolucao(valor, resolucao, default=4):
+    if valor in (None, ""):
+        return "-"
+    casas = _casas_decimais_por_resolucao(resolucao, default=default)
+    try:
+        decimal_value = valor if isinstance(valor, Decimal) else Decimal(str(valor))
+    except (InvalidOperation, TypeError, ValueError):
+        return str(valor)
+    return f"{decimal_value:.{casas}f}".replace(".", ",")
+
+
 def _fator_abrangencia_95(graus_liberdade):
     if graus_liberdade in (None, ""):
         return 2
@@ -132,6 +187,32 @@ def _fator_abrangencia_95(graus_liberdade):
     if veff >= 1:
         return 12.71
     return 2
+
+
+def _incerteza_padrao_por_resolucao(resolucao):
+    resolucao_decimal = _para_decimal(resolucao)
+    if resolucao_decimal is None:
+        return None
+    return abs(resolucao_decimal) / SQRT_12
+
+
+def _incerteza_padrao_por_certificado(incerteza_expandida, fator_k):
+    incerteza_decimal = _para_decimal(incerteza_expandida)
+    if incerteza_decimal is None:
+        return None
+    fator_decimal = _para_decimal(fator_k) or Decimal("2")
+    if fator_decimal == 0:
+        fator_decimal = Decimal("2")
+    return abs(incerteza_decimal) / abs(fator_decimal)
+
+
+def _incerteza_padrao_repetibilidade(desvio_padrao, repeticoes):
+    desvio_decimal = _para_decimal(desvio_padrao)
+    if desvio_decimal is None:
+        return None
+    if not repeticoes or repeticoes <= 0:
+        return abs(desvio_decimal)
+    return abs(desvio_decimal) / Decimal(repeticoes).sqrt()
 
 
 def _obter_ou_criar_responsavel_padrao():
@@ -599,6 +680,8 @@ class PerfilIncertezaTurbidez(models.Model):
                 self.resolucao_padrao = self.padrao.resolucao
             if self.incerteza_padrao is None:
                 self.incerteza_padrao = self.padrao.incerteza
+        _quantize_instance_decimal_fields(self)
+        _quantize_instance_decimal_fields(self)
         super().save(*args, **kwargs)
 
     def __str__(self):
@@ -792,6 +875,7 @@ class CalibracaoTurbidez(models.Model):
         if not self.numero_certificado:
             self.numero_certificado = self._gerar_numero_certificado()
 
+        _quantize_instance_decimal_fields(self)
         super().save(*args, **kwargs)
 
     @classmethod
@@ -884,6 +968,7 @@ class TurbidezPadraoUtilizado(models.Model):
                 self.unidade = self.padrao.unidade
             if self.valor_nominal is None:
                 self.valor_nominal = self.padrao.valor_nominal
+        _quantize_instance_decimal_fields(self)
         super().save(*args, **kwargs)
 
     def __str__(self):
@@ -918,6 +1003,7 @@ class TurbidezVerificacaoPonto(models.Model):
         if tolerancia is not None and self.erro is not None:
             self.resultado = "OK" if abs(self.erro) <= tolerancia else "NÃO OK"
 
+        _quantize_instance_decimal_fields(self)
         super().save(*args, **kwargs)
 
     def __str__(self):
@@ -961,12 +1047,12 @@ class TurbidezCalibracaoPonto(models.Model):
 
         if leituras:
             media = sum(leituras) / len(leituras)
-            self.media = round(media, 6)
+            self.media = _quantize_decimal(media)
 
             if len(leituras) > 1:
                 media_float = float(media)
                 variancia = sum((float(valor) - media_float) ** 2 for valor in leituras) / (len(leituras) - 1)
-                self.desvio_padrao = round(variancia ** 0.5, 6)
+                self.desvio_padrao = _quantize_decimal(variancia ** 0.5)
 
         if self.media is not None and self.valor_referencia is not None:
             self.erro = self.media - self.valor_referencia
@@ -977,9 +1063,9 @@ class TurbidezCalibracaoPonto(models.Model):
             .first()
         )
         if self.erro is not None and incerteza is not None:
-            self.ema = Decimal(str(round(float(abs(self.erro)) + float(incerteza), 6)))
+            self.ema = _quantize_decimal(abs(self.erro) + incerteza)
         elif self.erro is not None and self.resolucao is not None:
-            self.ema = Decimal(str(round(float(abs(self.erro)) + float(self.resolucao), 6)))
+            self.ema = _quantize_decimal(abs(self.erro) + self.resolucao)
         else:
             self.ema = None
 
@@ -1070,7 +1156,7 @@ class TurbidezIncertezaPonto(models.Model):
 
         if componentes:
             combinada = sum(valor ** 2 for valor in componentes) ** 0.5
-            self.incerteza_padrao_combinada = Decimal(str(round(combinada, 6)))
+            self.incerteza_padrao_combinada = _quantize_decimal(combinada)
 
             repeticoes = 0
             if ponto_calibracao:
@@ -1095,7 +1181,7 @@ class TurbidezIncertezaPonto(models.Model):
                 self.graus_liberdade = None
 
             self.fator_k = Decimal(str(round(_fator_abrangencia_95(self.graus_liberdade), 3)))
-            self.incerteza_expandida = Decimal(str(round(combinada * float(self.fator_k or 2), 6)))
+            self.incerteza_expandida = _quantize_decimal(combinada * float(self.fator_k or 2))
         else:
             self.incerteza_padrao_combinada = None
             self.incerteza_expandida = None
@@ -1104,7 +1190,7 @@ class TurbidezIncertezaPonto(models.Model):
 
         ponto_calibracao = self.calibracao.pontos_calibracao.filter(ordem=self.ordem).first()
         if ponto_calibracao and ponto_calibracao.erro is not None and self.incerteza_expandida is not None:
-            ponto_calibracao.ema = Decimal(str(round(float(abs(ponto_calibracao.erro)) + float(self.incerteza_expandida), 6)))
+            ponto_calibracao.ema = _quantize_decimal(abs(ponto_calibracao.erro) + self.incerteza_expandida)
             ponto_calibracao.save(update_fields=["ema"])
 
     def __str__(self):
@@ -1156,6 +1242,13 @@ class CalibracaoColorimetro(models.Model):
         Instrumento,
         on_delete=models.PROTECT,
         related_name="calibracoes_colorimetro",
+    )
+    padrao_referencia = models.ForeignKey(
+        Padrao,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="calibracoes_colorimetro_referencia",
     )
     cliente = models.ForeignKey(
         Cliente,
@@ -1256,7 +1349,6 @@ class CalibracaoColorimetro(models.Model):
         return self._gerar_resultado_final()
 
     def _gerar_prefixo_certificado(self):
-        prefixo_tipo = self.PREFIXO_CERTIFICADO_MAP.get(self.tipo_aplicacao, "COLOR")
         os_token = slugify(self.ordem_servico or "", allow_unicode=False).upper().replace("-", "")
         cliente_token = "CLIENTE"
         if self.cliente_id:
@@ -1264,29 +1356,32 @@ class CalibracaoColorimetro(models.Model):
             if primeiro_nome:
                 cliente_base = slugify(primeiro_nome[0], allow_unicode=False).upper().replace("-", "")
                 if cliente_base:
-                    cliente_token = cliente_base[:10]
+                    cliente_token = cliente_base[:12]
         if os_token:
-            return f"{prefixo_tipo}-{os_token}-{cliente_token}"
+            return f"{cliente_token}-{os_token}"
         data_token = (self.data_calibracao or date.today()).strftime("%Y%m%d")
-        return f"{prefixo_tipo}-{cliente_token}-{data_token}"
+        return f"{cliente_token}-{data_token}"
 
     def _gerar_numero_certificado(self):
         prefixo = self._gerar_prefixo_certificado()
+        tipo_token = self.PREFIXO_CERTIFICADO_MAP.get(self.tipo_aplicacao, "COLOR")
         existentes = (
             CalibracaoColorimetro.objects.exclude(pk=self.pk)
-            .filter(numero_certificado__startswith=f"{prefixo}-")
+            .filter(numero_certificado__startswith=f"{prefixo}/")
             .values_list("numero_certificado", flat=True)
         )
         sufixos = set()
         for numero in existentes:
             try:
-                sufixos.add(int(str(numero).rsplit("-", 1)[-1]))
+                restante = str(numero)[len(prefixo) + 1 :]
+                sequencia_texto = restante.split("-", 1)[0]
+                sufixos.add(int(sequencia_texto))
             except (TypeError, ValueError):
                 continue
         sequencia = 1
         while sequencia in sufixos:
             sequencia += 1
-        return f"{prefixo}-{sequencia:02d}"
+        return f"{prefixo}/{sequencia:02d}-{tipo_token}"
 
     def _obter_documento_metodo_padrao(self):
         codigo = self.METODO_CODIGO_MAP.get(self.tipo_aplicacao, "")
@@ -1364,7 +1459,9 @@ class CalibracaoColorimetro(models.Model):
         if not self.numero_certificado:
             self.numero_certificado = self._gerar_numero_certificado()
 
+        _quantize_instance_decimal_fields(self)
         super().save(*args, **kwargs)
+        self.sincronizar_padrao_referencia_utilizado()
 
     def _gerar_resultado_final(self):
         status_texto = self._texto_resultado_final_status()
@@ -1418,6 +1515,72 @@ class CalibracaoColorimetro(models.Model):
 
     def __str__(self):
         return f"{self.numero_certificado} - {self.instrumento}"
+
+    def sincronizar_padrao_referencia_utilizado(self):
+        if not self.pk or not self.padrao_referencia_id:
+            return None
+
+        padrao_utilizado, _ = ColorimetroPadraoUtilizado.objects.get_or_create(
+            calibracao=self,
+            tipo="calibracao",
+            ordem=1,
+        )
+        padrao_utilizado.padrao = self.padrao_referencia
+        padrao_utilizado.codigo = self.padrao_referencia.codigo or ""
+        padrao_utilizado.descricao = self.padrao_referencia.descricao or ""
+        padrao_utilizado.numero_certificado = self.padrao_referencia.numero_certificado or ""
+        padrao_utilizado.laboratorio_emitente = self.padrao_referencia.laboratorio_emitente or ""
+        padrao_utilizado.data_calibracao = self.padrao_referencia.data_calibracao
+        padrao_utilizado.validade = self.padrao_referencia.vencimento
+        padrao_utilizado.resolucao = self.padrao_referencia.resolucao
+        padrao_utilizado.incerteza = self.padrao_referencia.incerteza
+        padrao_utilizado.fator_k = self.padrao_referencia.fator_k
+        padrao_utilizado.graus_liberdade = self.padrao_referencia.graus_liberdade
+        padrao_utilizado.unidade = self.padrao_referencia.unidade or self.unidade_leitura
+        padrao_utilizado.valor_nominal = self.padrao_referencia.valor_nominal
+        padrao_utilizado.save()
+        return padrao_utilizado
+
+    def sincronizar_pontos_incerteza(self):
+        if not self.pk:
+            return
+
+        pontos_calibracao = list(self.pontos_calibracao.all())
+        pontos_calibracao.sort(
+            key=lambda ponto: (
+                ponto.valor_referencia is None,
+                ponto.valor_referencia or Decimal("0"),
+                ponto.ordem,
+                str(ponto.pk),
+            )
+        )
+        for nova_ordem, ponto in enumerate(pontos_calibracao, start=1):
+            if ponto.ordem != nova_ordem:
+                ponto.ordem = nova_ordem
+                ponto.save(update_fields=["ordem"])
+
+        ordens_existentes = list(
+            self.pontos_calibracao.order_by("ordem").values_list("ordem", flat=True)
+        )
+        if not ordens_existentes:
+            self.pontos_incerteza.all().delete()
+            return
+
+        self.pontos_incerteza.exclude(ordem__in=ordens_existentes).delete()
+
+        for ordem in ordens_existentes:
+            ponto_incerteza, _ = ColorimetroIncertezaPonto.objects.get_or_create(
+                calibracao=self,
+                ordem=ordem,
+            )
+            ponto_incerteza.repetibilidade = None
+            ponto_incerteza.resolucao_instrumento = None
+            ponto_incerteza.incerteza_padrao = None
+            ponto_incerteza.resolucao_padrao = None
+            ponto_incerteza.graus_liberdade = None
+            ponto_incerteza.incerteza_padrao_combinada = None
+            ponto_incerteza.incerteza_expandida = None
+            ponto_incerteza.save()
 
 
 class ColorimetroPadraoUtilizado(models.Model):
@@ -1491,6 +1654,7 @@ class ColorimetroPadraoUtilizado(models.Model):
                 self.valor_nominal = self.padrao.valor_nominal
         if not self.unidade:
             self.unidade = self.calibracao.unidade_leitura
+        _quantize_instance_decimal_fields(self)
         super().save(*args, **kwargs)
 
     def __str__(self):
@@ -1503,6 +1667,10 @@ class ColorimetroVerificacaoPonto(models.Model):
         ("cliente", "Cliente"),
         ("fabricante", "Fabricante"),
     )
+    CRITERIO_TIPO_CHOICES = (
+        ("numerico", "Numérico"),
+        ("percentual", "Percentual (%)"),
+    )
     calibracao = models.ForeignKey(
         CalibracaoColorimetro,
         on_delete=models.CASCADE,
@@ -1513,6 +1681,13 @@ class ColorimetroVerificacaoPonto(models.Model):
     leitura = models.DecimalField(max_digits=12, decimal_places=6, null=True, blank=True)
     erro = models.DecimalField(max_digits=12, decimal_places=6, null=True, blank=True)
     criterio = models.CharField(max_length=120, blank=True)
+    criterio_tipo = models.CharField(
+        "Tipo do critério",
+        max_length=20,
+        choices=CRITERIO_TIPO_CHOICES,
+        default="numerico",
+        blank=True,
+    )
     criterio_origem = models.CharField(max_length=30, choices=CRITERIO_ORIGEM_CHOICES, blank=True)
     criterio_referencia = models.CharField(max_length=255, blank=True)
     resultado = models.CharField(max_length=50, blank=True)
@@ -1522,12 +1697,39 @@ class ColorimetroVerificacaoPonto(models.Model):
         verbose_name_plural = "Pontos de verificação"
         ordering = ("ordem",)
 
+    def _tipo_criterio_resolvido(self):
+        return self.criterio_tipo or "numerico"
+
+    @property
+    def tolerancia_resolvida(self):
+        tolerancia_base = _extrair_decimal_criterio(self.criterio)
+        if tolerancia_base is None:
+            return None
+        if self._tipo_criterio_resolvido() == "percentual":
+            if self.valor_padrao is None:
+                return None
+            return _quantize_decimal(abs(self.valor_padrao) * tolerancia_base / Decimal("100"))
+        return tolerancia_base
+
+    @property
+    def criterio_formatado(self):
+        tolerancia_base = _extrair_decimal_criterio(self.criterio)
+        if tolerancia_base is None:
+            return self.criterio or ""
+        valor_fmt = _formatar_decimal_criterio_texto(tolerancia_base)
+        if self._tipo_criterio_resolvido() == "percentual":
+            return f"{valor_fmt} %"
+        return valor_fmt
+
     def save(self, *args, **kwargs):
         if self.valor_padrao is not None and self.leitura is not None:
             self.erro = self.leitura - self.valor_padrao
-        tolerancia = _extrair_decimal_criterio(self.criterio)
+        tolerancia = self.tolerancia_resolvida
         if tolerancia is not None and self.erro is not None:
             self.resultado = "OK" if abs(self.erro) <= tolerancia else "NÃO OK"
+        else:
+            self.resultado = ""
+        _quantize_instance_decimal_fields(self)
         super().save(*args, **kwargs)
 
     def __str__(self):
@@ -1536,6 +1738,7 @@ class ColorimetroVerificacaoPonto(models.Model):
 
 class ColorimetroCalibracaoPonto(models.Model):
     CRITERIO_ORIGEM_CHOICES = ColorimetroVerificacaoPonto.CRITERIO_ORIGEM_CHOICES
+    CRITERIO_TIPO_CHOICES = ColorimetroVerificacaoPonto.CRITERIO_TIPO_CHOICES
     calibracao = models.ForeignKey(
         CalibracaoColorimetro,
         on_delete=models.CASCADE,
@@ -1552,6 +1755,13 @@ class ColorimetroCalibracaoPonto(models.Model):
     erro = models.DecimalField(max_digits=12, decimal_places=6, null=True, blank=True)
     ema = models.DecimalField(max_digits=12, decimal_places=6, null=True, blank=True)
     criterio = models.CharField(max_length=120, blank=True)
+    criterio_tipo = models.CharField(
+        "Tipo do critério",
+        max_length=20,
+        choices=CRITERIO_TIPO_CHOICES,
+        default="numerico",
+        blank=True,
+    )
     criterio_origem = models.CharField(max_length=30, choices=CRITERIO_ORIGEM_CHOICES, blank=True)
     criterio_referencia = models.CharField(max_length=255, blank=True)
 
@@ -1559,6 +1769,30 @@ class ColorimetroCalibracaoPonto(models.Model):
         verbose_name = "Ponto de calibração"
         verbose_name_plural = "Pontos de calibração"
         ordering = ("ordem",)
+
+    def _tipo_criterio_resolvido(self):
+        return self.criterio_tipo or "numerico"
+
+    @property
+    def tolerancia_resolvida(self):
+        tolerancia_base = _extrair_decimal_criterio(self.criterio)
+        if tolerancia_base is None:
+            return None
+        if self._tipo_criterio_resolvido() == "percentual":
+            if self.valor_referencia is None:
+                return None
+            return _quantize_decimal(abs(self.valor_referencia) * tolerancia_base / Decimal("100"))
+        return tolerancia_base
+
+    @property
+    def criterio_formatado(self):
+        tolerancia_base = _extrair_decimal_criterio(self.criterio)
+        if tolerancia_base is None:
+            return self.criterio or ""
+        valor_fmt = _formatar_decimal_criterio_texto(tolerancia_base)
+        if self._tipo_criterio_resolvido() == "percentual":
+            return f"{valor_fmt} %"
+        return valor_fmt
 
     def save(self, *args, **kwargs):
         leituras = [valor for valor in (self.leitura_1, self.leitura_2, self.leitura_3) if valor is not None]
@@ -1569,11 +1803,11 @@ class ColorimetroCalibracaoPonto(models.Model):
                 self.resolucao = None
         if leituras:
             media = sum(leituras) / len(leituras)
-            self.media = round(media, 6)
+            self.media = _quantize_decimal(media)
             if len(leituras) > 1:
                 media_float = float(media)
                 variancia = sum((float(valor) - media_float) ** 2 for valor in leituras) / (len(leituras) - 1)
-                self.desvio_padrao = round(variancia ** 0.5, 6)
+                self.desvio_padrao = _quantize_decimal(variancia ** 0.5)
         if self.media is not None and self.valor_referencia is not None:
             self.erro = self.media - self.valor_referencia
         incerteza = (
@@ -1582,9 +1816,9 @@ class ColorimetroCalibracaoPonto(models.Model):
             .first()
         )
         if self.erro is not None and incerteza is not None:
-            self.ema = Decimal(str(round(float(abs(self.erro)) + float(incerteza), 6)))
+            self.ema = _quantize_decimal(abs(self.erro) + incerteza)
         elif self.erro is not None and self.resolucao is not None:
-            self.ema = Decimal(str(round(float(abs(self.erro)) + float(self.resolucao), 6)))
+            self.ema = _quantize_decimal(abs(self.erro) + self.resolucao)
         else:
             self.ema = None
         super().save(*args, **kwargs)
@@ -1620,6 +1854,17 @@ class ColorimetroIncertezaPonto(models.Model):
         return (
             padroes.filter(tipo="calibracao", ordem=self.ordem).first()
             or padroes.filter(tipo="verificacao", ordem=self.ordem).first()
+            or padroes.filter(tipo="calibracao").order_by("ordem").first()
+            or (
+                ColorimetroPadraoUtilizado(
+                    calibracao=self.calibracao,
+                    tipo="calibracao",
+                    ordem=1,
+                    padrao=self.calibracao.padrao_referencia,
+                )
+                if self.calibracao.padrao_referencia_id
+                else None
+            )
         )
 
     def save(self, *args, **kwargs):
@@ -1639,30 +1884,31 @@ class ColorimetroIncertezaPonto(models.Model):
             if self.resolucao_padrao is None:
                 self.resolucao_padrao = padrao_referencia.resolucao
 
-        componentes = [
-            float(valor)
-            for valor in (
-                self.repetibilidade,
-                self.resolucao_instrumento,
+        repeticoes = 0
+        if ponto_calibracao:
+            repeticoes = len([
+                valor for valor in (
+                    ponto_calibracao.leitura_1,
+                    ponto_calibracao.leitura_2,
+                    ponto_calibracao.leitura_3,
+                ) if valor is not None
+            ])
+
+        componentes_padrao = [
+            _incerteza_padrao_repetibilidade(self.repetibilidade, repeticoes),
+            _incerteza_padrao_por_resolucao(self.resolucao_instrumento),
+            _incerteza_padrao_por_certificado(
                 self.incerteza_padrao,
-                self.resolucao_padrao,
-                self.incerteza_curva,
-            )
-            if valor is not None
+                getattr(padrao_referencia, "fator_k", None) if padrao_referencia else None,
+            ),
+            _incerteza_padrao_por_resolucao(self.resolucao_padrao),
+            _para_decimal(self.incerteza_curva),
         ]
+        componentes = [float(valor) for valor in componentes_padrao if valor is not None]
 
         if componentes:
             combinada = sum(valor ** 2 for valor in componentes) ** 0.5
-            self.incerteza_padrao_combinada = Decimal(str(round(combinada, 6)))
-            repeticoes = 0
-            if ponto_calibracao:
-                repeticoes = len([
-                    valor for valor in (
-                        ponto_calibracao.leitura_1,
-                        ponto_calibracao.leitura_2,
-                        ponto_calibracao.leitura_3,
-                    ) if valor is not None
-                ])
+            self.incerteza_padrao_combinada = _quantize_decimal(combinada)
             graus_repetibilidade = max(repeticoes - 1, 0)
             if (
                 self.repetibilidade is not None
@@ -1670,13 +1916,14 @@ class ColorimetroIncertezaPonto(models.Model):
                 and graus_repetibilidade > 0
                 and combinada > 0
             ):
-                parcela = (float(self.repetibilidade) ** 4) / graus_repetibilidade
+                u_repetibilidade = _incerteza_padrao_repetibilidade(self.repetibilidade, repeticoes)
+                parcela = (float(u_repetibilidade or 0) ** 4) / graus_repetibilidade
                 self.graus_liberdade = Decimal(str(round((combinada ** 4) / parcela, 2))) if parcela else None
             elif not self.graus_liberdade:
                 self.graus_liberdade = None
 
             self.fator_k = Decimal(str(round(_fator_abrangencia_95(self.graus_liberdade), 3)))
-            self.incerteza_expandida = Decimal(str(round(combinada * float(self.fator_k or 2), 6)))
+            self.incerteza_expandida = _quantize_decimal(combinada * float(self.fator_k or 2))
         else:
             self.incerteza_padrao_combinada = None
             self.incerteza_expandida = None
@@ -1685,7 +1932,7 @@ class ColorimetroIncertezaPonto(models.Model):
 
         ponto_calibracao = self.calibracao.pontos_calibracao.filter(ordem=self.ordem).first()
         if ponto_calibracao and ponto_calibracao.erro is not None and self.incerteza_expandida is not None:
-            ponto_calibracao.ema = Decimal(str(round(float(abs(ponto_calibracao.erro)) + float(self.incerteza_expandida), 6)))
+            ponto_calibracao.ema = _quantize_decimal(abs(ponto_calibracao.erro) + self.incerteza_expandida)
             ponto_calibracao.save(update_fields=["ema"])
 
     def __str__(self):
@@ -1705,6 +1952,8 @@ class CalibracaoPressao(models.Model):
         ("vacuometro", "Vacuômetro"),
         ("manovacuometro", "Manovacuômetro"),
         ("pressostato", "Pressostato"),
+        ("valvula_seguranca", "VÃ¡lvula de seguranÃ§a"),
+        ("esfigmomanometro", "EsfigmomanÃ´metro"),
     )
     TIPO_INDICACAO_CHOICES = (
         ("analogico", "Analógico"),
@@ -1741,6 +1990,8 @@ class CalibracaoPressao(models.Model):
         "vacuometro": "CCDS-0009 Rev.00",
         "manovacuometro": "CCDS-0010 Rev.00",
         "pressostato": "CCDS-0011 Rev.00",
+        "valvula_seguranca": "CCDS-0006 Rev.00",
+        "esfigmomanometro": "CCDS-0006 Rev.00",
     }
     PREFIXO_CERTIFICADO_MAP = {
         "manometro": "PRE",
@@ -1749,6 +2000,8 @@ class CalibracaoPressao(models.Model):
         "vacuometro": "PRE",
         "manovacuometro": "PRE",
         "pressostato": "PRE",
+        "valvula_seguranca": "PRE",
+        "esfigmomanometro": "PRE",
     }
     EQUIPAMENTO_CALIBRADO_MAP = {
         "manometro": "Manômetro",
@@ -1757,6 +2010,8 @@ class CalibracaoPressao(models.Model):
         "vacuometro": "Vacuômetro",
         "manovacuometro": "Manovacuômetro",
         "pressostato": "Pressostato",
+        "valvula_seguranca": "VÃ¡lvula de seguranÃ§a",
+        "esfigmomanometro": "EsfigmomanÃ´metro",
     }
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -2077,6 +2332,7 @@ class CalibracaoPressao(models.Model):
         if not self.numero_certificado:
             self.numero_certificado = self._gerar_numero_certificado()
 
+        _quantize_instance_decimal_fields(self)
         super().save(*args, **kwargs)
 
     @classmethod
@@ -2170,6 +2426,7 @@ class PressaoPadraoUtilizado(models.Model):
         if self.validade:
             self.status_validade = "Vencido" if self.validade < date.today() else "Válido"
 
+        _quantize_instance_decimal_fields(self)
         super().save(*args, **kwargs)
 
     def __str__(self):
@@ -2245,17 +2502,17 @@ class PressaoCalibracaoPonto(models.Model):
 
         if leituras_convertidas:
             media = sum(leituras_convertidas) / len(leituras_convertidas)
-            self.media = Decimal(str(round(float(media), 6)))
+            self.media = _quantize_decimal(media)
             if len(leituras_convertidas) > 1:
                 media_float = float(media)
                 variancia = sum((float(valor) - media_float) ** 2 for valor in leituras_convertidas) / (len(leituras_convertidas) - 1)
-                self.desvio_padrao = Decimal(str(round(variancia ** 0.5, 6)))
+                self.desvio_padrao = _quantize_decimal(variancia ** 0.5)
 
         referencia = self.valor_referencia_convertido
         if referencia is not None and self.media is not None:
-            self.erro = Decimal(str(round(float(self.media - referencia), 6)))
+            self.erro = _quantize_decimal(self.media - referencia)
             if float(referencia) != 0:
-                self.erro_percentual = Decimal(str(round((float(self.erro) / abs(float(referencia))) * 100, 6)))
+                self.erro_percentual = _quantize_decimal((float(self.erro) / abs(float(referencia))) * 100)
 
         incerteza = (
             self.calibracao.pontos_incerteza.filter(ordem=self.ordem)
@@ -2263,7 +2520,7 @@ class PressaoCalibracaoPonto(models.Model):
             .first()
         )
         if self.erro is not None and incerteza is not None:
-            self.ema = Decimal(str(round(float(abs(self.erro)) + float(incerteza), 6)))
+            self.ema = _quantize_decimal(abs(self.erro) + incerteza)
 
         tolerancia_resolvida = self.tolerancia
         if tolerancia_resolvida is None and self.criterio:
@@ -2276,6 +2533,7 @@ class PressaoCalibracaoPonto(models.Model):
         elif self.erro is not None:
             self.resultado = ""
 
+        _quantize_instance_decimal_fields(self)
         super().save(*args, **kwargs)
 
         status_final = self.calibracao.calcular_status_final()
@@ -2339,18 +2597,19 @@ class PressaoIncertezaPonto(models.Model):
 
         if componentes:
             combinada = sum(valor ** 2 for valor in componentes) ** 0.5
-            self.incerteza_padrao_combinada = Decimal(str(round(combinada, 6)))
+            self.incerteza_padrao_combinada = _quantize_decimal(combinada)
             self.graus_liberdade = Decimal("999999.00")
             self.fator_k = Decimal("2.000")
-            self.incerteza_expandida = Decimal(str(round(combinada * float(self.fator_k or 2), 6)))
+            self.incerteza_expandida = _quantize_decimal(combinada * float(self.fator_k or 2))
         else:
             self.incerteza_padrao_combinada = None
             self.incerteza_expandida = None
 
+        _quantize_instance_decimal_fields(self)
         super().save(*args, **kwargs)
 
         if ponto_calibracao and ponto_calibracao.erro is not None and self.incerteza_expandida is not None:
-            ponto_calibracao.ema = Decimal(str(round(float(abs(ponto_calibracao.erro)) + float(self.incerteza_expandida), 6)))
+            ponto_calibracao.ema = _quantize_decimal(abs(ponto_calibracao.erro) + self.incerteza_expandida)
             ponto_calibracao.save(update_fields=["ema"])
 
     def __str__(self):
@@ -2426,6 +2685,42 @@ class CalibracaoCondutividade(models.Model):
         verbose_name = "Calibração de Condutividade"
         verbose_name_plural = "Calibrações de Condutividade"
         ordering = ("-data_calibracao", "-created_at")
+
+    def save(self, *args, **kwargs):
+        if self.instrumento_id and not self.cliente_id:
+            self.cliente = self.instrumento.cliente
+        if self.cliente_id and not self.contratante:
+            self.contratante = self.cliente.razao_social or str(self.cliente)
+        if self.cliente_id:
+            partes_endereco = [
+                getattr(self.cliente, "endereco", ""),
+                getattr(self.cliente, "numero", ""),
+                getattr(self.cliente, "bairro", ""),
+                getattr(self.cliente, "cidade", ""),
+                getattr(self.cliente, "uf", ""),
+            ]
+            endereco = ", ".join([parte for parte in partes_endereco if parte])
+            if endereco and not self.endereco_contratante:
+                self.endereco_contratante = endereco
+            if endereco and not self.endereco_cliente:
+                self.endereco_cliente = endereco
+        if self.instrumento_id:
+            if not self.equipamento_calibrado:
+                self.equipamento_calibrado = self.instrumento.descricao or str(self.instrumento)
+            if not self.numero_identificacao:
+                self.numero_identificacao = self.instrumento.codigo
+            if not self.marca:
+                self.marca = self.instrumento.marca
+            if not self.modelo:
+                self.modelo = self.instrumento.modelo
+            if not self.numero_serie:
+                self.numero_serie = self.instrumento.numero_serie
+
+        if not self.data_emissao and self.data_calibracao:
+            self.data_emissao = self.data_calibracao
+
+        _quantize_instance_decimal_fields(self)
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return f"{self.numero_certificado} - {self.instrumento}"

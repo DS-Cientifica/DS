@@ -12,7 +12,7 @@ from calibracao.models import Calibracao, Instrumento, OrdemServico, Padrao
 from clientes.models import Cliente
 from comercial.models import CRMRegistro, CRMTicket, ProdutoServico, Proposta
 from financeiro.models import ContaPagar, ContaReceber, Imposto
-from gestao.models import Colaborador, Treinamento
+from gestao.models import Colaborador, DocumentoEmpresa, Treinamento
 from manutencao.models import Manutencao
 from planejamento.models import PlanejamentoServico
 from projetos.models import CampanhaMarketing, Projeto
@@ -450,6 +450,7 @@ def dashboard(request):
                 "gestao.view_cargofuncao",
                 "gestao.view_competenciatecnica",
                 "gestao.view_treinamento",
+                "gestao.view_documentoempresa",
             ],
         ),
         "projetos": _has_any_perm(
@@ -475,6 +476,7 @@ def dashboard(request):
         {"rotulo": "Conta a receber", "url": reverse("admin:financeiro_contareceber_add"), "icone": "RC", "modulo": "financeiro"},
         {"rotulo": "Conta a pagar", "url": reverse("admin:financeiro_contapagar_add"), "icone": "PG", "modulo": "financeiro"},
         {"rotulo": "RH", "url": reverse("admin:gestao_colaborador_changelist"), "icone": "RH", "modulo": "gestao"},
+        {"rotulo": "Documentos empresa", "url": reverse("admin:gestao_documentoempresa_changelist"), "icone": "GD", "modulo": "gestao"},
         {"rotulo": "Planejamento & Logistica", "url": reverse("admin:planejamento_planejamentoservico_calendario"), "icone": "PL", "modulo": "planejamento"},
         {"rotulo": "Projetos", "url": reverse("admin:projetos_projeto_changelist"), "icone": "PD", "modulo": "projetos"},
         {"rotulo": "Marketing", "url": reverse("admin:projetos_campanhamarketing_changelist"), "icone": "MK", "modulo": "projetos"},
@@ -530,6 +532,7 @@ def dashboard(request):
             {"rotulo": "Conta a receber", "url": reverse("admin:financeiro_contareceber_add"), "icone": "RC"},
             {"rotulo": "Conta a pagar", "url": reverse("admin:financeiro_contapagar_add"), "icone": "PG"},
             {"rotulo": "RH", "url": reverse("admin:gestao_colaborador_changelist"), "icone": "RH"},
+            {"rotulo": "Documentos empresa", "url": reverse("admin:gestao_documentoempresa_changelist"), "icone": "GD"},
             {"rotulo": "Planejamento & Logistica", "url": reverse("admin:planejamento_planejamentoservico_calendario"), "icone": "PL"},
             {"rotulo": "Projetos", "url": reverse("admin:projetos_projeto_changelist"), "icone": "PD"},
             {"rotulo": "Marketing", "url": reverse("admin:projetos_campanhamarketing_changelist"), "icone": "MK"},
@@ -561,6 +564,7 @@ def dashboard(request):
             "planejamentos": PlanejamentoServico.objects.count(),
             "manutencoes": Manutencao.objects.count(),
             "colaboradores": Colaborador.objects.count(),
+            "documentos_empresa": DocumentoEmpresa.objects.count(),
             "treinamentos": Treinamento.objects.count(),
             "projetos": Projeto.objects.count(),
             "campanhas": CampanhaMarketing.objects.count(),

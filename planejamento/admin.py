@@ -9,7 +9,7 @@ from django.utils.html import format_html
 
 from clientes.models import Cliente
 
-from .models import PlanejamentoServico
+from .models import EnvioEquipamentoSemNota, EnvioEquipamentoSemNotaItem, PlanejamentoServico
 
 
 @admin.register(PlanejamentoServico)
@@ -334,3 +334,172 @@ class PlanejamentoServicoAdmin(admin.ModelAdmin):
             "planejamento": planejamento,
         }
         return render(request, "admin/planejamento/planejamentoservico/print.html", context)
+
+
+class EnvioEquipamentoSemNotaItemInline(admin.TabularInline):
+    model = EnvioEquipamentoSemNotaItem
+    extra = 3
+    fields = (
+        "ordem",
+        "equipamento",
+        "marca",
+        "modelo",
+        "numero_serie_patrimonio",
+        "quantidade",
+    )
+
+
+@admin.register(EnvioEquipamentoSemNota)
+class EnvioEquipamentoSemNotaAdmin(admin.ModelAdmin):
+    change_form_template = "admin/planejamento/envioequipamentosemnota/change_form.html"
+    list_display = (
+        "codigo",
+        "tipo_formulario",
+        "data_envio_formulario",
+        "empresa_remetente",
+        "finalidade",
+        "transportadora",
+        "responsavel_frete",
+        "botao_impressao",
+    )
+    list_filter = ("tipo_formulario", "finalidade", "responsavel_frete", "data_envio_formulario", "data_recebimento")
+    search_fields = (
+        "codigo",
+        "empresa_remetente",
+        "cnpj_cpf_remetente",
+        "responsavel_envio",
+        "transportadora",
+        "codigo_rastreamento",
+    )
+    readonly_fields = ("codigo",)
+    autocomplete_fields = ("cliente_remetente",)
+    inlines = (EnvioEquipamentoSemNotaItemInline,)
+
+    fieldsets = (
+        (
+            "Cabecalho do formulario",
+            {
+                "fields": (
+                    "codigo",
+                    "tipo_formulario",
+                    "data_envio_formulario",
+                )
+            },
+        ),
+        (
+            "Remetente",
+            {
+                "fields": (
+                    "cliente_remetente",
+                    "empresa_remetente",
+                    "cnpj_cpf_remetente",
+                    "endereco_remetente",
+                    "cidade_uf_remetente",
+                    "responsavel_envio",
+                    "telefone_whatsapp",
+                    "email_remetente",
+                )
+            },
+        ),
+        (
+            "Destinatario",
+            {
+                "fields": (
+                    "empresa_destinataria",
+                    "cnpj_destinatario",
+                    "endereco_destinatario",
+                    "cidade_uf_destinatario",
+                    "responsavel_recebimento_destino",
+                )
+            },
+        ),
+        (
+            "Solicitacao",
+            {
+                "fields": (
+                    "finalidade",
+                    "finalidade_outro",
+                    "descricao_solicitacao",
+                )
+            },
+        ),
+        (
+            "Condicao de envio",
+            {
+                "fields": (
+                    "condicao_funcionamento",
+                    "condicao_acessorios",
+                    "condicao_embalagem_envio",
+                    "acessorios_enviados",
+                    "observacoes_estado",
+                )
+            },
+        ),
+        (
+            "Transporte",
+            {
+                "fields": (
+                    "transportadora",
+                    "codigo_rastreamento",
+                    "data_envio_transporte",
+                    "responsavel_frete",
+                )
+            },
+        ),
+        (
+            "Declaracao do remetente",
+            {
+                "fields": (
+                    "nome_declarante",
+                    "cargo_declarante",
+                    "cpf_declarante",
+                    "assinatura_declarante",
+                    "data_declaracao",
+                )
+            },
+        ),
+        (
+            "Recebimento pelo destinatario",
+            {
+                "fields": (
+                    "data_recebimento",
+                    "recebido_por",
+                    "condicao_embalagem_recebimento",
+                    "condicao_embalagem_recebimento_outro",
+                    "condicao_aparente_recebimento",
+                    "observacoes_recebimento",
+                )
+            },
+        ),
+    )
+
+    def get_urls(self):
+        urls = super().get_urls()
+        custom_urls = [
+            path(
+                "<uuid:pk>/imprimir/",
+                self.admin_site.admin_view(self.impressao_view),
+                name="planejamento_envioequipamentosemnota_imprimir",
+            ),
+        ]
+        return custom_urls + urls
+
+    def botao_impressao(self, obj):
+        return format_html(
+            "<a class='button' href='{}' target='_blank'>Imprimir</a>",
+            reverse("admin:planejamento_envioequipamentosemnota_imprimir", args=[obj.pk]),
+        )
+
+    botao_impressao.short_description = "Impressao"
+
+    def impressao_view(self, request, pk):
+        formulario = get_object_or_404(
+            EnvioEquipamentoSemNota.objects.prefetch_related("itens"),
+            pk=pk,
+        )
+        context = {
+            **self.admin_site.each_context(request),
+            "title": f"Formulario {formulario.codigo}",
+            "formulario": formulario,
+        }
+        return render(request, "admin/planejamento/envioequipamentosemnota/print.html", context)

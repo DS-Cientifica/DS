@@ -1,0 +1,149 @@
+{% extends "admin/change_list.html" %}
+
+{% block search %}
+{{ block.super }}
+<div class="pedido-compra-quick-filters">
+  <form method="get" class="pedido-compra-quick-filters__form" id="pedido-compra-quick-filters-form">
+    {% if cl.query %}
+      <input type="hidden" name="q" value="{{ cl.query }}">
+    {% endif %}
+
+    <label>
+      Fornecedor
+      <select name="fornecedor__id__exact">
+        <option value="">Todos</option>
+        {% for fornecedor in fornecedor_choices_rapido %}
+          <option value="{{ fornecedor.pk }}" {% if filtro_fornecedor_atual == fornecedor.pk|stringformat:"s" %}selected{% endif %}>
+            {{ fornecedor.razao_social|default:fornecedor.nome_empresa }}
+          </option>
+        {% endfor %}
+      </select>
+    </label>
+
+    <button type="submit" class="button">Filtrar</button>
+    <a class="button pedido-compra-quick-filters__clear" href="?{% if cl.query %}q={{ cl.query|urlencode }}{% endif %}">Limpar filtros rapidos</a>
+  </form>
+
+  <div class="pedido-compra-quick-filters__summary">
+    <strong>Total filtrado:</strong>
+    R$ {{ total_filtrado_pedidos_compra|floatformat:2 }}
+    <span>({{ quantidade_filtrada_pedidos_compra|default:0 }} pedido{{ quantidade_filtrada_pedidos_compra|pluralize }})</span>
+    <span class="pedido-compra-quick-filters__selected">
+      <strong>Total selecionado:</strong>
+      <span id="pedido-compra-total-selecionado">R$ 0,00</span>
+      <span id="pedido-compra-quantidade-selecionada">(0 pedidos)</span>
+    </span>
+  </div>
+</div>
+
+<style>
+  .pedido-compra-quick-filters {
+    margin: 10px 0 14px;
+    padding: 12px;
+    border: 1px solid var(--hairline-color, #ddd);
+    border-radius: 4px;
+    background: var(--darkened-bg, #f8f8f8);
+  }
+
+  .pedido-compra-quick-filters__form {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px 14px;
+    align-items: flex-end;
+  }
+
+  .pedido-compra-quick-filters label {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    font-weight: 600;
+  }
+
+  .pedido-compra-quick-filters select {
+    min-width: 280px;
+    height: 32px;
+  }
+
+  .pedido-compra-quick-filters__summary {
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px solid var(--hairline-color, #ddd);
+    font-size: 14px;
+  }
+
+  .pedido-compra-quick-filters__selected {
+    display: inline-block;
+    margin-left: 18px;
+  }
+</style>
+
+<script>
+  (function () {
+    const form = document.getElementById("pedido-compra-quick-filters-form");
+    if (form) {
+      form.addEventListener("submit", function () {
+        form.querySelectorAll("select").forEach(function (select) {
+          if (!select.value) {
+            select.disabled = true;
+          }
+        });
+      });
+    }
+
+    function parseMoney(value) {
+      if (!value) {
+        return 0;
+      }
+      var normalized = String(value).replace(/[^\d,.-]/g, "").replace(/\./g, "").replace(",", ".");
+      var parsed = Number(normalized);
+      return Number.isFinite(parsed) ? parsed : 0;
+    }
+
+    function formatMoney(value) {
+      return "R$ " + value.toFixed(2).replace(".", ",");
+    }
+
+    function updateSelectedTotal() {
+      var total = 0;
+      var count = 0;
+      document.querySelectorAll("#result_list tbody tr").forEach(function (row) {
+        var checkbox = row.querySelector('input.action-select[type="checkbox"]');
+        if (!checkbox || !checkbox.checked) {
+          return;
+        }
+
+        var totalCell = row.querySelector(".field-total");
+        if (!totalCell) {
+          return;
+        }
+
+        total += parseMoney(totalCell.textContent);
+        count += 1;
+      });
+
+      var totalElement = document.getElementById("pedido-compra-total-selecionado");
+      var countElement = document.getElementById("pedido-compra-quantidade-selecionada");
+      if (totalElement) {
+        totalElement.textContent = formatMoney(total);
+      }
+      if (countElement) {
+        countElement.textContent = "(" + count + " pedido" + (count === 1 ? "" : "s") + ")";
+      }
+    }
+
+    document.addEventListener("change", function (event) {
+      if (event.target.matches('#result_list input[type="checkbox"], input#action-toggle')) {
+        setTimeout(updateSelectedTotal, 0);
+      }
+    });
+
+    document.addEventListener("click", function (event) {
+      if (event.target.matches(".actions .all, .actions .clear, .actions .question")) {
+        setTimeout(updateSelectedTotal, 0);
+      }
+    });
+
+    updateSelectedTotal();
+  })();
+</script>
+{% endblock %}
