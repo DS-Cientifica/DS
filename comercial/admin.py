@@ -1309,7 +1309,7 @@ class ProspeccaoComercialAdmin(admin.ModelAdmin):
         "razao_social",
         "contato_nome",
         "telefone",
-        "origem_lead",
+        "proxima_acao_exibicao",
         "status",
         "data_cadastro",
         "crm_gerado",
@@ -1399,6 +1399,22 @@ class ProspeccaoComercialAdmin(admin.ModelAdmin):
             ),
         ]
         return custom_urls + urls
+
+    def get_queryset(self, request):
+        ultima_interacao = ProspeccaoInteracao.objects.filter(
+            prospeccao=OuterRef("pk")
+        ).order_by("-data", "-pk")
+        return super().get_queryset(request).annotate(
+            proxima_acao_lista=Subquery(
+                ultima_interacao.values("proxima_acao")[:1]
+            )
+        )
+
+    @admin.display(ordering="proxima_acao_lista", description="Próxima ação")
+    def proxima_acao_exibicao(self, obj):
+        if not obj.proxima_acao_lista:
+            return "—"
+        return timezone.localtime(obj.proxima_acao_lista).strftime("%d/%m/%Y %H:%M")
 
     def changelist_view(self, request, extra_context=None):
         hoje = timezone.localdate()

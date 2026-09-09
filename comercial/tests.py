@@ -216,6 +216,9 @@ class ProspectoComercialTests(TestCase):
         self.assertContains(resposta, "Ações de prospecção para hoje")
         self.assertContains(resposta, "Há 1")
         self.assertContains(resposta, "ação programada")
+        self.assertContains(resposta, "Próxima ação")
+        self.assertContains(resposta, "09/09/2026 10:30")
+        self.assertNotContains(resposta, 'class="sortable column-origem_lead"')
         self.assertContains(
             resposta,
             reverse("admin:comercial_prospeccaocomercial_agenda")
