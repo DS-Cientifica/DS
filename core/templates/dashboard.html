@@ -5,6 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AXION | Dashboard</title>
+    <link rel="stylesheet" href="{% static 'css/home.css' %}?v=20260810-2">
     <style>
         :root {
             --bg: #f5f7fb;
@@ -640,10 +641,54 @@
             }
         }
     </style>
+    <link rel="stylesheet" href="{% static 'css/dashboard_shell.css' %}?v=20260810-1">
+    <script src="{% static 'js/home.js' %}" defer></script>
 </head>
-<body>
+<body class="dashboard-page">
+    <svg class="svg-sprite" aria-hidden="true">
+        <symbol id="icon-home" viewBox="0 0 24 24"><path d="M3 11.5 12 4l9 7.5v8a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></symbol>
+        <symbol id="icon-menu" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></symbol>
+        <symbol id="icon-calendar" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M7 3v4M17 3v4M3 10h18M8 14h3M13 14h3M8 17h3"/></symbol>
+    </svg>
+
+    <aside class="sidebar" id="sidebar" aria-label="Navegação principal">
+        <a class="brand" href="{% url 'inicio' %}" aria-label="AXION - Início">
+            <span class="brand-mark">A</span>
+            <span class="brand-name">AXION</span>
+        </a>
+        <nav class="sidebar-nav">
+            <a class="nav-link" href="{% url 'inicio' %}"><svg><use href="#icon-home"></use></svg><span>Início</span></a>
+            <p class="nav-label">Acesso rápido</p>
+            {% if perms.calibracao.view_ordemservico %}<a class="nav-link" href="{% url 'admin:calibracao_ordemservico_changelist' %}"><span class="nav-monogram">OS</span><span>Ordens de serviço</span></a>{% endif %}
+            {% if perms.certificados.view_certificadocalibracao %}<a class="nav-link" href="{% url 'admin:certificados_certificadocalibracao_changelist' %}"><span class="nav-monogram">CE</span><span>Certificados</span></a>{% endif %}
+            {% if perms.calibracao.view_instrumento %}<a class="nav-link" href="{% url 'admin:calibracao_instrumento_changelist' %}"><span class="nav-monogram">IN</span><span>Instrumentos</span></a>{% endif %}
+            {% if perms.calibracao.view_padrao %}<a class="nav-link" href="{% url 'admin:calibracao_padrao_changelist' %}"><span class="nav-monogram">PD</span><span>Padrões</span></a>{% endif %}
+            {% if perms.clientes.view_cliente %}<a class="nav-link" href="{% url 'admin:clientes_cliente_changelist' %}"><span class="nav-monogram">CL</span><span>Clientes</span></a>{% endif %}
+            {% if perms.planejamento.view_planejamentoservico %}<a class="nav-link" href="{% url 'admin:planejamento_planejamentoservico_calendario' %}"><span class="nav-monogram">AG</span><span>Agenda técnica</span></a>{% endif %}
+            <a class="nav-link active" href="{% url 'dashboard' %}" aria-current="page"><span class="nav-monogram">DB</span><span>Dashboard</span></a>
+            <a class="nav-link" href="{% url 'calendario_integrado' %}"><svg><use href="#icon-calendar"></use></svg><span>Calendário</span></a>
+        </nav>
+        <div class="sidebar-footer">
+            <div class="company-signature">
+                <img src="{% static 'img/logo_ds.png' %}" alt="">
+                <span><strong>DS Científica</strong><small>Precisão que gera resultado.</small></span>
+            </div>
+            <button class="collapse-button" type="button" id="sidebar-toggle" aria-controls="sidebar" aria-expanded="true">
+                <span aria-hidden="true">«</span><span>Recolher menu</span>
+            </button>
+        </div>
+    </aside>
+
+    <div class="app-shell">
     <header class="topbar">
+        <button class="mobile-menu" type="button" id="mobile-menu" aria-controls="sidebar" aria-expanded="false" aria-label="Abrir menu">
+            <svg><use href="#icon-menu"></use></svg>
+        </button>
         <div class="topbar-inner">
+            <div class="dashboard-welcome">
+                <h1>Bem-vindo, {{ request.user.get_short_name|default:request.user.username }}!</h1>
+                <p>Acompanhe os indicadores integrados da DS Científica.</p>
+            </div>
             <a class="brand" href="{% url 'dashboard' %}">
                 <img src="{% static 'img/logo_ds.png' %}" alt="DS Científica">
                 <span>
@@ -657,22 +702,10 @@
                     <span class="btn-symbol" aria-hidden="true">↻</span>
                     <span>Atualizar</span>
                 </a>
-                <a class="btn secondary" href="{{ admin_url }}">
-                    <span class="btn-symbol" aria-hidden="true">AD</span>
-                    <span>Admin</span>
+                <a class="btn secondary" href="{{ central_url }}">
+                    <span class="btn-symbol" aria-hidden="true">⌂</span>
+                    <span>Início</span>
                 </a>
-                {% if modulos.qualidade %}
-                    <a class="btn secondary" href="#qualidade-section">
-                        <span class="btn-symbol" aria-hidden="true">QD</span>
-                        <span>Qualidade</span>
-                    </a>
-                {% endif %}
-                {% if modulos.comercial %}
-                    <a class="btn" href="{% url 'admin:comercial_proposta_add' %}">
-                        <span class="btn-symbol" aria-hidden="true">+</span>
-                        <span>Proposta</span>
-                    </a>
-                {% endif %}
             </nav>
         </div>
     </header>
@@ -680,7 +713,7 @@
     <main class="page">
         <section class="headline" aria-labelledby="dashboard-title">
             <div>
-                <h1 id="dashboard-title">Dashboard operacional</h1>
+                <h1 id="dashboard-title">Dashboard</h1>
                 <p>Visão geral de clientes, calibrações, comercial e financeiro em {{ hoje|date:"d/m/Y" }}.</p>
             </div>
 
@@ -1044,5 +1077,7 @@
             </aside>
         </section>
     </main>
+    <footer>© {% now "Y" %} AXION · DS Científica. Todos os direitos reservados.</footer>
+    </div>
 </body>
 </html>

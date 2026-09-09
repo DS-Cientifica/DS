@@ -1,0 +1,38 @@
+<section class="agenda-section">
+  <h2>{{ titulo }} <span>({{ itens|length }})</span></h2>
+  {% if itens %}
+    <div class="results">
+      <table class="agenda-table">
+        <thead>
+          <tr>
+            <th>Horário</th>
+            <th>Próximo passo</th>
+            <th>Empresa e contato</th>
+            <th>Telefone / e-mail</th>
+            <th>Responsável</th>
+            <th>Registro mais recente</th>
+            <th>Ações</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for item in itens %}
+            <tr>
+              <td{% if atrasada %} class="agenda-late"{% endif %}>{{ item.momento|date:"d/m/Y H:i" }}</td>
+              <td><span class="agenda-type">{{ item.tipo|default:"Não definido" }}</span></td>
+              <td><strong>{{ item.prospeccao.razao_social }}</strong><br>{{ item.prospeccao.contato_nome|default:"Contato não informado" }}</td>
+              <td>
+                {% if item.prospeccao.telefone %}<a href="tel:{{ item.prospeccao.telefone }}">{{ item.prospeccao.telefone }}</a>{% else %}—{% endif %}<br>
+                {% if item.prospeccao.email %}<a href="mailto:{{ item.prospeccao.email }}">{{ item.prospeccao.email }}</a>{% else %}—{% endif %}
+              </td>
+              <td>{{ item.prospeccao.responsavel|default:"Não definido" }}</td>
+              <td class="agenda-description">{{ item.descricao|truncatechars:240 }}</td>
+              <td class="agenda-actions"><a class="button" href="{% url 'admin:comercial_prospeccaocomercial_change' item.prospeccao.pk %}">Abrir</a></td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <p class="agenda-empty">Nenhuma tarefa nesta seção.</p>
+  {% endif %}
+</section>

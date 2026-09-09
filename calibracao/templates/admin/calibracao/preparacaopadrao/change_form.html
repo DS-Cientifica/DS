@@ -1,0 +1,21 @@
+{% extends "admin/change_form.html" %}
+
+{% block object-tools-items %}
+    {{ block.super }}
+    {% if change and original %}
+        <li>
+            <form method="post" action="{% url 'admin:calibracao_preparacaopadrao_duplicar' original.pk %}" style="display:inline">
+                {% csrf_token %}
+                <button type="submit" class="button" style="cursor:pointer">Duplicar como rascunho</button>
+            </form>
+        </li>
+    {% endif %}
+    {% if change and original and original.status == "em_revisao" %}
+        <li>
+            <form method="post" action="{% url 'admin:calibracao_preparacaopadrao_aprovar' original.pk %}" style="display:inline">
+                {% csrf_token %}
+                <button type="submit" class="button" style="cursor:pointer">Aprovar e gerar padrões</button>
+            </form>
+        </li>
+    {% endif %}
+{% endblock %}

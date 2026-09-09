@@ -1,5 +1,7 @@
-import uuid
-from django.db import models
+import uuid
+from django.db import models
+from django.utils import timezone
+from django.core.exceptions import ValidationError
 from django.contrib.auth.models import User
 
 import uuid
@@ -18,7 +20,12 @@ class Cliente(models.Model):
 
     razao_social = models.CharField(max_length=255)
     nome_empresa = models.CharField(max_length=255)
-    cnpj = models.CharField(max_length=18, unique=True)
+    cnpj = models.CharField(max_length=18, unique=True)
+    cnpj_provisorio = models.BooleanField(
+        "CNPJ pendente de confirmação",
+        default=False,
+        help_text="Indica cliente convertido de prospecção sem CNPJ informado.",
+    )
     ie = models.CharField("Inscrição Estadual", max_length=30, blank=True)
 
     endereco = models.CharField(max_length=255, blank=True)
@@ -62,7 +69,16 @@ class Cliente(models.Model):
     # =========================
     # SAVE
     # =========================
-    def save(self, *args, **kwargs):
+    def clean(self):
+        super().clean()
+        if (self.cnpj or "").upper().startswith(("PROS-", "PROSPECT-")) and not self.cnpj_provisorio:
+            raise ValidationError({
+                "cnpj_provisorio": (
+                    "Substitua o identificador provisório por um CNPJ válido antes de retirar esta marcação."
+                )
+            })
+
+    def save(self, *args, **kwargs):
         if not self.codigo:
             while True:
                 codigo = self.gerar_codigo()
@@ -82,7 +98,12 @@ class Cliente(models.Model):
 # CONTATO
 # =========================
 
-class ContatoCliente(models.Model):
+class ContatoCliente(models.Model):
+
+    BASE_LEGAL_MARKETING_CHOICES = (
+        ("consentimento", "Consentimento"),
+        ("legitimo_interesse", "Legítimo interesse documentado"),
+    )
     cliente = models.ForeignKey(
         Cliente,
         on_delete=models.CASCADE,
@@ -93,15 +114,84 @@ class ContatoCliente(models.Model):
     cargo = models.CharField(max_length=100, blank=True)
     email = models.EmailField()
     telefone = models.CharField(max_length=20, blank=True)
-    principal = models.BooleanField(default=False)
+    principal = models.BooleanField(default=False)
+
+    marketing_email_autorizado = models.BooleanField(
+        "Autoriza marketing por e-mail",
+        default=False,
+    )
+    marketing_whatsapp_autorizado = models.BooleanField(
+        "Autoriza marketing por WhatsApp",
+        default=False,
+    )
+    marketing_base_legal = models.CharField(
+        "Base legal do tratamento",
+        max_length=30,
+        choices=BASE_LEGAL_MARKETING_CHOICES,
+        blank=True,
+    )
+    marketing_autorizado_em = models.DateTimeField(
+        "Autorizado/avaliado em",
+        null=True,
+        blank=True,
+    )
+    marketing_origem = models.CharField(
+        "Origem/evidência da autorização",
+        max_length=255,
+        blank=True,
+        help_text="Ex.: formulário assinado, contrato, evento ou referência do teste de legítimo interesse.",
+    )
+    marketing_revogado_em = models.DateTimeField(
+        "Revogado em",
+        null=True,
+        blank=True,
+    )
+    marketing_observacoes = models.TextField(
+        "Observações de privacidade",
+        blank=True,
+    )
 
     class Meta:
         verbose_name = "Contato do Cliente"
         verbose_name_plural = "Contatos do Cliente"
         ordering = ("-principal", "nome")
 
-    def __str__(self):
-        return f"{self.nome} — {self.cliente.codigo}"
+    def __str__(self):
+        return f"{self.nome} — {self.cliente.codigo}"
+
+    def clean(self):
+        super().clean()
+        erros = {}
+        possui_autorizacao = self.marketing_email_autorizado or self.marketing_whatsapp_autorizado
+        if possui_autorizacao and not self.marketing_base_legal:
+            erros["marketing_base_legal"] = "Informe a base legal antes de autorizar campanhas."
+        if possui_autorizacao and not self.marketing_origem.strip():
+            erros["marketing_origem"] = "Registre a origem ou evidência da autorização."
+        if self.marketing_whatsapp_autorizado and not self.telefone.strip():
+            erros["telefone"] = "Informe o telefone antes de autorizar campanhas por WhatsApp."
+        if self.marketing_revogado_em and possui_autorizacao:
+            erros["marketing_revogado_em"] = "Desmarque os canais autorizados ao registrar a revogação."
+        if erros:
+            raise ValidationError(erros)
+
+    def save(self, *args, **kwargs):
+        if (
+            (self.marketing_email_autorizado or self.marketing_whatsapp_autorizado)
+            and not self.marketing_autorizado_em
+        ):
+            self.marketing_autorizado_em = timezone.now()
+        super().save(*args, **kwargs)
+
+    def marketing_autorizado(self, canal):
+        if not self.cliente.ativo or self.marketing_revogado_em:
+            return False
+        if not self.marketing_base_legal or not self.marketing_origem or not self.marketing_autorizado_em:
+            return False
+        if canal == "email":
+            return self.marketing_email_autorizado and bool(self.email.strip())
+        if canal == "whatsapp":
+            return self.marketing_whatsapp_autorizado and bool(self.telefone.strip())
+        return False
 
 
 # =========================

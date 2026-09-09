@@ -1,9 +1,12 @@
 import uuid
+import hashlib
+import unicodedata
 
 from datetime import datetime
 from datetime import timedelta
 import re
 
+from django.core.exceptions import ValidationError
 from django.db import models, transaction
 from django.utils import timezone
 
@@ -493,6 +496,18 @@ class ProdutoAnexo(models.Model):
 # =========================
 
 
+class PropostaSequencia(models.Model):
+    chave = models.PositiveSmallIntegerField(primary_key=True, default=1, editable=False)
+    ultimo_numero = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        verbose_name = "Sequência de proposta"
+        verbose_name_plural = "Sequências de propostas"
+
+    def __str__(self):
+        return str(self.ultimo_numero)
+
+
 
 class Proposta(models.Model):
 
@@ -604,10 +619,62 @@ class Proposta(models.Model):
     padroes_utilizados = models.TextField(blank=True)
     observacoes = models.TextField(blank=True)
 
-    def gerar_codigo(self):
-        ano = datetime.now().strftime("%y")
-        numero = Proposta.objects.count() + 1
-        return f"PROP-{numero:04d}/{ano}"
+    def _validar_responsavel_do_cliente(self):
+        if not self.cliente_id or not self.responsavel_id:
+            return
+        if self.responsavel.cliente_id != self.cliente_id:
+            raise ValidationError(
+                {"responsavel": "O responsável selecionado não pertence ao cliente da proposta."}
+            )
+
+    def clean(self):
+        super().clean()
+        self._validar_responsavel_do_cliente()
+
+    def gerar_codigo(self, using=None):
+        using = using or self._state.db or "default"
+        ano = timezone.localdate().year % 100
+
+        with transaction.atomic(using=using):
+            sequencia, _ = PropostaSequencia.objects.using(using).get_or_create(
+                pk=1,
+                defaults={"ultimo_numero": 0},
+            )
+            sequencia = (
+                PropostaSequencia.objects.using(using)
+                .select_for_update()
+                .get(pk=sequencia.pk)
+            )
+
+            maior_existente = 0
+            for codigo_existente in (
+                Proposta.objects.using(using).values_list("codigo", flat=True)
+            ):
+                match = re.search(
+                    r"(?:^| -\s*)PROP-(\d{4,})/\d{2}$",
+                    codigo_existente or "",
+                )
+                if match:
+                    maior_existente = max(maior_existente, int(match.group(1)))
+
+            sequencia.ultimo_numero = max(
+                sequencia.ultimo_numero,
+                maior_existente,
+            ) + 1
+            sequencia.save(update_fields=("ultimo_numero",))
+            numero_proposta = f"PROP-{sequencia.ultimo_numero:04d}/{ano:02d}"
+            nome_fantasia = re.sub(
+                r"\s+",
+                " ",
+                (getattr(self.cliente, "nome_empresa", "") or "").strip(),
+            ).upper()
+            if not nome_fantasia:
+                return numero_proposta
+
+            separador = " - "
+            limite_nome = self._meta.get_field("codigo").max_length - len(separador) - len(numero_proposta)
+            nome_fantasia = nome_fantasia[:limite_nome].rstrip()
+            return f"{nome_fantasia}{separador}{numero_proposta}"
 
     def resumo_financeiro(self):
         subtotal_base = Decimal("0")
@@ -686,37 +753,68 @@ class Proposta(models.Model):
     def _fechamento_positivo(status, resultado_fechamento):
         return status == "aprovado" or resultado_fechamento == "positivo"
 
-    def deve_criar_conta_receber_automaticamente(self):
-        return (
-            self.gera_conta_receber_automaticamente
-            and self.tipo_faturamento == "imediato"
-            and self._fechamento_positivo(self.status, self.resultado_fechamento)
-        )
+    def deve_criar_ordem_servico_automaticamente(self):
+        return self.status == "aprovado" and self.resultado_fechamento == "positivo"
 
-    def _calcular_vencimento_conta_receber(self):
-        base = self.data_emissao or timezone.localdate()
+    def criar_ordem_servico_automatica(self):
+        from calibracao.models import OrdemServico
+
+        if not self.pk or not self.deve_criar_ordem_servico_automaticamente():
+            return None
+
+        ordem, _ = OrdemServico.objects.get_or_create(
+            proposta=self,
+            defaults={"cliente": self.cliente, "status": "aberta"},
+        )
+        return ordem
+
+    def deve_criar_conta_receber_automaticamente(self, momento="aprovacao"):
+        if not (
+            self.gera_conta_receber_automaticamente
+            and self._fechamento_positivo(self.status, self.resultado_fechamento)
+        ):
+            return False
+        if momento == "conclusao_os":
+            return self.tipo_faturamento == "apos_execucao"
+        return self.tipo_faturamento == "imediato"
+
+    def _calcular_vencimento_conta_receber(self, data_base=None):
+        base = data_base or self.data_emissao or timezone.localdate()
         prazo_texto = (self.prazo_pagamento or "").strip()
         dias_match = re.search(r"(\d+)", prazo_texto)
         if dias_match:
             return base + timedelta(days=int(dias_match.group(1)))
         return base
 
-    def criar_conta_receber_pendente(self):
+    def criar_conta_receber_pendente(
+        self,
+        *,
+        momento="aprovacao",
+        ordem_servico=None,
+        data_base=None,
+    ):
         from financeiro.models import ContaReceber
 
-        if not self.pk or not self.deve_criar_conta_receber_automaticamente():
+        if not self.pk or not self.deve_criar_conta_receber_automaticamente(momento=momento):
             return None
 
         conta_existente = self.contas_receber.exclude(status="cancelado").first()
         if conta_existente:
+            if ordem_servico and conta_existente.ordem_servico_id is None:
+                ContaReceber.objects.filter(
+                    pk=conta_existente.pk,
+                    ordem_servico__isnull=True,
+                ).update(ordem_servico=ordem_servico)
+                conta_existente.ordem_servico = ordem_servico
             return conta_existente
 
         return ContaReceber.objects.create(
             proposta=self,
+            ordem_servico=ordem_servico,
             cliente=self.cliente,
             descricao=f"Proposta {self.codigo}",
             valor=self.total,
-            vencimento=self._calcular_vencimento_conta_receber(),
+            vencimento=self._calcular_vencimento_conta_receber(data_base=data_base),
             status="pendente",
         )
 
@@ -761,6 +859,7 @@ class Proposta(models.Model):
             super().save(update_fields=update_fields)
 
     def save(self, *args, **kwargs):
+        self._validar_responsavel_do_cliente()
         status_anterior = None
         resultado_anterior = ""
         if self.pk:
@@ -773,22 +872,24 @@ class Proposta(models.Model):
                 status_anterior = proposta_anterior["status"]
                 resultado_anterior = proposta_anterior["resultado_fechamento"] or ""
 
-        if not self.codigo:
-            self.codigo = self.gerar_codigo()
         if self.status == "aprovado" and not self.resultado_fechamento:
             self.resultado_fechamento = "positivo"
         elif self.status == "recusado" and not self.resultado_fechamento:
             self.resultado_fechamento = "negativo"
         if self.resultado_fechamento != "negativo":
             self.motivo_perda = ""
-        with transaction.atomic():
+        using = kwargs.get("using") or self._state.db or "default"
+        with transaction.atomic(using=using):
+            if not self.codigo:
+                self.codigo = self.gerar_codigo(using=using)
             super().save(*args, **kwargs)
             self.sincronizar_crm()
+            ordem_servico = self.criar_ordem_servico_automatica()
             if self.deve_criar_conta_receber_automaticamente() and not self._fechamento_positivo(
                 status_anterior,
                 resultado_anterior,
             ):
-                self.criar_conta_receber_pendente()
+                self.criar_conta_receber_pendente(ordem_servico=ordem_servico)
 
     def __str__(self):
         return self.codigo
@@ -1049,6 +1150,337 @@ class ItemProposta(models.Model):
 
 
 
+class ProspectoSequencia(models.Model):
+    chave = models.PositiveSmallIntegerField(primary_key=True, default=1, editable=False)
+    ultimo_numero = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        verbose_name = "Sequência de prospect"
+        verbose_name_plural = "Sequências de prospects"
+
+    def __str__(self):
+        return str(self.ultimo_numero)
+
+
+class Prospecto(models.Model):
+    STATUS_CHOICES = (
+        ("disponivel", "Disponível para prospecção"),
+        ("em_prospeccao", "Em prospecção"),
+        ("convertido", "Convertido em cliente ativo"),
+        ("descartado", "Descartado"),
+    )
+    BASE_LEGAL_MARKETING_CHOICES = (
+        ("consentimento", "Consentimento"),
+        ("legitimo_interesse", "Legítimo interesse documentado"),
+    )
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    codigo = models.CharField("Código", max_length=12, unique=True, blank=True, editable=False)
+    referencia_externa = models.CharField(
+        "ID original de origem", max_length=50, blank=True, db_index=True
+    )
+    razao_social = models.CharField("Razão social / empresa", max_length=255, db_index=True)
+    nome_fantasia = models.CharField(max_length=255, blank=True)
+    cnpj = models.CharField(max_length=18, blank=True, db_index=True)
+    contato_nome = models.CharField(max_length=120, blank=True)
+    cargo = models.CharField(max_length=120, blank=True)
+    telefone = models.CharField(max_length=100, blank=True, db_index=True)
+    whatsapp = models.CharField(max_length=100, blank=True)
+    email = models.EmailField(blank=True, db_index=True)
+    marketing_email_autorizado = models.BooleanField(
+        "Autoriza prospecção por e-mail",
+        default=False,
+        db_index=True,
+    )
+    marketing_base_legal = models.CharField(
+        "Base legal do contato",
+        max_length=30,
+        choices=BASE_LEGAL_MARKETING_CHOICES,
+        blank=True,
+    )
+    marketing_autorizado_em = models.DateTimeField(
+        "Autorizado/revisado em",
+        null=True,
+        blank=True,
+        editable=False,
+    )
+    marketing_autorizado_por = models.ForeignKey(
+        "auth.User",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        editable=False,
+        related_name="prospectos_marketing_autorizados",
+        verbose_name="Autorizado/revisado por",
+    )
+    marketing_lote_autorizacao = models.UUIDField(
+        "Lote da autorização",
+        null=True,
+        blank=True,
+        editable=False,
+        db_index=True,
+    )
+    marketing_origem = models.CharField(
+        "Origem/evidência da autorização",
+        max_length=255,
+        blank=True,
+    )
+    marketing_referencia_analise = models.CharField(
+        "Referência da análise de legítimo interesse",
+        max_length=255,
+        blank=True,
+    )
+    marketing_revogado_em = models.DateTimeField(
+        "Cancelado/revogado em",
+        null=True,
+        blank=True,
+    )
+    marketing_observacoes = models.TextField(
+        "Observações de privacidade e marketing",
+        blank=True,
+    )
+    site = models.URLField(blank=True)
+    segmento = models.CharField(max_length=120, blank=True)
+    cidade = models.CharField(max_length=100, blank=True)
+    uf = models.CharField(max_length=2, blank=True)
+    endereco = models.CharField(max_length=255, blank=True)
+    cep = models.CharField(max_length=12, blank=True)
+    origem = models.CharField(max_length=120, blank=True)
+    observacoes = models.TextField(blank=True)
+    responsavel = models.ForeignKey(
+        "auth.User",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="prospectos_responsaveis",
+    )
+    status = models.CharField(
+        max_length=20,
+        choices=STATUS_CHOICES,
+        default="disponivel",
+        db_index=True,
+    )
+    cliente_convertido = models.ForeignKey(
+        "clientes.Cliente",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="prospectos_origem",
+    )
+    convertido_por = models.ForeignKey(
+        "auth.User",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="prospectos_convertidos",
+    )
+    data_conversao = models.DateTimeField(null=True, blank=True)
+    lote_importacao = models.UUIDField(null=True, blank=True, editable=False, db_index=True)
+    linha_importacao = models.PositiveIntegerField(null=True, blank=True, editable=False)
+    chave_duplicidade = models.CharField(max_length=64, unique=True, editable=False)
+    chave_email_telefone = models.CharField(
+        max_length=64,
+        null=True,
+        blank=True,
+        unique=True,
+        editable=False,
+    )
+    criado_em = models.DateTimeField(auto_now_add=True)
+    atualizado_em = models.DateTimeField(auto_now=True)
+
+    @staticmethod
+    def _normalizar_texto(valor):
+        texto = unicodedata.normalize("NFKD", str(valor or ""))
+        texto = "".join(
+            caractere for caractere in texto
+            if not unicodedata.combining(caractere)
+        )
+        return " ".join(texto.casefold().strip().split())
+
+    @classmethod
+    def gerar_chave_duplicidade(
+        cls, *, razao_social, cnpj="", email="", telefone="", contato_nome=""
+    ):
+        cnpj_limpo = re.sub(r"\D", "", str(cnpj or ""))
+        email_limpo = cls._normalizar_texto(email)
+        telefone_limpo = re.sub(r"\D", "", str(telefone or ""))
+        empresa = cls._normalizar_texto(razao_social)
+        contato = cls._normalizar_texto(contato_nome)
+        identificador_empresa = (
+            f"cnpj:{cnpj_limpo}" if cnpj_limpo else f"empresa:{empresa}"
+        )
+        identificador_contato = (
+            f"email:{email_limpo}" if email_limpo
+            else f"telefone:{telefone_limpo}" if telefone_limpo
+            else f"contato:{contato}"
+        )
+        base = f"{identificador_empresa}|{identificador_contato}"
+        return hashlib.sha256(base.encode("utf-8")).hexdigest()
+
+    @staticmethod
+    def gerar_chave_email_telefone(*, email="", telefone=""):
+        email_limpo = str(email or "").strip().casefold()
+        telefone_limpo = re.sub(r"\D", "", str(telefone or ""))
+        if not email_limpo or not telefone_limpo:
+            return None
+        base = f"{email_limpo}|{telefone_limpo}"
+        return hashlib.sha256(base.encode("utf-8")).hexdigest()
+
+    def clean(self):
+        super().clean()
+        erros = {}
+        self.uf = (self.uf or "").strip().upper()[:2]
+        self.email = (self.email or "").strip().lower()
+        self.chave_duplicidade = self.gerar_chave_duplicidade(
+            razao_social=self.razao_social,
+            cnpj=self.cnpj,
+            email=self.email,
+            telefone=self.telefone,
+            contato_nome=self.contato_nome,
+        )
+        self.chave_email_telefone = self.gerar_chave_email_telefone(
+            email=self.email,
+            telefone=self.telefone or self.whatsapp,
+        )
+        duplicado_principal = type(self).objects.filter(
+            chave_duplicidade=self.chave_duplicidade,
+        )
+        if self.pk:
+            duplicado_principal = duplicado_principal.exclude(pk=self.pk)
+        if duplicado_principal.exists():
+            erros["razao_social"] = (
+                "Já existe um prospect com a mesma empresa e identificação de contato."
+            )
+        if self.marketing_email_autorizado:
+            if not (self.email or "").strip():
+                erros["email"] = "Informe o e-mail antes de autorizar a prospecção."
+            if not self.marketing_base_legal:
+                erros["marketing_base_legal"] = "Informe a base legal antes de autorizar o envio."
+            if not (self.marketing_origem or "").strip():
+                erros["marketing_origem"] = "Registre a origem ou evidência da autorização."
+            if self.marketing_base_legal == "legitimo_interesse" and not (
+                self.marketing_referencia_analise or ""
+            ).strip():
+                erros["marketing_referencia_analise"] = (
+                    "Informe a referência do teste de balanceamento/legítimo interesse."
+                )
+        if self.marketing_revogado_em and self.marketing_email_autorizado:
+            erros["marketing_revogado_em"] = (
+                "Desmarque a autorização ao registrar o cancelamento."
+            )
+        chave = self.gerar_chave_email_telefone(
+            email=self.email,
+            telefone=self.telefone or self.whatsapp,
+        )
+        if chave:
+            duplicado = type(self).objects.filter(chave_email_telefone=chave)
+            if self.pk:
+                duplicado = duplicado.exclude(pk=self.pk)
+            if duplicado.exists():
+                erros["email"] = "Já existe um prospect com o mesmo e-mail e telefone."
+        if erros:
+            raise ValidationError(erros)
+
+    @classmethod
+    def reservar_codigos(cls, quantidade, using=None):
+        if quantidade <= 0:
+            return []
+        using = using or "default"
+        with transaction.atomic(using=using):
+            sequencia, _ = ProspectoSequencia.objects.using(using).get_or_create(
+                pk=1,
+                defaults={"ultimo_numero": 0},
+            )
+            sequencia = (
+                ProspectoSequencia.objects.using(using)
+                .select_for_update()
+                .get(pk=sequencia.pk)
+            )
+            maior_existente = 0
+            for codigo_existente in cls.objects.using(using).exclude(codigo="").values_list(
+                "codigo", flat=True
+            ):
+                match = re.fullmatch(r"CT-(\d{5,})", codigo_existente or "")
+                if match:
+                    maior_existente = max(maior_existente, int(match.group(1)))
+            inicio = max(sequencia.ultimo_numero, maior_existente) + 1
+            fim = inicio + quantidade - 1
+            sequencia.ultimo_numero = fim
+            sequencia.save(update_fields=("ultimo_numero",))
+            return [f"CT-{numero:05d}" for numero in range(inicio, fim + 1)]
+
+    def save(self, *args, **kwargs):
+        using = kwargs.get("using") or self._state.db or "default"
+        with transaction.atomic(using=using):
+            if not self.codigo:
+                self.codigo = self.reservar_codigos(1, using=using)[0]
+            self.uf = (self.uf or "").strip().upper()[:2]
+            self.email = (self.email or "").strip().lower()
+            self.chave_duplicidade = self.gerar_chave_duplicidade(
+                razao_social=self.razao_social,
+                cnpj=self.cnpj,
+                email=self.email,
+                telefone=self.telefone,
+                contato_nome=self.contato_nome,
+            )
+            self.chave_email_telefone = self.gerar_chave_email_telefone(
+                email=self.email,
+                telefone=self.telefone or self.whatsapp,
+            )
+            if self.marketing_email_autorizado and not self.marketing_autorizado_em:
+                self.marketing_autorizado_em = timezone.now()
+            super().save(*args, **kwargs)
+
+    def marketing_email_permitido(self):
+        return bool(
+            self.status in ("disponivel", "em_prospeccao")
+            and self.marketing_email_autorizado
+            and (self.email or "").strip()
+            and self.marketing_base_legal
+            and (
+                self.marketing_base_legal != "legitimo_interesse"
+                or (self.marketing_referencia_analise or "").strip()
+            )
+            and (self.marketing_origem or "").strip()
+            and self.marketing_autorizado_em
+            and not self.marketing_revogado_em
+        )
+
+    def __str__(self):
+        contato = f" — {self.contato_nome}" if self.contato_nome else ""
+        return f"{self.razao_social}{contato}"
+
+    class Meta:
+        ordering = ("razao_social", "contato_nome")
+        verbose_name = "Contato para prospecção"
+        verbose_name_plural = "Base de prospects"
+        indexes = (
+            models.Index(
+                fields=("status", "razao_social"),
+                name="prospect_status_empresa_idx",
+            ),
+        )
+        constraints = (
+            models.UniqueConstraint(
+                fields=("origem", "referencia_externa"),
+                condition=~models.Q(referencia_externa=""),
+                name="prospect_origem_referencia_unicos",
+            ),
+        )
+
+
+class ProspeccaoSequencia(models.Model):
+    ano = models.PositiveSmallIntegerField(primary_key=True)
+    ultimo_numero = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        verbose_name = "Sequência de prospecção"
+        verbose_name_plural = "Sequências de prospecção"
+
+    def __str__(self):
+        return f"{self.ano}: {self.ultimo_numero}"
+
+
 class ProspeccaoComercial(models.Model):
 
     STATUS_CHOICES = (
@@ -1074,6 +1506,13 @@ class ProspeccaoComercial(models.Model):
     )
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    prospecto = models.OneToOneField(
+        "comercial.Prospecto",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="prospeccao",
+    )
     cliente = models.ForeignKey("clientes.Cliente", on_delete=models.SET_NULL, null=True, blank=True)
     responsavel = models.ForeignKey("auth.User", on_delete=models.SET_NULL, null=True, blank=True)
     convertido_por = models.ForeignKey(
@@ -1103,12 +1542,52 @@ class ProspeccaoComercial(models.Model):
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="novo")
     observacoes = models.TextField(blank=True)
 
-    def gerar_codigo(self):
-        ano = datetime.now().strftime("%y")
-        numero = ProspeccaoComercial.objects.filter(codigo__endswith=f"/{ano}").count() + 1
-        return f"PSC-{numero:04d}/{ano}"
+    def gerar_codigo(self, using=None):
+        using = using or self._state.db or "default"
+        ano_completo = timezone.localdate().year
+        ano_curto = ano_completo % 100
+        with transaction.atomic(using=using):
+            sequencia, _ = ProspeccaoSequencia.objects.using(using).get_or_create(
+                ano=ano_completo,
+                defaults={"ultimo_numero": 0},
+            )
+            sequencia = (
+                ProspeccaoSequencia.objects.using(using)
+                .select_for_update()
+                .get(pk=sequencia.pk)
+            )
+            maior_existente = 0
+            for codigo_existente in (
+                type(self).objects.using(using).values_list("codigo", flat=True)
+            ):
+                match = re.fullmatch(
+                    rf"PSC-(\d{{4,}})/{ano_curto:02d}",
+                    codigo_existente or "",
+                )
+                if match:
+                    maior_existente = max(maior_existente, int(match.group(1)))
+            sequencia.ultimo_numero = max(
+                sequencia.ultimo_numero,
+                maior_existente,
+            ) + 1
+            sequencia.save(update_fields=("ultimo_numero",))
+            return f"PSC-{sequencia.ultimo_numero:04d}/{ano_curto:02d}"
 
     def sincronizar_dados_cliente(self):
+        if self.prospecto_id:
+            if not self.razao_social:
+                self.razao_social = self.prospecto.razao_social
+            if not self.contato_nome:
+                self.contato_nome = self.prospecto.contato_nome
+            if not self.cargo:
+                self.cargo = self.prospecto.cargo
+            if not self.telefone:
+                self.telefone = self.prospecto.telefone or self.prospecto.whatsapp
+            if not self.email:
+                self.email = self.prospecto.email
+            if not self.segmento:
+                self.segmento = self.prospecto.segmento
+            return
         if not self.cliente_id:
             return
 
@@ -1131,47 +1610,121 @@ class ProspeccaoComercial(models.Model):
                 self.email = contato.email
 
     def converter_para_crm(self, usuario=None):
-        if self.crm_gerado_id:
-            return self.crm_gerado
+        with transaction.atomic():
+            atual = type(self).objects.select_for_update().get(pk=self.pk)
+            if atual.crm_gerado_id:
+                return atual.crm_gerado
 
-        crm = CRMRegistro.objects.create(
-            cliente=self.cliente if self.cliente_id else self._obter_ou_criar_cliente_minimo(),
-            responsavel=self.responsavel,
-            titulo=self.razao_social or self.contato_nome or self.codigo,
-            etapa_funil="qualificacao",
-            observacoes=self.observacoes,
+            prospecto = None
+            if atual.prospecto_id:
+                prospecto = Prospecto.objects.select_for_update().get(pk=atual.prospecto_id)
+
+            cliente = (
+                atual.cliente
+                if atual.cliente_id
+                else atual._obter_ou_criar_cliente_minimo(prospecto)
+            )
+            crm = CRMRegistro.objects.create(
+                cliente=cliente,
+                responsavel=atual.responsavel,
+                titulo=atual.razao_social or atual.contato_nome or atual.codigo,
+                etapa_funil="qualificacao",
+                observacoes=atual.observacoes,
+            )
+            agora = timezone.now()
+            atual.crm_gerado = crm
+            atual.cliente = cliente
+            atual.status = "convertido"
+            atual.data_conversao = agora
+            if usuario and getattr(usuario, "pk", None):
+                atual.convertido_por = usuario
+            atual.save(
+                update_fields=[
+                    "crm_gerado", "cliente", "status", "data_conversao", "convertido_por"
+                ]
+            )
+
+            if prospecto:
+                prospecto.status = "convertido"
+                prospecto.cliente_convertido = cliente
+                prospecto.data_conversao = agora
+                if usuario and getattr(usuario, "pk", None):
+                    prospecto.convertido_por = usuario
+                prospecto.save(
+                    update_fields=[
+                        "status", "cliente_convertido", "data_conversao",
+                        "convertido_por", "atualizado_em",
+                    ]
+                )
+
+            self.refresh_from_db()
+            return crm
+
+    def _obter_ou_criar_cliente_minimo(self, prospecto=None):
+        cnpj = (prospecto.cnpj if prospecto else "") or ""
+        cnpj_limpo = re.sub(r"\D", "", cnpj)
+        cnpj_formatado = cnpj
+        if len(cnpj_limpo) == 14:
+            cnpj_formatado = (
+                f"{cnpj_limpo[:2]}.{cnpj_limpo[2:5]}.{cnpj_limpo[5:8]}/"
+                f"{cnpj_limpo[8:12]}-{cnpj_limpo[12:]}"
+            )
+        cliente = (
+            Cliente.objects.filter(cnpj__in={cnpj, cnpj_limpo, cnpj_formatado}).first()
+            if cnpj else None
         )
-        self.crm_gerado = crm
-        self.status = "convertido"
-        self.data_conversao = timezone.now()
-        if usuario and getattr(usuario, "pk", None):
-            self.convertido_por = usuario
-        self.save(update_fields=["crm_gerado", "status", "data_conversao", "convertido_por"])
-        return crm
-
-    def _obter_ou_criar_cliente_minimo(self):
-        cliente = Cliente.objects.filter(razao_social=self.razao_social).first()
+        if not cliente and not cnpj:
+            cliente = Cliente.objects.filter(razao_social__iexact=self.razao_social).first()
         if cliente:
+            atualizacoes = []
+            if not cliente.ativo:
+                cliente.ativo = True
+                atualizacoes.append("ativo")
+            if self.telefone and not cliente.telefone:
+                cliente.telefone = self.telefone
+                atualizacoes.append("telefone")
+            if self.email and not cliente.email:
+                cliente.email = self.email
+                atualizacoes.append("email")
+            if atualizacoes:
+                cliente.save(update_fields=atualizacoes + ["updated_at"])
             if not self.cliente_id:
                 self.cliente = cliente
             return cliente
 
+        cnpj_provisorio = not bool(cnpj_limpo)
         cliente = Cliente.objects.create(
             razao_social=self.razao_social,
-            nome_empresa=self.razao_social,
-            cnpj=f"PROSPECT-{uuid.uuid4().hex[:8].upper()}",
+            nome_empresa=(prospecto.nome_fantasia if prospecto else "") or self.razao_social,
+            cnpj=cnpj_formatado or f"PROS-{uuid.uuid4().hex[:12].upper()}",
+            cnpj_provisorio=cnpj_provisorio,
             telefone=self.telefone,
             email=self.email,
+            cidade=prospecto.cidade if prospecto else "",
+            uf=prospecto.uf if prospecto else "",
+            ativo=True,
         )
         self.cliente = cliente
         super().save(update_fields=["cliente"])
         return cliente
 
     def save(self, *args, **kwargs):
-        if not self.codigo:
-            self.codigo = self.gerar_codigo()
-        self.sincronizar_dados_cliente()
-        super().save(*args, **kwargs)
+        using = kwargs.get("using") or self._state.db or "default"
+        with transaction.atomic(using=using):
+            if not self.codigo:
+                self.codigo = self.gerar_codigo(using=using)
+            self.sincronizar_dados_cliente()
+            super().save(*args, **kwargs)
+            if (
+                self.prospecto_id
+                and self.status != "convertido"
+                and self.prospecto.status == "disponivel"
+            ):
+                Prospecto.objects.using(using).filter(pk=self.prospecto_id).update(
+                    status="em_prospeccao",
+                    responsavel=self.responsavel,
+                    atualizado_em=timezone.now(),
+                )
 
     def __str__(self):
         return f"{self.codigo} - {self.razao_social}"
@@ -1184,6 +1737,15 @@ class ProspeccaoComercial(models.Model):
 class ProspeccaoInteracao(models.Model):
 
     TIPO_CHOICES = (
+        ("ligacao", "Ligação"),
+        ("email", "E-mail"),
+        ("whatsapp", "WhatsApp"),
+        ("reuniao", "Reunião"),
+        ("visita", "Visita"),
+        ("outro", "Outro"),
+    )
+
+    TIPO_PROXIMA_ACAO_CHOICES = (
         ("ligacao", "Ligação"),
         ("email", "E-mail"),
         ("whatsapp", "WhatsApp"),
@@ -1211,6 +1773,13 @@ class ProspeccaoInteracao(models.Model):
     resultado = models.CharField(max_length=30, choices=RESULTADO_CHOICES, default="sem_resposta")
     descricao = models.TextField()
     data = models.DateTimeField(default=timezone.now)
+    proxima_acao_tipo = models.CharField(
+        "Tipo do próximo passo",
+        max_length=20,
+        choices=TIPO_PROXIMA_ACAO_CHOICES,
+        blank=True,
+        help_text="Informe se o próximo contato será ligação, e-mail, WhatsApp, reunião ou visita.",
+    )
     proxima_acao = models.DateTimeField(null=True, blank=True)
 
     def __str__(self):

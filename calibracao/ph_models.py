@@ -14,6 +14,7 @@ from .models import (
     ResponsavelCertificado,
     _extrair_decimal_criterio,
     _fator_abrangencia_95,
+    salvar_com_numero_certificado,
     _obter_ou_criar_responsavel_padrao,
     _para_decimal,
     _quantize_decimal,
@@ -359,11 +360,8 @@ class CalibracaoPH(models.Model):
         if self.tecnico_executante_ref_id:
             self.responsavel_conferencia = self.tecnico_executante_ref.nome
 
-        if not self.numero_certificado:
-            self.numero_certificado = self._gerar_numero_certificado()
-
         _quantize_instance_decimal_fields(self)
-        super().save(*args, **kwargs)
+        salvar_com_numero_certificado(self, super().save, args, kwargs)
 
         status_final = self.calcular_status_final()
         resultado_final = self._gerar_resultado_final()

@@ -1,0 +1,114 @@
+{% extends "admin/base_site.html" %}
+
+{% block extrastyle %}
+  {{ block.super }}
+  <style>
+    .cal-wrap { padding:20px 0; }
+    .cal-topo { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; margin-bottom:16px; }
+    .cal-topo h1 { margin-bottom:4px; }
+    .cal-acoes { display:flex; flex-wrap:wrap; gap:8px; }
+    .cal-acoes a, .cal-filtros button { min-height:36px; padding:8px 12px; border-radius:6px; text-decoration:none; }
+    .cal-filtros { padding:14px; margin-bottom:16px; border:1px solid var(--hairline-color); border-radius:8px; background:var(--body-bg); }
+    .cal-filtros form { display:grid; grid-template-columns:repeat(5,minmax(120px,1fr)); gap:12px; align-items:end; }
+    .cal-filtros label { display:flex; flex-direction:column; gap:4px; font-weight:700; }
+    .cal-filtros select { min-height:38px; }
+    .cal-legenda { display:flex; gap:8px; flex-wrap:wrap; margin:0 0 14px; }
+    .cal-legenda span { padding:5px 9px; border-radius:999px; background:var(--darkened-bg); font-weight:700; font-size:12px; }
+    .cal-cabecalho, .cal-semana { display:grid; grid-template-columns:repeat(7,minmax(0,1fr)); gap:10px; }
+    .cal-cabecalho { margin-bottom:8px; text-align:center; font-weight:800; color:var(--body-quiet-color); }
+    .cal-grid { display:grid; gap:10px; }
+    .cal-dia { min-height:180px; padding:10px; border:1px solid var(--hairline-color); border-radius:8px; background:var(--body-bg); }
+    .cal-dia.fora { opacity:.55; background:var(--darkened-bg); }
+    .cal-dia.hoje { outline:2px solid #0b4f9c; }
+    .cal-dia header { display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; }
+    .cal-dia-numero { font-size:16px; font-weight:800; }
+    .cal-dia header a { font-size:11px; }
+    .cal-eventos { display:grid; gap:7px; }
+    .cal-evento { display:block; padding:7px 8px; border-left:4px solid #64748b; border-radius:5px; background:var(--darkened-bg); color:var(--body-fg); text-decoration:none; }
+    .cal-evento.tipo-ligacao { border-left-color:#2563eb; }
+    .cal-evento.tipo-email { border-left-color:#7c3aed; }
+    .cal-evento.tipo-whatsapp { border-left-color:#15803d; }
+    .cal-evento.tipo-reuniao, .cal-evento.tipo-visita { border-left-color:#ca8a04; }
+    .cal-evento strong, .cal-evento small { display:block; }
+    .cal-evento small { margin-top:2px; color:var(--body-quiet-color); }
+    .cal-vazio { color:var(--body-quiet-color); font-size:12px; }
+    @media (max-width:1200px) { .cal-cabecalho { display:none; } .cal-semana { grid-template-columns:repeat(2,minmax(0,1fr)); } }
+    @media (max-width:720px) { .cal-filtros form, .cal-semana { grid-template-columns:1fr; } }
+  </style>
+{% endblock %}
+
+{% block breadcrumbs %}
+  <div class="breadcrumbs">
+    <a href="{% url 'inicio' %}">Início</a>
+    &rsaquo; <a href="{{ lista_url }}">Prospecções comerciais</a>
+    &rsaquo; Calendário Geral
+  </div>
+{% endblock %}
+
+{% block content %}
+  <div class="cal-wrap">
+    <div class="cal-topo">
+      <div><h1>{{ title }}</h1><p>{{ subtitulo }}</p></div>
+      <div class="cal-acoes">
+        <a class="button" href="{{ link_anterior }}">Mês anterior</a>
+        <a class="button" href="?mes={{ hoje|date:'m' }}&amp;ano={{ hoje|date:'Y' }}">Mês atual</a>
+        <a class="button" href="{{ link_proximo }}">Próximo mês</a>
+        <a class="button" href="{{ agenda_url }}">Agenda diária</a>
+        <a class="button" href="{{ lista_url }}">Lista</a>
+      </div>
+    </div>
+
+    <div class="cal-filtros">
+      <form method="get">
+        <label>Mês
+          <select name="mes">
+            <option value="1"{% if mes == 1 %} selected{% endif %}>Janeiro</option><option value="2"{% if mes == 2 %} selected{% endif %}>Fevereiro</option>
+            <option value="3"{% if mes == 3 %} selected{% endif %}>Março</option><option value="4"{% if mes == 4 %} selected{% endif %}>Abril</option>
+            <option value="5"{% if mes == 5 %} selected{% endif %}>Maio</option><option value="6"{% if mes == 6 %} selected{% endif %}>Junho</option>
+            <option value="7"{% if mes == 7 %} selected{% endif %}>Julho</option><option value="8"{% if mes == 8 %} selected{% endif %}>Agosto</option>
+            <option value="9"{% if mes == 9 %} selected{% endif %}>Setembro</option><option value="10"{% if mes == 10 %} selected{% endif %}>Outubro</option>
+            <option value="11"{% if mes == 11 %} selected{% endif %}>Novembro</option><option value="12"{% if mes == 12 %} selected{% endif %}>Dezembro</option>
+          </select>
+        </label>
+        <label>Ano<input type="number" name="ano" value="{{ ano }}" min="2020" max="2100"></label>
+        <label>Responsável
+          <select name="responsavel"><option value="">Todos</option>{% for usuario in responsaveis %}<option value="{{ usuario.pk }}"{% if responsavel_id == usuario.pk|stringformat:'s' %} selected{% endif %}>{{ usuario.get_full_name|default:usuario.username }}</option>{% endfor %}</select>
+        </label>
+        <label>Tipo do próximo passo
+          <select name="tipo"><option value="">Todos</option>{% for valor, rotulo in tipos %}<option value="{{ valor }}"{% if tipo_filtro == valor %} selected{% endif %}>{{ rotulo }}</option>{% endfor %}</select>
+        </label>
+        <button type="submit" class="button default">Aplicar filtros</button>
+      </form>
+    </div>
+
+    <div class="cal-legenda">
+      <span>Azul: ligação</span><span>Roxo: e-mail</span><span>Verde: WhatsApp</span><span>Amarelo: reunião/visita</span><span>Cinza: não definido</span>
+    </div>
+
+    <div class="cal-cabecalho"><span>Domingo</span><span>Segunda</span><span>Terça</span><span>Quarta</span><span>Quinta</span><span>Sexta</span><span>Sábado</span></div>
+    <div class="cal-grid">
+      {% for semana in semanas %}
+        <div class="cal-semana">
+          {% for dia in semana %}
+            <section class="cal-dia{% if dia.fora_mes %} fora{% endif %}{% if dia.hoje %} hoje{% endif %}">
+              <header>
+                <span class="cal-dia-numero">{{ dia.data|date:'d' }}</span>
+                <a href="{{ agenda_url }}?data={{ dia.data|date:'Y-m-d' }}{% if responsavel_id %}&amp;responsavel={{ responsavel_id }}{% endif %}">ver dia</a>
+              </header>
+              <div class="cal-eventos">
+                {% for evento in dia.eventos %}
+                  <a class="cal-evento tipo-{{ evento.tipo }}" href="{% url 'admin:comercial_prospeccaocomercial_change' evento.prospeccao.pk %}">
+                    <strong>{{ evento.hora }} · {{ evento.tipo_rotulo }}</strong>
+                    <small>{{ evento.prospeccao.razao_social }}</small>
+                    <small>{{ evento.prospeccao.contato_nome|default:'Contato não informado' }}</small>
+                    {% if evento.descricao %}<small>{{ evento.descricao|truncatechars:90 }}</small>{% endif %}
+                  </a>
+                {% empty %}<span class="cal-vazio">Sem tarefas</span>{% endfor %}
+              </div>
+            </section>
+          {% endfor %}
+        </div>
+      {% endfor %}
+    </div>
+  </div>
+{% endblock %}

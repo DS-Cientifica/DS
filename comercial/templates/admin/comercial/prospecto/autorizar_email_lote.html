@@ -1,0 +1,38 @@
+{% extends "admin/base_site.html" %}
+{% load i18n admin_urls %}
+
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+    <a href="{% url 'admin:index' %}">Início</a>
+    &rsaquo; <a href="{% url 'admin:app_list' app_label=opts.app_label %}">{{ opts.app_config.verbose_name }}</a>
+    &rsaquo; <a href="{% url opts|admin_urlname:'changelist' %}">{{ opts.verbose_name_plural|capfirst }}</a>
+    &rsaquo; Autorização em lote
+</div>
+{% endblock %}
+
+{% block content %}
+<div id="content-main">
+    <div class="module aligned">
+        <h2>Revisão obrigatória antes da autorização</h2>
+        <p><strong>{{ quantidade_selecionada }}</strong> prospect(s) selecionado(s).</p>
+        <p><strong>{{ quantidade_elegivel }}</strong> elegível(is) para autorização e <strong>{{ quantidade_ignorada }}</strong> ignorado(s).</p>
+        <p>São ignorados registros sem e-mail, já autorizados, revogados, descartados ou convertidos.</p>
+        <p>Esta ação apenas registra a autorização. Ela não cria fila e não envia campanha.</p>
+    </div>
+
+    <form method="post">
+        {% csrf_token %}
+        {{ form.as_p }}
+        <input type="hidden" name="action" value="autorizar_email_em_lote">
+        <input type="hidden" name="select_across" value="{% if select_across %}1{% else %}0{% endif %}">
+        <input type="hidden" name="confirmar_autorizacao_lote" value="1">
+        {% for objeto in selecionados_ocultos %}
+            <input type="hidden" name="{{ action_checkbox_name }}" value="{{ objeto.pk }}">
+        {% endfor %}
+        <div class="submit-row">
+            <input type="submit" value="Registrar autorização em lote" class="default">
+            <a href="{% url opts|admin_urlname:'changelist' %}" class="button cancel-link">Cancelar</a>
+        </div>
+    </form>
+</div>
+{% endblock %}

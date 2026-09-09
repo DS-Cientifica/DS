@@ -1,0 +1,31 @@
+{% extends "admin/base_site.html" %}
+
+{% block extrastyle %}
+  {{ block.super }}
+  <style>
+    .qr-sheet{max-width:680px;margin:24px auto;background:#fff;padding:28px;border:1px solid #d8e0e5}
+    .qr-label{display:grid;grid-template-columns:230px 1fr;gap:24px;align-items:center;border:2px solid #17667b;padding:20px}
+    .qr-code svg{display:block;width:220px;height:220px}.qr-title{color:#17667b;margin-top:0}.qr-url{overflow-wrap:anywhere;font-size:12px}
+    .qr-actions{margin-top:20px}.qr-actions button{padding:10px 18px}
+    @media print{#header,.breadcrumbs,.qr-actions{display:none!important}.qr-sheet{border:0;margin:0;padding:0}.qr-label{break-inside:avoid}}
+    @media(max-width:650px){.qr-label{grid-template-columns:1fr}.qr-code svg{margin:auto}}
+  </style>
+{% endblock %}
+
+{% block breadcrumbs %}<div class="breadcrumbs"><a href="{% url 'admin:index' %}">Início</a> &rsaquo; Certificados públicos &rsaquo; QR Code</div>{% endblock %}
+
+{% block content %}
+  <main class="qr-sheet">
+    <section class="qr-label">
+      <div class="qr-code">{{ qr_svg|safe }}</div>
+      <div>
+        <h1 class="qr-title">Certificado de calibração</h1>
+        <p><strong>Número:</strong> {{ certificado.numero }}</p>
+        <p><strong>Código:</strong> {{ certificado.codigo_curto }}</p>
+        <p>Escaneie o QR Code para consultar a autenticidade, o status e a rastreabilidade metrológica.</p>
+        <p class="qr-url">{{ url_consulta }}</p>
+      </div>
+    </section>
+    <div class="qr-actions"><button type="button" onclick="window.print()">Imprimir etiqueta</button></div>
+  </main>
+{% endblock %}

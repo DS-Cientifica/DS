@@ -1,9 +1,12 @@
 import re
+import string
 import uuid
+from random import SystemRandom
 from datetime import date
 from decimal import Decimal, InvalidOperation
-from django.core.exceptions import ValidationError
-from django.db import models
+from django.core.exceptions import ObjectDoesNotExist, ValidationError
+from django.db import IntegrityError, models, transaction
+from django.utils import timezone
 from django.utils.text import slugify
 from dateutil.relativedelta import relativedelta
 from clientes.models import Cliente
@@ -19,6 +22,157 @@ from .services.ph_meter_calculation import (
 
 THREE_DECIMAL_PLACES = Decimal("0.001")
 SQRT_12 = Decimal(12).sqrt()
+CERTIFICADO_RANDOM = SystemRandom()
+CERTIFICADO_PATTERN = re.compile(r"^(?=(?:.*[A-Z]){3})(?=(?:.*\d){3})[A-Z0-9]{6}DS$")
+
+
+class NumeroCertificadoEmitido(models.Model):
+    codigo = models.CharField(max_length=100, primary_key=True)
+    app_label = models.CharField(max_length=50)
+    modelo = models.CharField(max_length=100)
+    objeto_id = models.CharField(max_length=64)
+    historico = models.BooleanField(default=False)
+    criado_em = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "Número de certificado reservado"
+        verbose_name_plural = "Números de certificados reservados"
+        constraints = (
+            models.UniqueConstraint(
+                fields=("app_label", "modelo", "objeto_id"),
+                name="certificado_numero_por_objeto_unico",
+            ),
+        )
+
+    def __str__(self):
+        return self.codigo
+
+
+class HistoricoNumeroCertificado(models.Model):
+    numero_anterior = models.CharField(max_length=100, unique=True)
+    numero_novo = models.CharField(max_length=100, unique=True)
+    app_label = models.CharField(max_length=50)
+    modelo = models.CharField(max_length=100)
+    objeto_id = models.CharField(max_length=64)
+    motivo = models.CharField(max_length=255)
+    alterado_em = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "Histórico de número de certificado"
+        verbose_name_plural = "Históricos de números de certificados"
+        constraints = (
+            models.UniqueConstraint(
+                fields=("app_label", "modelo", "objeto_id"),
+                name="historico_numero_certificado_por_objeto_unico",
+            ),
+        )
+
+    def __str__(self):
+        return f"{self.numero_anterior} → {self.numero_novo}"
+
+
+def _identidade_certificado(instance):
+    return (
+        instance._meta.app_label,
+        instance._meta.model_name,
+        str(instance.pk),
+    )
+
+
+def _candidato_numero_certificado():
+    caracteres = [
+        *(CERTIFICADO_RANDOM.choice(string.ascii_uppercase) for _ in range(3)),
+        *(CERTIFICADO_RANDOM.choice(string.digits) for _ in range(3)),
+    ]
+    CERTIFICADO_RANDOM.shuffle(caracteres)
+    return "".join(caracteres) + "DS"
+
+
+def garantir_numero_certificado(instance, field_name="numero_certificado"):
+    using = instance._state.db or "default"
+    app_label, modelo, objeto_id = _identidade_certificado(instance)
+    atual = str(getattr(instance, field_name, "") or "").strip().upper()
+    reserva_objeto = NumeroCertificadoEmitido.objects.using(using).filter(
+        app_label=app_label,
+        modelo=modelo,
+        objeto_id=objeto_id,
+    ).first()
+    if reserva_objeto:
+        if atual and atual != reserva_objeto.codigo:
+            raise ValidationError(
+                {field_name: "O número de um certificado registrado não pode ser alterado."}
+            )
+        return reserva_objeto.codigo
+
+    if atual:
+        if HistoricoNumeroCertificado.objects.using(using).filter(
+            models.Q(numero_anterior=atual) | models.Q(numero_novo=atual)
+        ).exists():
+            raise ValidationError(
+                {field_name: "Este número pertence ao histórico de outro certificado."}
+            )
+        try:
+            with transaction.atomic(using=using):
+                NumeroCertificadoEmitido.objects.using(using).create(
+                    codigo=atual,
+                    app_label=app_label,
+                    modelo=modelo,
+                    objeto_id=objeto_id,
+                    historico=not bool(CERTIFICADO_PATTERN.fullmatch(atual)),
+                )
+            return atual
+        except IntegrityError as exc:
+            raise ValidationError(
+                {field_name: "Este número de certificado já foi utilizado em outra calibração."}
+            ) from exc
+
+    for _ in range(200):
+        candidato = _candidato_numero_certificado()
+        if HistoricoNumeroCertificado.objects.using(using).filter(
+            models.Q(numero_anterior=candidato) | models.Q(numero_novo=candidato)
+        ).exists():
+            continue
+        try:
+            with transaction.atomic(using=using):
+                NumeroCertificadoEmitido.objects.using(using).create(
+                    codigo=candidato,
+                    app_label=app_label,
+                    modelo=modelo,
+                    objeto_id=objeto_id,
+                )
+            return candidato
+        except IntegrityError:
+            continue
+    raise RuntimeError("Não foi possível reservar um número exclusivo de certificado.")
+
+
+def salvar_com_numero_certificado(
+    instance,
+    salvar,
+    args,
+    kwargs,
+    field_name="numero_certificado",
+):
+    """Salva o objeto e reserva seu certificado somente após existir uma chave primária."""
+    criando = instance._state.adding
+    using = kwargs.get("using") or instance._state.db or "default"
+
+    if not criando:
+        setattr(
+            instance,
+            field_name,
+            garantir_numero_certificado(instance, field_name=field_name),
+        )
+        salvar(*args, **kwargs)
+        return
+
+    with transaction.atomic(using=using):
+        salvar(*args, **kwargs)
+        numero = garantir_numero_certificado(instance, field_name=field_name)
+        setattr(instance, field_name, numero)
+        type(instance).objects.using(using).filter(pk=instance.pk).update(
+            **{field_name: numero}
+        )
 
 
 def _quantize_decimal(value, quantizer=THREE_DECIMAL_PLACES):
@@ -371,9 +525,21 @@ class InstrumentoTecnico(models.Model):
 
 
 # =========================
-# ORDEM DE SERVIÇO
+# ORDEM DE SERVIÇO
 # =========================
-class OrdemServico(models.Model):
+class OrdemServicoSequencia(models.Model):
+    ano = models.PositiveSmallIntegerField(unique=True)
+    ultimo_numero = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        verbose_name = "Sequência anual de ordem de serviço"
+        verbose_name_plural = "Sequências anuais de ordens de serviço"
+
+    def __str__(self):
+        return f"{self.ano}: {self.ultimo_numero}"
+
+
+class OrdemServico(models.Model):
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
 
@@ -384,7 +550,14 @@ class OrdemServico(models.Model):
         ("cancelada", "Cancelada"),
     )
 
-    numero = models.CharField("Número", max_length=50)
+    numero = models.CharField(
+        "Número",
+        max_length=50,
+        unique=True,
+        blank=True,
+        editable=False,
+        help_text="Gerado automaticamente no formato 0001/26.",
+    )
 
     proposta = models.ForeignKey(
         "comercial.Proposta",
@@ -429,23 +602,103 @@ class OrdemServico(models.Model):
         if not self.cliente_id and not self.proposta_id:
             raise ValidationError("Informe um cliente ou uma proposta.")
 
-    def save(self, *args, **kwargs):
-        if self.proposta_id and not self.cliente_id:
-            self.cliente = self.proposta.cliente
-
-        super().save(*args, **kwargs)
+    def save(self, *args, **kwargs):
+        status_anterior = None
+        if self.pk:
+            status_anterior = (
+                OrdemServico.objects.filter(pk=self.pk)
+                .values_list("status", flat=True)
+                .first()
+            )
+
+        if self.proposta_id and not self.cliente_id:
+            self.cliente = self.proposta.cliente
+
+        if self.status == "concluida" and not self.data_conclusao:
+            self.data_conclusao = timezone.localdate()
+
+        using = kwargs.get("using") or self._state.db or "default"
+
+        with transaction.atomic(using=using):
+            if not self.numero:
+                ano = timezone.localdate().year
+                sufixo_ano = f"/{ano % 100:02d}"
+                sequencia, _ = OrdemServicoSequencia.objects.using(using).get_or_create(
+                    ano=ano,
+                    defaults={"ultimo_numero": 0},
+                )
+                sequencia = (
+                    OrdemServicoSequencia.objects.using(using)
+                    .select_for_update()
+                    .get(pk=sequencia.pk)
+                )
+                maior_existente = 0
+                for numero_existente in (
+                    OrdemServico.objects.using(using)
+                    .values_list("numero", flat=True)
+                ):
+                    match = re.fullmatch(r"(\d{4,})/\d{2}", numero_existente or "")
+                    if match:
+                        maior_existente = max(maior_existente, int(match.group(1)))
+
+                maior_registrado = (
+                    OrdemServicoSequencia.objects.using(using)
+                    .aggregate(models.Max("ultimo_numero"))["ultimo_numero__max"]
+                    or 0
+                )
+                sequencia.ultimo_numero = max(
+                    sequencia.ultimo_numero,
+                    maior_existente,
+                    maior_registrado,
+                ) + 1
+                sequencia.save(update_fields=("ultimo_numero",))
+                self.numero = f"{sequencia.ultimo_numero:04d}{sufixo_ano}"
+
+            resultado = super().save(*args, **kwargs)
+            if self.status == "concluida" and status_anterior != "concluida":
+                self.criar_conta_receber_automatica()
+            return resultado
+
+    def criar_conta_receber_automatica(self):
+        if not self.proposta_id:
+            return None
+        return self.proposta.criar_conta_receber_pendente(
+            momento="conclusao_os",
+            ordem_servico=self,
+            data_base=self.data_conclusao or timezone.localdate(),
+        )
 
     class Meta:
         verbose_name = "Ordem de Serviço"
-        verbose_name_plural = "Ordens de Serviço"
+        verbose_name_plural = "Ordens de Serviço"
+
+        constraints = (
+            models.UniqueConstraint(
+                fields=("proposta",),
+                condition=models.Q(proposta__isnull=False),
+                name="ordem_servico_unica_por_proposta",
+            ),
+        )
 
     def __str__(self):
         return f"OS {self.numero} - {self.cliente.razao_social}"
 
 
-# =========================
-# PADRÃO
-# =========================
+# =========================
+# PADRÃO
+# =========================
+
+class PadraoSequencia(models.Model):
+    ultimo_numero = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        verbose_name = "Sequência de padrão"
+        verbose_name_plural = "Sequências de padrões"
+
+    def __str__(self):
+        return f"DSP: {self.ultimo_numero}"
+
+
 class Padrao(models.Model):
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -456,28 +709,74 @@ class Padrao(models.Model):
         ("suspenso", "Suspenso"),
     )
 
-    codigo = models.CharField(max_length=50, unique=True)
+    codigo = models.CharField(
+        max_length=50,
+        unique=True,
+        blank=True,
+        editable=False,
+        help_text="Gerado automaticamente no formato DSP-001.",
+    )
     descricao = models.CharField(max_length=255)
     numero_certificado = models.CharField(max_length=100, blank=True)
     laboratorio_emitente = models.CharField(max_length=150, blank=True)
     data_calibracao = models.DateField(null=True, blank=True)
-    resolucao = models.DecimalField(max_digits=12, decimal_places=6, null=True, blank=True)
-    incerteza = models.DecimalField(max_digits=12, decimal_places=6, null=True, blank=True)
+    resolucao = models.DecimalField(max_digits=20, decimal_places=9, null=True, blank=True)
+    incerteza = models.DecimalField(max_digits=20, decimal_places=9, null=True, blank=True)
     fator_k = models.DecimalField(max_digits=8, decimal_places=3, null=True, blank=True)
     graus_liberdade = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
     unidade = models.CharField(max_length=30, default="NTU", blank=True)
-    valor_nominal = models.DecimalField(max_digits=12, decimal_places=6, null=True, blank=True)
+    valor_nominal = models.DecimalField(max_digits=20, decimal_places=9, null=True, blank=True)
 
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="valido")
 
     vencimento = models.DateField()
 
-    certificado = models.FileField(
+    certificado = models.FileField(
         upload_to='padroes/',
         null=True,
         blank=True
     )
 
+    def save(self, *args, **kwargs):
+        if self.codigo:
+            return super().save(*args, **kwargs)
+
+        using = kwargs.get("using") or self._state.db or "default"
+        with transaction.atomic(using=using):
+            sequencia, _ = PadraoSequencia.objects.using(using).get_or_create(
+                pk=1,
+                defaults={"ultimo_numero": 0},
+            )
+            sequencia = (
+                PadraoSequencia.objects.using(using)
+                .select_for_update()
+                .get(pk=sequencia.pk)
+            )
+
+            maior_existente = 0
+            for codigo_existente in Padrao.objects.using(using).values_list(
+                "codigo",
+                flat=True,
+            ):
+                correspondencia = re.fullmatch(
+                    r"DSP-(\d+)",
+                    (codigo_existente or "").strip(),
+                    flags=re.IGNORECASE,
+                )
+                if correspondencia:
+                    maior_existente = max(
+                        maior_existente,
+                        int(correspondencia.group(1)),
+                    )
+
+            sequencia.ultimo_numero = max(
+                sequencia.ultimo_numero,
+                maior_existente,
+            ) + 1
+            sequencia.save(update_fields=("ultimo_numero",))
+            self.codigo = f"DSP-{sequencia.ultimo_numero:03d}"
+            return super().save(*args, **kwargs)
+
     def __str__(self):
         return f"{self.codigo} - {self.descricao}"
 
@@ -514,6 +813,8 @@ class Periodicidade(models.Model):
 # CALIBRAÇÃO
 # =========================
 class Calibracao(models.Model):
+
+    ordem_servico = models.CharField(max_length=100, blank=True)
 
     STATUS_CHOICES = (
         ("aberta", "Aberta"),
@@ -568,7 +869,13 @@ class Calibracao(models.Model):
     def save(self, *args, **kwargs):
 
         # CALCULAR VALIDADE AUTOMÁTICA
-        periodicidade = self.instrumento.periodicidades.filter(
+        criando = self.pk is None
+        if not criando:
+            self.certificado_numero = garantir_numero_certificado(
+                self, field_name="certificado_numero"
+            )
+
+        periodicidade = self.instrumento.periodicidades.filter(
             tipo="calibracao"
         ).first()
 
@@ -588,8 +895,19 @@ class Calibracao(models.Model):
                 padroes = self.instrumento.padroes.all()
                 self.padroes = ", ".join([p.codigo for p in padroes])
 
-        super().save(*args, **kwargs)
-
+        if criando:
+            using = kwargs.get("using") or self._state.db or "default"
+            with transaction.atomic(using=using):
+                super().save(*args, **kwargs)
+                self.certificado_numero = garantir_numero_certificado(
+                    self, field_name="certificado_numero"
+                )
+                type(self).objects.using(using).filter(pk=self.pk).update(
+                    certificado_numero=self.certificado_numero
+                )
+        else:
+            super().save(*args, **kwargs)
+
     def __str__(self):
         return f"{self.instrumento.codigo} - {self.data_calibracao}"
 
@@ -650,6 +968,7 @@ class PerfilIncertezaTurbidez(models.Model):
         blank=True,
         related_name="perfis_incerteza_turbidez",
     )
+
     padrao = models.ForeignKey(
         Padrao,
         on_delete=models.SET_NULL,
@@ -682,7 +1001,7 @@ class PerfilIncertezaTurbidez(models.Model):
                 self.incerteza_padrao = self.padrao.incerteza
         _quantize_instance_decimal_fields(self)
         _quantize_instance_decimal_fields(self)
-        super().save(*args, **kwargs)
+        return super().save(*args, **kwargs)
 
     def __str__(self):
         return self.nome
@@ -711,9 +1030,23 @@ class CalibracaoTurbidez(models.Model):
 
     numero_certificado = models.CharField(max_length=100, unique=True, blank=True)
     ordem_servico = models.CharField(max_length=100, blank=True)
+
     data_calibracao = models.DateField()
     data_emissao = models.DateField(default=date.today)
     revisao = models.CharField(max_length=20, default="00", blank=True)
+    revisao_de = models.ForeignKey(
+        "self",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="revisoes",
+        editable=False,
+        verbose_name="Revisão do certificado",
+    )
+    motivo_revisao = models.TextField(
+        blank=True,
+        help_text="Descreva o motivo e o impacto da revisão do certificado.",
+    )
     local_calibracao = models.CharField(
         max_length=30,
         choices=LOCAL_CALIBRACAO_CHOICES,
@@ -751,6 +1084,18 @@ class CalibracaoTurbidez(models.Model):
         null=True,
         blank=True,
         related_name="calibracoes",
+    )
+    preparacao_padrao = models.ForeignKey(
+        "calibracao.PreparacaoPadrao",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="calibracoes_turbidez",
+        verbose_name="Preparação de padrão utilizada",
+        help_text=(
+            "Selecione uma preparação de Turbidez aprovada. Ao salvar, o padrão mãe e "
+            "os resultados da diluição serão vinculados à calibração."
+        ),
     )
     procedimento_numero = models.CharField(max_length=100, blank=True)
     procedimento_revisao = models.CharField(max_length=50, blank=True)
@@ -825,6 +1170,44 @@ class CalibracaoTurbidez(models.Model):
             sequencia += 1
         return f"{prefixo}-{sequencia:02d}"
 
+    def clean(self):
+        super().clean()
+        preparacao = self.preparacao_padrao
+        if preparacao:
+            mensagens = []
+            if preparacao.aplicacao != "turbidez":
+                mensagens.append("Selecione uma preparação destinada à Turbidez.")
+            if preparacao.status != "aprovado":
+                mensagens.append("A preparação deve estar aprovada antes de ser utilizada na calibração.")
+            if self.data_calibracao and preparacao.data_preparacao > self.data_calibracao:
+                mensagens.append(
+                    f"A preparação foi realizada em {preparacao.data_preparacao:%d/%m/%Y}, "
+                    f"após a calibração de {self.data_calibracao:%d/%m/%Y}."
+                )
+            if self.data_calibracao and preparacao.validade < self.data_calibracao:
+                mensagens.append(
+                    f"A preparação venceu em {preparacao.validade:%d/%m/%Y}, antes da "
+                    f"calibração de {self.data_calibracao:%d/%m/%Y}."
+                )
+            if mensagens:
+                raise ValidationError({"preparacao_padrao": mensagens})
+
+        if self.pk:
+            origem_anterior = (
+                type(self).objects.filter(pk=self.pk)
+                .values_list("preparacao_padrao_id", flat=True)
+                .first()
+            )
+            if origem_anterior and origem_anterior != self.preparacao_padrao_id:
+                raise ValidationError(
+                    {
+                        "preparacao_padrao": (
+                            "A preparação de origem não pode ser trocada depois de vinculada. "
+                            "Crie uma nova calibração para preservar a rastreabilidade."
+                        )
+                    }
+                )
+
     def save(self, *args, **kwargs):
         if isinstance(self.data_calibracao, str):
             self.data_calibracao = date.fromisoformat(self.data_calibracao)
@@ -872,11 +1255,164 @@ class CalibracaoTurbidez(models.Model):
         if self.tecnico_executante_ref_id:
             self.responsavel_conferencia = self.tecnico_executante_ref.nome
 
-        if not self.numero_certificado:
-            self.numero_certificado = self._gerar_numero_certificado()
-
         _quantize_instance_decimal_fields(self)
-        super().save(*args, **kwargs)
+        salvar_com_numero_certificado(self, super().save, args, kwargs)
+
+    def sincronizar_pontos_incerteza(self):
+        """Garante um ponto de incerteza para cada ponto de calibração existente."""
+        if not self.pk:
+            return
+
+        ordens_calibracao = list(
+            self.pontos_calibracao.order_by("ordem").values_list("ordem", flat=True)
+        )
+        for ordem in ordens_calibracao:
+            ponto_incerteza, _ = TurbidezIncertezaPonto.objects.get_or_create(
+                calibracao=self,
+                ordem=ordem,
+            )
+            # O save calcula somente componentes ausentes e preserva os valores
+            # metrológicos informados no formulário.
+            ponto_incerteza.save()
+
+    @transaction.atomic
+    def importar_padroes_da_preparacao(self):
+        """Importa uma fotografia rastreável do padrão mãe e dos resultados da diluição."""
+        if not self.pk or not self.preparacao_padrao_id:
+            return 0
+
+        preparacao = self.preparacao_padrao
+        if preparacao.aplicacao != "turbidez" or preparacao.status != "aprovado":
+            raise ValidationError(
+                "Somente uma preparação de Turbidez aprovada pode alimentar esta calibração."
+            )
+        if preparacao.data_preparacao > self.data_calibracao:
+            raise ValidationError("A preparação ocorreu após a data da calibração.")
+        if preparacao.validade < self.data_calibracao:
+            raise ValidationError("A preparação estava vencida na data da calibração.")
+
+        padrao_mae = preparacao.padrao_origem
+        valores_mae = {
+            "tipo": "padrao_mae",
+            "ordem": 1,
+            "padrao": padrao_mae,
+            "resultado_preparacao": None,
+            "codigo": padrao_mae.codigo,
+            "descricao": padrao_mae.descricao,
+            "numero_certificado": padrao_mae.numero_certificado,
+            "laboratorio_emitente": padrao_mae.laboratorio_emitente,
+            "data_calibracao": padrao_mae.data_calibracao,
+            "validade": padrao_mae.vencimento,
+            "resolucao": padrao_mae.resolucao,
+            "incerteza": padrao_mae.incerteza,
+            "fator_k": padrao_mae.fator_k,
+            "graus_liberdade": padrao_mae.graus_liberdade,
+            "unidade": padrao_mae.unidade,
+            "valor_nominal": padrao_mae.valor_nominal,
+        }
+        existente_mae = self.padroes_utilizados.filter(padrao=padrao_mae).first()
+        importados = 0
+        if not existente_mae:
+            existente_mae = self.padroes_utilizados.filter(
+                tipo="padrao_mae", codigo__iexact=padrao_mae.codigo
+            ).first()
+        if existente_mae:
+            alterado = any(
+                getattr(existente_mae, campo) != valor for campo, valor in valores_mae.items()
+            )
+            if alterado:
+                for campo, valor in valores_mae.items():
+                    setattr(existente_mae, campo, valor)
+                existente_mae.save()
+                importados += 1
+        else:
+            TurbidezPadraoUtilizado.objects.create(calibracao=self, **valores_mae)
+            importados += 1
+
+        resultados = list(preparacao.resultados.select_related("padrao_gerado").order_by("ordem", "pk"))
+        if resultados:
+            for resultado in resultados:
+                codigo = resultado.codigo_resultado
+                valor = resultado.valor_calculado
+                descricao = "Padrão secundário preparado por diluição"
+                if valor is not None:
+                    descricao = f"{descricao} - {valor} {preparacao.unidade}".strip()
+                valores = {
+                    "tipo": "padrao_diluicao",
+                    "ordem": resultado.ordem,
+                    "padrao": None,
+                    "resultado_preparacao": resultado,
+                    "codigo": codigo,
+                    "descricao": descricao,
+                    "numero_certificado": codigo,
+                    "laboratorio_emitente": "DS Científica",
+                    "data_calibracao": preparacao.data_preparacao,
+                    "validade": preparacao.validade,
+                    "resolucao": None,
+                    "incerteza": resultado.incerteza_expandida,
+                    "fator_k": resultado.fator_abrangencia,
+                    "graus_liberdade": resultado.graus_liberdade_efetivos,
+                    "unidade": preparacao.unidade,
+                    "valor_nominal": valor,
+                }
+                existente = self.padroes_utilizados.filter(
+                    resultado_preparacao=resultado
+                ).first()
+                if not existente:
+                    existente = self.padroes_utilizados.filter(
+                        tipo__in=("padrao_diluicao", "calibracao"), codigo__iexact=codigo
+                    ).first()
+                if existente:
+                    alterado = any(
+                        getattr(existente, campo) != valor_campo
+                        for campo, valor_campo in valores.items()
+                    )
+                    if alterado:
+                        for campo, valor_campo in valores.items():
+                            setattr(existente, campo, valor_campo)
+                        existente.save()
+                        importados += 1
+                else:
+                    TurbidezPadraoUtilizado.objects.create(calibracao=self, **valores)
+                    importados += 1
+        elif preparacao.padrao_gerado_id:
+            padrao = preparacao.padrao_gerado
+            valores = {
+                "tipo": "padrao_diluicao",
+                "ordem": 1,
+                "padrao": None,
+                "resultado_preparacao": None,
+                "codigo": preparacao.codigo,
+                "descricao": "Padrão secundário preparado por diluição",
+                "numero_certificado": preparacao.codigo,
+                "laboratorio_emitente": padrao.laboratorio_emitente or "DS Científica",
+                "data_calibracao": preparacao.data_preparacao,
+                "validade": preparacao.validade,
+                "resolucao": padrao.resolucao,
+                "incerteza": padrao.incerteza,
+                "fator_k": padrao.fator_k,
+                "graus_liberdade": padrao.graus_liberdade,
+                "unidade": preparacao.unidade,
+                "valor_nominal": padrao.valor_nominal,
+            }
+            existente = self.padroes_utilizados.filter(
+                tipo__in=("padrao_diluicao", "calibracao"), codigo__iexact=preparacao.codigo
+            ).first()
+            if existente:
+                alterado = any(
+                    getattr(existente, campo) != valor for campo, valor in valores.items()
+                )
+                if alterado:
+                    for campo, valor in valores.items():
+                        setattr(existente, campo, valor)
+                    existente.save()
+                    importados += 1
+            else:
+                TurbidezPadraoUtilizado.objects.create(calibracao=self, **valores)
+                importados += 1
+        else:
+            raise ValidationError("A preparação aprovada não possui resultados de diluição.")
+        return importados
 
     @classmethod
     def _normalizar_local_calibracao(cls, valor):
@@ -897,6 +1433,7 @@ class TurbidezPadraoUtilizado(models.Model):
 
     TIPO_CHOICES = (
         ("padrao_mae", "Padrão mãe"),
+        ("padrao_diluicao", "Padrão secundário preparado por diluição"),
         ("preparacao", "Preparação"),
         ("verificacao", "Padrões da verificação"),
         ("calibracao", "Padrões da calibração"),
@@ -920,6 +1457,14 @@ class TurbidezPadraoUtilizado(models.Model):
         blank=True,
         related_name="usos_turbidez"
     )
+    resultado_preparacao = models.ForeignKey(
+        "calibracao.PreparacaoPadraoResultado",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="usos_turbidez",
+        verbose_name="Resultado da diluição",
+    )
 
     codigo = models.CharField(max_length=100, blank=True)
     descricao = models.CharField(max_length=255, blank=True)
@@ -927,18 +1472,34 @@ class TurbidezPadraoUtilizado(models.Model):
     laboratorio_emitente = models.CharField(max_length=150, blank=True)
     data_calibracao = models.DateField(null=True, blank=True)
     validade = models.DateField(null=True, blank=True)
-    resolucao = models.DecimalField(max_digits=12, decimal_places=6, null=True, blank=True)
+    resolucao = models.DecimalField(max_digits=20, decimal_places=9, null=True, blank=True)
     rastreabilidade = models.CharField(max_length=100, blank=True)
-    incerteza = models.DecimalField(max_digits=12, decimal_places=6, null=True, blank=True)
+    incerteza = models.DecimalField(max_digits=20, decimal_places=9, null=True, blank=True)
     fator_k = models.DecimalField(max_digits=8, decimal_places=3, null=True, blank=True)
     graus_liberdade = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
     unidade = models.CharField(max_length=30, default="NTU", blank=True)
-    valor_nominal = models.DecimalField(max_digits=12, decimal_places=6, null=True, blank=True)
+    valor_nominal = models.DecimalField(max_digits=20, decimal_places=9, null=True, blank=True)
 
     class Meta:
         verbose_name = "Padrão utilizado"
         verbose_name_plural = "Padrões utilizados"
         ordering = ("tipo", "ordem")
+
+    def clean(self):
+        super().clean()
+        if not self.padrao_id:
+            return
+        try:
+            preparacao = self.padrao.preparacao_geradora
+        except ObjectDoesNotExist:
+            try:
+                preparacao = self.padrao.resultado_preparacao_gerador.preparacao
+            except ObjectDoesNotExist:
+                preparacao = None
+        if preparacao and preparacao.aplicacao != "turbidez":
+            raise ValidationError(
+                {"padrao": "O padrão preparado selecionado não é destinado à Turbidez."}
+            )
 
     def save(self, *args, **kwargs):
         if self.padrao_id:
@@ -968,7 +1529,7 @@ class TurbidezPadraoUtilizado(models.Model):
                 self.unidade = self.padrao.unidade
             if self.valor_nominal is None:
                 self.valor_nominal = self.padrao.valor_nominal
-        _quantize_instance_decimal_fields(self)
+        _quantize_instance_decimal_fields(self, Decimal("0.000000001"))
         super().save(*args, **kwargs)
 
     def __str__(self):
@@ -1103,7 +1664,7 @@ class TurbidezIncertezaPonto(models.Model):
     def _obter_padrao_referencia(self):
         padroes = self.calibracao.padroes_utilizados
         return (
-            padroes.filter(tipo="calibracao", ordem=self.ordem).first()
+            padroes.filter(tipo__in=("padrao_diluicao", "calibracao"), ordem=self.ordem).first()
             or padroes.filter(tipo="verificacao", ordem=self.ordem).first()
             or padroes.filter(tipo="turbidimetro_padrao").order_by("ordem").first()
             or padroes.filter(tipo="padrao_mae").order_by("ordem").first()
@@ -1141,32 +1702,32 @@ class TurbidezIncertezaPonto(models.Model):
             if self.incerteza_turbidimetro is None:
                 self.incerteza_turbidimetro = perfil_incerteza.incerteza_turbidimetro
 
-        componentes = [
-            float(valor)
-            for valor in (
-                self.repetibilidade,
-                self.resolucao_instrumento,
+        repeticoes = 0
+        if ponto_calibracao:
+            repeticoes = len([
+                valor for valor in (
+                    ponto_calibracao.leitura_1,
+                    ponto_calibracao.leitura_2,
+                    ponto_calibracao.leitura_3,
+                ) if valor is not None
+            ])
+
+        componentes_padrao = [
+            _incerteza_padrao_repetibilidade(self.repetibilidade, repeticoes),
+            _incerteza_padrao_por_resolucao(self.resolucao_instrumento),
+            _incerteza_padrao_por_certificado(
                 self.incerteza_padrao,
-                self.resolucao_padrao,
-                self.incerteza_curva,
-                self.incerteza_turbidimetro,
-            )
-            if valor is not None
+                getattr(padrao_referencia, "fator_k", None) if padrao_referencia else None,
+            ),
+            _incerteza_padrao_por_resolucao(self.resolucao_padrao),
+            _para_decimal(self.incerteza_curva),
+            _para_decimal(self.incerteza_turbidimetro),
         ]
+        componentes = [float(valor) for valor in componentes_padrao if valor is not None]
 
         if componentes:
             combinada = sum(valor ** 2 for valor in componentes) ** 0.5
             self.incerteza_padrao_combinada = _quantize_decimal(combinada)
-
-            repeticoes = 0
-            if ponto_calibracao:
-                repeticoes = len([
-                    valor for valor in (
-                        ponto_calibracao.leitura_1,
-                        ponto_calibracao.leitura_2,
-                        ponto_calibracao.leitura_3,
-                    ) if valor is not None
-                ])
 
             graus_repetibilidade = max(repeticoes - 1, 0)
             if (
@@ -1175,7 +1736,8 @@ class TurbidezIncertezaPonto(models.Model):
                 and graus_repetibilidade > 0
                 and combinada > 0
             ):
-                parcela = (float(self.repetibilidade) ** 4) / graus_repetibilidade
+                u_repetibilidade = _incerteza_padrao_repetibilidade(self.repetibilidade, repeticoes)
+                parcela = (float(u_repetibilidade or 0) ** 4) / graus_repetibilidade
                 self.graus_liberdade = Decimal(str(round((combinada ** 4) / parcela, 2))) if parcela else None
             elif not self.graus_liberdade:
                 self.graus_liberdade = None
@@ -1456,11 +2018,8 @@ class CalibracaoColorimetro(models.Model):
         if self.tecnico_executante_ref_id:
             self.responsavel_conferencia = self.tecnico_executante_ref.nome
 
-        if not self.numero_certificado:
-            self.numero_certificado = self._gerar_numero_certificado()
-
         _quantize_instance_decimal_fields(self)
-        super().save(*args, **kwargs)
+        salvar_com_numero_certificado(self, super().save, args, kwargs)
         self.sincronizar_padrao_referencia_utilizado()
 
     def _gerar_resultado_final(self):
@@ -1611,18 +2170,43 @@ class ColorimetroPadraoUtilizado(models.Model):
     laboratorio_emitente = models.CharField(max_length=150, blank=True)
     data_calibracao = models.DateField(null=True, blank=True)
     validade = models.DateField(null=True, blank=True)
-    resolucao = models.DecimalField(max_digits=12, decimal_places=6, null=True, blank=True)
+    resolucao = models.DecimalField(max_digits=20, decimal_places=9, null=True, blank=True)
     rastreabilidade = models.CharField(max_length=100, blank=True)
-    incerteza = models.DecimalField(max_digits=12, decimal_places=6, null=True, blank=True)
+    incerteza = models.DecimalField(max_digits=20, decimal_places=9, null=True, blank=True)
     fator_k = models.DecimalField(max_digits=8, decimal_places=3, null=True, blank=True)
     graus_liberdade = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
     unidade = models.CharField(max_length=30, blank=True)
-    valor_nominal = models.DecimalField(max_digits=12, decimal_places=6, null=True, blank=True)
+    valor_nominal = models.DecimalField(max_digits=20, decimal_places=9, null=True, blank=True)
 
     class Meta:
         verbose_name = "Padrão utilizado"
         verbose_name_plural = "Padrões utilizados"
         ordering = ("tipo", "ordem")
+
+    def clean(self):
+        super().clean()
+        if not self.padrao_id:
+            return
+        try:
+            preparacao = self.padrao.preparacao_geradora
+        except ObjectDoesNotExist:
+            try:
+                preparacao = self.padrao.resultado_preparacao_gerador.preparacao
+            except ObjectDoesNotExist:
+                preparacao = None
+        if not preparacao:
+            return
+        aplicacoes_permitidas = {
+            "cloro": {"cloro", "colorimetria"},
+            "fluor": {"fluor", "colorimetria"},
+            "cor": {"cor", "colorimetria"},
+            "fotocolorimetro": {"colorimetria", "cor", "cloro", "fluor"},
+        }
+        permitidas = aplicacoes_permitidas.get(self.calibracao.tipo_aplicacao, {"colorimetria"})
+        if preparacao.aplicacao not in permitidas:
+            raise ValidationError(
+                {"padrao": "O padrão preparado não é compatível com a aplicação do colorímetro."}
+            )
 
     def save(self, *args, **kwargs):
         if self.padrao_id:
@@ -1654,7 +2238,7 @@ class ColorimetroPadraoUtilizado(models.Model):
                 self.valor_nominal = self.padrao.valor_nominal
         if not self.unidade:
             self.unidade = self.calibracao.unidade_leitura
-        _quantize_instance_decimal_fields(self)
+        _quantize_instance_decimal_fields(self, Decimal("0.000000001"))
         super().save(*args, **kwargs)
 
     def __str__(self):
@@ -1953,7 +2537,7 @@ class CalibracaoPressao(models.Model):
         ("manovacuometro", "Manovacuômetro"),
         ("pressostato", "Pressostato"),
         ("valvula_seguranca", "VÃ¡lvula de seguranÃ§a"),
-        ("esfigmomanometro", "EsfigmomanÃ´metro"),
+        ("esfigmomanometro", "EsfigmomanÃ´metro (legado — usar aba especÃ­fica)"),
     )
     TIPO_INDICACAO_CHOICES = (
         ("analogico", "Analógico"),
@@ -2329,11 +2913,8 @@ class CalibracaoPressao(models.Model):
         if self.tecnico_executante_ref_id:
             self.responsavel_conferencia = self.tecnico_executante_ref.nome
 
-        if not self.numero_certificado:
-            self.numero_certificado = self._gerar_numero_certificado()
-
         _quantize_instance_decimal_fields(self)
-        super().save(*args, **kwargs)
+        salvar_com_numero_certificado(self, super().save, args, kwargs)
 
     @classmethod
     def _normalizar_local_calibracao(cls, valor):
@@ -2720,9 +3301,13 @@ class CalibracaoCondutividade(models.Model):
             self.data_emissao = self.data_calibracao
 
         _quantize_instance_decimal_fields(self)
-        super().save(*args, **kwargs)
+        salvar_com_numero_certificado(self, super().save, args, kwargs)
 
     def __str__(self):
         return f"{self.numero_certificado} - {self.instrumento}"
 
 from . import ph_models
+from . import balance_models
+from . import safety_models
+from . import sphyg_models
+from . import dilution_models

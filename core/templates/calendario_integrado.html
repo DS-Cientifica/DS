@@ -1,0 +1,111 @@
+{% load static %}
+<!doctype html>
+<html lang="pt-br">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Agenda Integrada | AXION</title>
+    <link rel="stylesheet" href="{% static 'css/home.css' %}?v=20260810-2">
+    <link rel="stylesheet" href="{% static 'css/calendario_integrado.css' %}?v=20260815-1">
+    <script src="{% static 'js/home.js' %}" defer></script>
+</head>
+<body class="calendar-page">
+    <svg class="svg-sprite" aria-hidden="true">
+        <symbol id="icon-home" viewBox="0 0 24 24"><path d="M3 11.5 12 4l9 7.5v8a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></symbol>
+        <symbol id="icon-menu" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></symbol>
+        <symbol id="icon-calendar" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M7 3v4M17 3v4M3 10h18M8 14h3M13 14h3M8 17h3"/></symbol>
+    </svg>
+
+    <aside class="sidebar" id="sidebar" aria-label="Navegação principal">
+        <a class="brand" href="{% url 'inicio' %}" aria-label="AXION - Início"><span class="brand-mark">A</span><span class="brand-name">AXION</span></a>
+        <nav class="sidebar-nav">
+            <a class="nav-link" href="{% url 'inicio' %}"><svg><use href="#icon-home"></use></svg><span>Início</span></a>
+            <p class="nav-label">Acesso rápido</p>
+            {% if perms.calibracao.view_ordemservico %}<a class="nav-link" href="{% url 'admin:calibracao_ordemservico_changelist' %}"><span class="nav-monogram">OS</span><span>Ordens de serviço</span></a>{% endif %}
+            {% if perms.certificados.view_certificadocalibracao %}<a class="nav-link" href="{% url 'admin:certificados_certificadocalibracao_changelist' %}"><span class="nav-monogram">CE</span><span>Certificados</span></a>{% endif %}
+            {% if perms.calibracao.view_instrumento %}<a class="nav-link" href="{% url 'admin:calibracao_instrumento_changelist' %}"><span class="nav-monogram">IN</span><span>Instrumentos</span></a>{% endif %}
+            {% if perms.calibracao.view_padrao %}<a class="nav-link" href="{% url 'admin:calibracao_padrao_changelist' %}"><span class="nav-monogram">PD</span><span>Padrões</span></a>{% endif %}
+            {% if perms.clientes.view_cliente %}<a class="nav-link" href="{% url 'admin:clientes_cliente_changelist' %}"><span class="nav-monogram">CL</span><span>Clientes</span></a>{% endif %}
+            {% if perms.planejamento.view_planejamentoservico %}<a class="nav-link" href="{% url 'admin:planejamento_planejamentoservico_calendario' %}"><span class="nav-monogram">AG</span><span>Agenda técnica</span></a>{% endif %}
+            <a class="nav-link" href="{% url 'dashboard' %}"><span class="nav-monogram">DB</span><span>Dashboard</span></a>
+            <a class="nav-link active" href="{% url 'calendario_integrado' %}" aria-current="page"><svg><use href="#icon-calendar"></use></svg><span>Calendário</span></a>
+        </nav>
+        <div class="sidebar-footer">
+            <div class="company-signature"><img src="{% static 'img/logo_ds.png' %}" alt=""><span><strong>DS Científica</strong><small>Precisão que gera resultado.</small></span></div>
+            <button class="collapse-button" type="button" id="sidebar-toggle" aria-controls="sidebar" aria-expanded="true"><span aria-hidden="true">«</span><span>Recolher menu</span></button>
+        </div>
+    </aside>
+
+    <div class="app-shell">
+        <header class="topbar">
+            <button class="mobile-menu" type="button" id="mobile-menu" aria-controls="sidebar" aria-expanded="false" aria-label="Abrir menu"><svg><use href="#icon-menu"></use></svg></button>
+            <div class="welcome">
+                <h1>Agenda Integrada AXION</h1>
+                <p>Compromissos operacionais, comerciais, financeiros e metrológicos em um único calendário.</p>
+            </div>
+            <a class="calendar-home-link" href="{% url 'inicio' %}">Voltar para o início</a>
+        </header>
+
+        <main class="calendar-content">
+            <section class="calendar-toolbar">
+                <div class="calendar-period">
+                    <a href="{{ link_anterior }}" aria-label="Mês anterior">←</a>
+                    <div><small>Período visualizado</small><h2>{{ mes_nome }} de {{ ano }}</h2></div>
+                    <a href="{{ link_proximo }}" aria-label="Próximo mês">→</a>
+                    <a class="today-link" href="{{ link_hoje }}">Hoje</a>
+                </div>
+                <form method="get" class="calendar-filter">
+                    <input type="hidden" name="ano" value="{{ ano }}">
+                    <input type="hidden" name="mes" value="{{ mes }}">
+                    <label for="calendar-module">Área</label>
+                    <select id="calendar-module" name="modulo">
+                        <option value="">Todas as áreas</option>
+                        {% for modulo in modulos %}<option value="{{ modulo.valor }}"{% if filtro_modulo == modulo.valor %} selected{% endif %}>{{ modulo.rotulo }}</option>{% endfor %}
+                    </select>
+                    <button type="submit">Aplicar</button>
+                </form>
+                <span class="calendar-total">{{ total_eventos }} evento{{ total_eventos|pluralize }}</span>
+            </section>
+
+            <section class="calendar-legend" aria-label="Filtrar calendário por área">
+                <a class="calendar-legend-item calendar-legend-all{% if not filtro_modulo %} is-active{% endif %}" href="{{ link_todos }}"{% if not filtro_modulo %} aria-current="true"{% endif %}>
+                    <i></i>Todas
+                </a>
+                {% for modulo in modulos %}
+                    <a class="calendar-legend-item tone-{{ modulo.tom }}{% if modulo.ativo %} is-active{% endif %}" href="{{ modulo.url_filtro }}"{% if modulo.ativo %} aria-current="true" title="Remover filtro {{ modulo.rotulo }}"{% else %} title="Filtrar por {{ modulo.rotulo }}"{% endif %}>
+                        <i></i>{{ modulo.rotulo }}
+                    </a>
+                {% endfor %}
+            </section>
+
+            <div class="calendar-scroll">
+                <div class="calendar-board">
+                    <div class="calendar-weekdays" aria-hidden="true"><span>Dom</span><span>Seg</span><span>Ter</span><span>Qua</span><span>Qui</span><span>Sex</span><span>Sáb</span></div>
+                    <div class="calendar-weeks">
+                        {% for semana in semanas %}
+                            <div class="calendar-week">
+                                {% for dia in semana %}
+                                    <section class="calendar-day{% if dia.fora_mes %} outside{% endif %}{% if dia.hoje %} today{% endif %}">
+                                        <header><strong>{{ dia.data|date:"d" }}</strong><span>{{ dia.data|date:"D" }}</span></header>
+                                        <div class="calendar-events">
+                                            {% for evento in dia.eventos %}
+                                                <a class="calendar-event tone-{{ evento.tom }}" href="{{ evento.url }}" title="{{ evento.titulo }} — {{ evento.detalhe }}">
+                                                    <span class="event-heading">{% if evento.hora %}<time>{{ evento.hora }}</time>{% endif %}<strong>{{ evento.titulo }}</strong></span>
+                                                    <small>{{ evento.detalhe }}</small>
+                                                </a>
+                                            {% empty %}
+                                                <span class="calendar-empty">Sem eventos</span>
+                                            {% endfor %}
+                                        </div>
+                                    </section>
+                                {% endfor %}
+                            </div>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+        </main>
+        <footer>© {% now "Y" %} AXION · DS Científica. Todos os direitos reservados.</footer>
+    </div>
+</body>
+</html>

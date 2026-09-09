@@ -1,0 +1,13 @@
+<table>
+  <thead><tr><th>Carga nominal</th><th>mref</th><th>Indicação</th><th>Erro E</th><th>Correção C</th><th>U (k)</th><th>Tolerância</th><th>Resultado</th></tr></thead>
+  <tbody>
+    {% for ponto in pontos %}
+      <tr>
+        <td>{{ ponto.carga_nominal_formatada }}</td><td>{{ ponto.massa_referencia_formatada }}</td><td>{{ ponto.indicacao_media_formatada }}</td>
+        <td>{{ ponto.erro_formatado }}</td><td>{{ ponto.correcao_formatada }}</td>
+        <td>{% if ponto.incerteza %}{{ ponto.incerteza.incerteza_expandida_formatada }} ({{ ponto.incerteza.fator_k }}){% else %}—{% endif %}</td>
+        <td>{{ ponto.tolerancia_formatada }}</td><td>{{ ponto.resultado|default:"—" }}</td>
+      </tr>
+    {% endfor %}
+  </tbody>
+</table>

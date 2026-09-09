@@ -121,6 +121,32 @@ class PlanejamentoServico(models.Model):
     )
     observacoes = models.TextField("Observacoes", blank=True)
 
+    notificar_cliente_email = models.BooleanField(
+        "Enviar e-mail do agendamento ao cliente",
+        default=True,
+        help_text=(
+            "Envia ao e-mail do contato quando o agendamento for salvo. "
+            "Rascunhos e registros cancelados não são enviados."
+        ),
+    )
+    email_agendamento_enviado_em = models.DateTimeField(
+        "Último e-mail enviado em",
+        null=True,
+        blank=True,
+        editable=False,
+    )
+    email_agendamento_destinatario = models.EmailField(
+        "Último destinatário",
+        blank=True,
+        editable=False,
+    )
+    email_agendamento_hash = models.CharField(max_length=64, blank=True, editable=False)
+    email_agendamento_erro = models.TextField(
+        "Falha no último envio",
+        blank=True,
+        editable=False,
+    )
+    email_agendamento_sequencia = models.PositiveIntegerField(default=0, editable=False)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

@@ -1,0 +1,24 @@
+{% extends "admin/base_site.html" %}
+
+{% block content %}
+<div id="content-main">
+    <section class="module aligned" style="padding: 18px;">
+        <h1>{{ title }}</h1>
+        <p>Prospecto: <strong>{{ obj.razao_social }}</strong></p>
+        <p>
+            Esta ação criará ou vinculará um Cliente ativo, criará o registro de CRM e
+            arquivará o contato na base de prospects. O histórico da prospecção será preservado.
+        </p>
+        {% if obj.prospecto and not obj.prospecto.cnpj %}
+            <p class="warning">O prospect não possui CNPJ. O cliente será marcado como cadastro provisório pendente de confirmação.</p>
+        {% endif %}
+        <form method="post">
+            {% csrf_token %}
+            <div class="submit-row">
+                <input type="submit" class="default" value="Confirmar conversão para CRM">
+                <a href="{{ cancel_url }}" class="button cancel-link">Cancelar</a>
+            </div>
+        </form>
+    </section>
+</div>
+{% endblock %}

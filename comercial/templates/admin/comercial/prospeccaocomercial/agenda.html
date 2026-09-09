@@ -1,0 +1,68 @@
+{% extends "admin/base_site.html" %}
+
+{% block extrastyle %}
+  {{ block.super }}
+  <style>
+    .agenda-toolbar, .agenda-summary { display:flex; gap:12px; flex-wrap:wrap; align-items:center; margin-bottom:18px; }
+    .agenda-toolbar { padding:14px; background:var(--darkened-bg); border-radius:8px; }
+    .agenda-toolbar form { display:flex; gap:10px; flex-wrap:wrap; align-items:end; }
+    .agenda-toolbar label { display:flex; flex-direction:column; gap:4px; font-weight:600; }
+    .agenda-toolbar input, .agenda-toolbar select { min-height:38px; }
+    .agenda-summary .card { min-width:150px; padding:14px 18px; border-radius:8px; background:var(--darkened-bg); }
+    .agenda-summary strong { display:block; font-size:24px; }
+    .agenda-section { margin:22px 0; }
+    .agenda-section h2 { display:flex; gap:8px; align-items:center; }
+    .agenda-table { width:100%; border-collapse:collapse; background:var(--body-bg); }
+    .agenda-table th, .agenda-table td { padding:10px; border-bottom:1px solid var(--hairline-color); text-align:left; vertical-align:top; }
+    .agenda-table th { background:var(--darkened-bg); }
+    .agenda-empty { padding:18px; background:var(--darkened-bg); border-radius:8px; }
+    .agenda-late { color:#b91c1c; font-weight:700; }
+    .agenda-type { display:inline-block; padding:4px 8px; border-radius:999px; background:#e8f1fb; color:#0b4f9c; font-weight:700; }
+    .agenda-actions { white-space:nowrap; }
+    .agenda-actions a { margin-right:8px; }
+    .agenda-description { max-width:420px; white-space:pre-line; }
+  </style>
+{% endblock %}
+
+{% block breadcrumbs %}
+  <div class="breadcrumbs">
+    <a href="{% url 'inicio' %}">Início</a>
+    &rsaquo; <a href="{% url 'admin:comercial_prospeccaocomercial_changelist' %}">Prospecções comerciais</a>
+    &rsaquo; Agenda
+  </div>
+{% endblock %}
+
+{% block content %}
+  <div id="content-main">
+    <div class="agenda-toolbar">
+      <a class="button" href="{% url 'admin:comercial_prospeccaocomercial_calendario' %}?mes={{ data_referencia|date:'m' }}&amp;ano={{ data_referencia|date:'Y' }}{% if responsavel_id %}&amp;responsavel={{ responsavel_id }}{% endif %}">Calendário Geral</a>
+      <a class="button" href="?data={{ data_anterior|date:'Y-m-d' }}{% if responsavel_id %}&amp;responsavel={{ responsavel_id }}{% endif %}">Dia anterior</a>
+      <form method="get">
+        <label>Data
+          <input type="date" name="data" value="{{ data_referencia|date:'Y-m-d' }}">
+        </label>
+        <label>Responsável
+          <select name="responsavel">
+            <option value="">Todos</option>
+            {% for usuario in responsaveis %}
+              <option value="{{ usuario.pk }}"{% if responsavel_id == usuario.pk|stringformat:'s' %} selected{% endif %}>{{ usuario.get_full_name|default:usuario.username }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <button type="submit" class="button default">Visualizar</button>
+      </form>
+      <a class="button" href="?data={{ hoje|date:'Y-m-d' }}{% if responsavel_id %}&amp;responsavel={{ responsavel_id }}{% endif %}">Hoje</a>
+      <a class="button" href="?data={{ data_seguinte|date:'Y-m-d' }}{% if responsavel_id %}&amp;responsavel={{ responsavel_id }}{% endif %}">Próximo dia</a>
+    </div>
+
+    <div class="agenda-summary">
+      <div class="card"><strong>{{ tarefas_do_dia|length }}</strong>Tarefas do dia</div>
+      <div class="card"><strong>{{ atrasadas|length }}</strong>Pendências vencidas</div>
+      <div class="card"><strong>{{ proximas|length }}</strong>Próximas ações</div>
+    </div>
+
+    {% include "admin/comercial/prospeccaocomercial/agenda_tabela.html" with titulo="Pendências vencidas" itens=atrasadas atrasada=True %}
+    {% include "admin/comercial/prospeccaocomercial/agenda_tabela.html" with titulo="Demanda do dia" itens=tarefas_do_dia %}
+    {% include "admin/comercial/prospeccaocomercial/agenda_tabela.html" with titulo="Próximas ações" itens=proximas %}
+  </div>
+{% endblock %}

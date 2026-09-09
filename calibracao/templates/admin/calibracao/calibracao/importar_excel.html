@@ -1,0 +1,113 @@
+{% extends "admin/base_site.html" %}
+{% load i18n %}
+
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+  <a href="{% url 'admin:index' %}">{% translate 'Home' %}</a>
+  &rsaquo; <a href="{% url 'admin:app_list' app_label=opts.app_label %}">{{ opts.app_config.verbose_name }}</a>
+  &rsaquo; <a href="{% url 'admin:calibracao_calibracao_changelist' %}">{{ opts.verbose_name_plural|capfirst }}</a>
+  &rsaquo; {{ title }}
+</div>
+{% endblock %}
+
+{% block content %}
+<div id="content-main">
+  <div class="module aligned">
+    <h1>{{ title }}</h1>
+
+    <p>
+      Use esta tela para validar uma planilha unica de calibracoes antes da gravacao no sistema.
+      A importacao automatica deve ser liberada por tipo de certificado para preservar rastreabilidade metrologica.
+    </p>
+
+    <div class="module" style="margin: 16px 0; padding: 12px 16px;">
+      <h2 style="margin-top: 0;">Estrutura do arquivo</h2>
+      <p><strong>Aba principal:</strong> <code>CALIBRACOES</code>, uma linha por certificado.</p>
+      <p><strong>Aba obrigatoria:</strong> <code>PADROES_UTILIZADOS</code>, vinculada pelo campo <code>certificado_numero</code>.</p>
+      <p><strong>Abas por tipo:</strong> <code>PRESSAO_LEITURAS</code>, <code>COLORIMETRO_LEITURAS</code>, <code>PH_LEITURAS</code>, <code>TURBIDEZ_LEITURAS</code> e <code>CONDUTIVIDADE_LEITURAS</code>.</p>
+      <p><strong>Tipos aceitos:</strong> <code>pressao</code>, <code>colorimetro</code>, <code>ph</code>, <code>turbidez</code> e <code>condutividade</code>.</p>
+      <p><strong>Importante:</strong> nao altere nomes de abas nem cabecalhos.</p>
+    </div>
+
+    <p>
+      <a class="button" href="{{ download_model_url }}">Baixar modelo .xlsx</a>
+    </p>
+
+    <form method="post" enctype="multipart/form-data" novalidate>
+      {% csrf_token %}
+      <fieldset class="module aligned">
+        {{ form.as_p }}
+      </fieldset>
+      <div class="submit-row">
+        <input type="submit" value="Validar planilha" class="default">
+        <a href="{% url 'admin:calibracao_calibracao_changelist' %}" class="button cancel-link">Voltar</a>
+      </div>
+    </form>
+  </div>
+
+  {% if resultado %}
+    <div class="module" style="margin-top: 24px;">
+      <h2>Resultado da validacao</h2>
+      <p><strong>Arquivo:</strong> {{ resultado.arquivo }}</p>
+      <p><strong>Total de calibracoes:</strong> {{ resultado.total_calibracoes }}</p>
+
+      {% if resultado.tipos %}
+        <h3>Calibracoes por tipo</h3>
+        <ul>
+          {% for tipo, quantidade in resultado.tipos.items %}
+            <li><strong>{{ tipo }}:</strong> {{ quantidade }}</li>
+          {% endfor %}
+        </ul>
+      {% endif %}
+
+      <h3>Abas analisadas</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>Aba</th>
+            <th>Linhas preenchidas</th>
+            <th>Cabecalhos ausentes</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for aba in resultado.abas %}
+            <tr>
+              <td>{{ aba.nome }}</td>
+              <td>{{ aba.linhas }}</td>
+              <td>
+                {% if aba.ausentes %}
+                  {{ aba.ausentes|join:", " }}
+                {% else %}
+                  -
+                {% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+
+      {% if resultado.erros %}
+        <h3 style="color: #ba2121;">Erros</h3>
+        <ul class="errorlist">
+          {% for erro in resultado.erros %}
+            <li>{{ erro }}</li>
+          {% endfor %}
+        </ul>
+      {% endif %}
+
+      {% if resultado.avisos %}
+        <h3>Avisos</h3>
+        <ul>
+          {% for aviso in resultado.avisos %}
+            <li>{{ aviso }}</li>
+          {% endfor %}
+        </ul>
+      {% endif %}
+
+      {% if not resultado.erros %}
+        <p><strong>Status:</strong> planilha pronta para a proxima etapa de importacao controlada.</p>
+      {% endif %}
+    </div>
+  {% endif %}
+</div>
+{% endblock %}

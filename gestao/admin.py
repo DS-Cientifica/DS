@@ -1,7 +1,14 @@
 from django.contrib import admin
 from django import forms
 
-from .models import CargoFuncao, Colaborador, ColaboradorAnexo, CompetenciaTecnica, DocumentoEmpresa, Treinamento
+from .models import (
+    CargoFuncao,
+    Colaborador,
+    ColaboradorAnexo,
+    CompetenciaTecnica,
+    DocumentoEmpresa,
+    Treinamento,
+)
 
 
 class ColaboradorAnexoInline(admin.TabularInline):

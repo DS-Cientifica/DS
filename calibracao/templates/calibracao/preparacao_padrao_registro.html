@@ -1,0 +1,146 @@
+{% load static %}
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <title>{{ preparacao.codigo }} - Registro de preparação de padrão</title>
+  <style>
+    @page { size: A4; margin: 14mm; }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: Arial, sans-serif; color: #172033; font-size: 10px; background: #e8edf2; }
+    .toolbar { max-width: 190mm; margin: 12px auto; text-align: right; }
+    .toolbar button { border: 0; border-radius: 6px; padding: 9px 14px; background: #0759a6; color: #fff; font-weight: 700; cursor: pointer; }
+    .page { position: relative; max-width: 210mm; min-height: 297mm; margin: 0 auto 18px; padding: 14mm; background: #fff; box-shadow: 0 5px 22px rgba(20,35,61,.16); overflow: hidden; }
+    .watermark { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; opacity: .035; pointer-events: none; }
+    .watermark img { width: 125mm; height: 125mm; object-fit: contain; }
+    .document-content { position: relative; z-index: 1; }
+    header { position: relative; min-height: 31mm; padding: 2mm 34mm 5mm; text-align: center; border-bottom: 2px solid #283864; }
+    .logo-wrap { position: absolute; left: 0; top: 1mm; width: 29mm; height: 25mm; display: flex; align-items: center; justify-content: center; }
+    .logo-wrap img { width: 25mm; max-height: 24mm; object-fit: contain; }
+    .company-name { margin: 0; color: #1f4e5f; font-size: 18px; font-weight: 800; }
+    .company-line { margin-top: 2px; color: #5f6b7a; font-size: 8.5px; }
+    .title { margin-top: 5px; color: #1d3fbf; font-size: 14px; font-weight: 800; text-transform: uppercase; }
+    .code { position: absolute; right: 0; top: 2mm; width: 32mm; padding: 5px; border: 1px solid #b9c1cd; text-align: center; line-height: 1.5; font-size: 8.5px; }
+    section { padding: 10px 12px; }
+    h2 { margin: 0 0 7px; padding: 0 0 4px; color: #1d3fbf; border-bottom: 2px solid #1d3fbf; font-size: 11px; font-style: italic; text-transform: uppercase; }
+    .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 7px 12px; }
+    .field { min-height: 34px; }
+    .field strong { display: block; color: #61718a; font-size: 8px; text-transform: uppercase; margin-bottom: 2px; }
+    .wide { grid-column: span 2; }
+    table { width: 100%; border-collapse: collapse; margin-top: 4px; }
+    th, td { border: 1px solid #c9d4e2; padding: 5px; vertical-align: top; }
+    th { background: #f0f5fb; color: #304a6e; font-size: 8px; text-transform: uppercase; }
+    .result { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; padding: 10px; background: #f4f9ff; border: 1px solid #a9c7e8; }
+    .result strong { display: block; color: #0759a6; margin-bottom: 3px; }
+    .signatures { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; margin-top: 32px; }
+    .signature { text-align: center; border-top: 1px solid #52647d; padding-top: 5px; }
+    footer { margin-top: 10mm; padding: 6px 0 0; border-top: 1px solid #b9c1cd; color: #566170; font-size: 8px; text-align: center; line-height: 1.5; }
+    .status { font-weight: 800; text-transform: uppercase; }
+    @media print { body { background: #fff; } .toolbar { display: none; } .page { width: auto; min-height: auto; margin: 0; padding: 0; box-shadow: none; } }
+  </style>
+</head>
+<body>
+  <div class="toolbar"><button type="button" onclick="window.print()">Imprimir / salvar PDF</button></div>
+  <main class="page">
+    <div class="watermark"><img src="{% static 'img/logo_ds.png' %}" alt=""></div>
+    <div class="document-content">
+    <header>
+      <div class="logo-wrap"><img src="{% static 'img/logo_ds.png' %}" alt="DS Científica"></div>
+      <h1 class="company-name">{{ empresa.nome }}</h1>
+      <div class="company-line">{{ empresa.email }} | {{ empresa.site }}</div>
+      <div class="company-line">{{ empresa.telefone }} | CNPJ: {{ empresa.cnpj }} | {{ empresa.cidade }}</div>
+      <div class="title">Registro de preparação e atribuição de valor de padrões</div>
+      <div class="code"><strong>{{ preparacao.codigo }}</strong><br>{{ preparacao.data_preparacao|date:"d/m/Y" }}<br><span class="status">{{ preparacao.get_status_display }}</span></div>
+    </header>
+
+    <section>
+      <h2>1. Identificação e rastreabilidade</h2>
+      <div class="grid">
+        <div class="field"><strong>Aplicação</strong>{{ preparacao.get_aplicacao_display }}</div>
+        <div class="field"><strong>Tipo</strong>{{ preparacao.get_tipo_preparacao_display }}</div>
+        <div class="field"><strong>Data da preparação</strong>{{ preparacao.data_preparacao|date:"d/m/Y" }}</div>
+        <div class="field"><strong>Validade</strong>{{ preparacao.validade|date:"d/m/Y" }}</div>
+        <div class="field wide"><strong>Padrão de origem</strong>{{ preparacao.padrao_origem }}</div>
+        <div class="field"><strong>Certificado de origem</strong>{{ preparacao.padrao_origem.numero_certificado|default:"-" }}</div>
+        <div class="field"><strong>Lote</strong>{{ preparacao.lote|default:"-" }}</div>
+        <div class="field wide"><strong>Procedimento</strong>{% if preparacao.procedimento %}{{ preparacao.procedimento.codigo }} - {{ preparacao.procedimento.titulo }} Rev. {{ preparacao.procedimento.revisao }}{% else %}-{% endif %}</div>
+        <div class="field"><strong>Unidade dos resultados</strong>{{ preparacao.unidade }}</div>
+        <div class="field"><strong>Matriz/diluente</strong>{{ preparacao.matriz_diluente|default:"-" }}</div>
+      </div>
+    </section>
+
+    <section>
+      <h2>2. Gabarito de diluição e valores preparados</h2>
+      <table>
+        <thead><tr><th>Código</th><th>Alvo</th><th>Alíquota teórica</th><th>Alíquota utilizada</th><th>Completar até</th><th>Diluente aprox.</th><th>Pipeta</th><th>Balão</th><th>Valor calculado</th></tr></thead>
+        <tbody>
+          {% for resultado in preparacao.resultados.all %}
+            <tr>
+              <td>{{ resultado.codigo_resultado }}</td>
+              <td>{{ resultado.valor_alvo }} {{ preparacao.unidade }}</td>
+              <td>{{ resultado.volume_aliquota_planejado|default_if_none:"-" }} {{ resultado.unidade_volume }}</td>
+              <td>{{ resultado.volume_aliquota_utilizado|default_if_none:"-" }} {{ resultado.unidade_volume }}</td>
+              <td>{{ resultado.volume_final }} {{ resultado.unidade_volume }}</td>
+              <td>{{ resultado.volume_diluente_aproximado|default_if_none:"-" }} {{ resultado.unidade_volume }}*</td>
+              <td>{{ resultado.pipeta|default:"-" }}</td>
+              <td>{{ resultado.recipiente_final|default:"-" }}</td>
+              <td>{{ resultado.valor_calculado|default_if_none:"-" }} {{ preparacao.unidade }}</td>
+            </tr>
+          {% empty %}<tr><td colspan="9">Nenhum valor cadastrado.</td></tr>{% endfor %}
+        </tbody>
+      </table>
+      <p>* Volume apenas orientativo. Na preparação volumétrica, adicionar diluente e completar até o traço do recipiente, sem tratar a diferença como volume medido.</p>
+    </section>
+
+    <section>
+      <h2>3. Equipamentos auxiliares</h2>
+      <table>
+        <thead><tr><th>Função</th><th>Identificação</th><th>Certificado</th><th>Validade</th><th>U</th><th>k</th><th>Resolução</th></tr></thead>
+        <tbody>
+          {% for item in preparacao.equipamentos.all %}
+            <tr><td>{{ item.get_papel_display }}</td><td>{{ item.padrao }}</td><td>{{ item.padrao.numero_certificado|default:"-" }}</td><td>{{ item.validade_snapshot|date:"d/m/Y" }}</td><td>{{ item.incerteza_snapshot|default_if_none:"-" }}</td><td>{{ item.fator_k_snapshot|default_if_none:"-" }}</td><td>{{ item.resolucao_snapshot|default_if_none:"-" }}</td></tr>
+          {% empty %}<tr><td colspan="7">Nenhum equipamento auxiliar adicional.</td></tr>{% endfor %}
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>4. Resultados e orçamento de incerteza por padrão</h2>
+      <table>
+        <thead><tr><th>Código</th><th>Resultado</th><th>u origem</th><th>u pipeta</th><th>u recipiente</th><th>u combinada</th><th>k</th><th>U expandida</th><th>Padrão gerado</th></tr></thead>
+        <tbody>
+          {% for item in preparacao.resultados.all %}
+            <tr>
+              <td>{{ item.codigo_resultado }}</td>
+              <td>{{ item.valor_calculado|default_if_none:"-" }} {{ preparacao.unidade }}</td>
+              <td>{{ item.contribuicao_padrao_origem|default_if_none:"-" }}</td>
+              <td>{{ item.contribuicao_pipeta|default_if_none:"-" }}</td>
+              <td>{{ item.contribuicao_recipiente|default_if_none:"-" }}</td>
+              <td>{{ item.incerteza_padrao_combinada|default_if_none:"-" }}</td>
+              <td>{{ item.fator_abrangencia|default_if_none:"-" }}</td>
+              <td>{{ item.incerteza_expandida|default_if_none:"-" }} {{ preparacao.unidade }}</td>
+              <td>{{ item.padrao_gerado|default:"Pendente" }}</td>
+            </tr>
+          {% empty %}<tr><td colspan="9">Orçamento ainda não calculado.</td></tr>{% endfor %}
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>5. Aprovação</h2>
+      <p>A incerteza expandida é obtida pela multiplicação da incerteza-padrão combinada pelo fator de abrangência indicado, para probabilidade de abrangência aproximada de 95%.</p>
+      <div class="signatures">
+        <div class="signature">{{ preparacao.responsavel_preparo }}<br>Responsável pela preparação</div>
+        <div class="signature">{{ preparacao.responsavel_revisao|default:"Revisão pendente" }}<br>Responsável pela revisão/aprovação</div>
+      </div>
+    </section>
+
+    <footer>
+      <strong>{{ empresa.nome }}</strong> | CNPJ: {{ empresa.cnpj }} | {{ empresa.email }} | {{ empresa.telefone }} | {{ empresa.site }}<br>
+      Alterações em registros aprovados devem ser realizadas por nova preparação ou revisão controlada.
+      {% if preparacao.observacoes %}<br>Observações: {{ preparacao.observacoes }}{% endif %}
+    </footer>
+    </div>
+  </main>
+</body>
+</html>

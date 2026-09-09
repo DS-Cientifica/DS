@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Consulta de Certificado de Calibração</title>
+  <style>
+    body{margin:0;background:#f3f6f8;color:#173247;font-family:Arial,sans-serif}.page{max-width:900px;margin:32px auto;padding:0 18px}.card{background:#fff;border-radius:10px;box-shadow:0 2px 12px #0001;padding:28px;margin-bottom:18px}h1,h2{color:#17667b}dl{display:grid;grid-template-columns:210px minmax(0,1fr);gap:10px;margin:0}dt{font-weight:700}dd{margin:0;min-width:0;overflow-wrap:anywhere}.status{display:inline-block;padding:7px 12px;border-radius:20px;background:#e7f1f4;font-weight:700}.alerta{border-left:5px solid #b13b3b}.padrao{border-top:1px solid #d9e2e7;padding:14px 0}.acao{display:inline-block;background:#17667b;color:#fff;padding:11px 16px;border-radius:6px;text-decoration:none}.consulta-grid{display:grid;grid-template-columns:minmax(0,1fr) 190px;gap:24px}.qr{min-width:0}.qr svg{width:180px;height:180px;display:block}.qr small{display:block;text-align:center}@media(max-width:600px){dl,.consulta-grid{grid-template-columns:1fr}.card{padding:20px}.qr svg{margin:auto}}
+  </style>
+</head>
+<body><main class="page">
+  <section class="card{% if certificado.status == 'substituido' %} alerta{% endif %}">
+    <h1>Consulta de Certificado de Calibração</h1>
+    <p class="status">{{ certificado.get_status_display }}</p>
+    {% if certificado.status == 'substituido' %}
+      <p>Este certificado foi substituído por uma nova revisão. O documento anterior está bloqueado para acesso.</p>
+      {% if certificado.certificado_substituto.publicado %}<p><a href="{% url 'certificados:consulta' certificado.certificado_substituto.uuid_publico %}">Consultar certificado substituto</a></p>{% endif %}
+    {% endif %}
+    <div class="consulta-grid"><dl>
+      <dt>Número</dt><dd>{{ certificado.numero }}</dd><dt>Revisão</dt><dd>{{ certificado.revisao }}</dd>
+      <dt>Data da calibração</dt><dd>{{ certificado.data_calibracao|date:"d/m/Y" }}</dd>
+      <dt>Equipamento</dt><dd>{{ certificado.instrumento }}</dd>
+      {% if certificado.exibir_cliente %}<dt>Cliente</dt><dd>{{ certificado.cliente }}</dd>{% endif %}
+      <dt>Código de verificação</dt><dd>{{ certificado.codigo_curto }}</dd>
+    </dl><div class="qr">{{ qr_svg|safe }}<small>Endereço oficial desta consulta</small></div></div>
+    {% if certificado.pode_baixar_publicamente %}<p><a class="acao" href="{% url 'certificados:download' certificado.uuid_publico %}">Visualizar certificado</a></p>{% endif %}
+  </section>
+  {% if certificado.exibir_padroes %}<section class="card"><h2>Rastreabilidade metrológica</h2>
+    <p>Os padrões relacionados abaixo foram utilizados na calibração e estavam vinculados aos respectivos certificados na data de execução do serviço.</p>
+    {% for item in certificado.padroes_utilizados.all %}<article class="padrao"><strong>{{ item.codigo }} — {{ item.descricao }}</strong><dl>
+      <dt>Certificado</dt><dd>{{ item.numero_certificado|default:"Não localizado" }}</dd><dt>Laboratório</dt><dd>{{ item.laboratorio_emitente|default:"Não informado" }}</dd>
+      <dt>Validade</dt><dd>{{ item.validade|date:"d/m/Y"|default:"Não informada" }}</dd><dt>Situação na data de uso</dt><dd>{{ item.get_situacao_na_data_display }}</dd>
+    </dl></article>{% empty %}<p>Nenhum padrão foi vinculado a este certificado.</p>{% endfor %}
+  </section>{% endif %}
+</main></body></html>

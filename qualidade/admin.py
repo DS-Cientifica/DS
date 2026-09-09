@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import Documento, DocumentoRevisao
+from .models import Documento, DocumentoAnexo, DocumentoRevisao
 
 
 class DocumentoRevisaoInline(admin.TabularInline):
@@ -8,6 +8,15 @@ class DocumentoRevisaoInline(admin.TabularInline):
     extra = 0
     fields = ("revisao", "data", "alteracao", "responsavel", "status")
     readonly_fields = ()
+
+
+class DocumentoAnexoInline(admin.TabularInline):
+    model = DocumentoAnexo
+    extra = 1
+    fields = ("tipo", "titulo", "arquivo", "data_documento", "descricao", "created_at")
+    readonly_fields = ("created_at",)
+    verbose_name = "Anexo complementar"
+    verbose_name_plural = "Fotos, vídeos e outros documentos"
 
 
 @admin.register(Documento)
@@ -31,12 +40,18 @@ class DocumentoAdmin(admin.ModelAdmin):
     )
     search_fields = ("codigo", "titulo", "responsavel", "area", "observacoes")
     ordering = ("codigo", "titulo")
-    inlines = [DocumentoRevisaoInline]
+    inlines = [DocumentoAnexoInline, DocumentoRevisaoInline]
     readonly_fields = ("created_at", "updated_at", "data_proxima_revisao")
     fieldsets = (
         (
             "Identificação",
-            {"fields": ("codigo", "titulo", "tipo", "area", "arquivo", "arquivo_rascunho_pdf")},
+            {
+                "fields": ("codigo", "titulo", "tipo", "area", "arquivo", "arquivo_rascunho_pdf"),
+                "description": (
+                    "Os dois arquivos principais permanecem disponíveis. Para fotos, vídeos, "
+                    "listas de presença e outros documentos, use a seção de anexos abaixo."
+                ),
+            },
         ),
         (
             "Controle documental",

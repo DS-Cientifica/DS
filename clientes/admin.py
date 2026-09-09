@@ -38,6 +38,7 @@ class ClienteAdmin(admin.ModelAdmin):
         "codigo",
         "razao_social",
         "cnpj",
+        "cnpj_provisorio",
         "cidade",
         "uf",
         "ativo",
@@ -51,6 +52,7 @@ class ClienteAdmin(admin.ModelAdmin):
 
     list_filter = (
         "ativo",
+        "cnpj_provisorio",
         "uf",
     )
 
@@ -61,6 +63,7 @@ class ClienteAdmin(admin.ModelAdmin):
                 "razao_social",
                 "nome_empresa",
                 "cnpj",
+                "cnpj_provisorio",
                 "ie",
             )
         }),
@@ -116,6 +119,8 @@ class ContatoClienteAdmin(admin.ModelAdmin):
         "email",
         "telefone",
         "principal",
+        "marketing_email_autorizado",
+        "marketing_whatsapp_autorizado",
     )
 
     search_fields = (
@@ -126,6 +131,30 @@ class ContatoClienteAdmin(admin.ModelAdmin):
 
     list_filter = (
         "principal",
+        "marketing_email_autorizado",
+        "marketing_whatsapp_autorizado",
+        "marketing_base_legal",
+    )
+
+    fieldsets = (
+        ("Contato", {"fields": ("cliente", "nome", "cargo", "email", "telefone", "principal")}),
+        (
+            "Privacidade e marketing",
+            {
+                "fields": (
+                    ("marketing_email_autorizado", "marketing_whatsapp_autorizado"),
+                    "marketing_base_legal",
+                    "marketing_autorizado_em",
+                    "marketing_origem",
+                    "marketing_revogado_em",
+                    "marketing_observacoes",
+                ),
+                "description": (
+                    "Registre a base legal e a evidência antes de autorizar campanhas. "
+                    "Ao revogar, desmarque os canais autorizados."
+                ),
+            },
+        ),
     )
 
 

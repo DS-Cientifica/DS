@@ -1,0 +1,18 @@
+{% extends "admin/base_site.html" %}
+
+{% block content %}
+  <div id="content-main">
+    <h1>Confirmar transformação</h1>
+    <p>
+      O contato <strong>{{ prospecto }}</strong> será incluído na aba Prospecção
+      para acompanhamento comercial. O cadastro original e sua rastreabilidade serão preservados.
+    </p>
+    <form method="post">
+      {% csrf_token %}
+      <div class="submit-row">
+        <input type="submit" value="Confirmar transformação" class="default">
+        <a href="{{ cancel_url }}" class="button cancel-link">Cancelar</a>
+      </div>
+    </form>
+  </div>
+{% endblock %}

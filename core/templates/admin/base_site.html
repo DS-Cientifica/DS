@@ -1,27 +1,52 @@
 ﻿{% extends "admin/base.html" %}
-{% load static %}
+{% load static admin_navigation %}
+
+{% block extrahead %}
+{{ block.super }}
+<script
+    src="{% static 'js/admin_navigation.js' %}?v=20260810-1"
+    data-central-url="{% url 'inicio' %}"
+    data-admin-index-url="{% url 'admin:index' %}"
+    defer
+></script>
+<script src="{% static 'js/admin_filters.js' %}?v=20260810-1" defer></script>
+{% endblock %}
 
 {% block branding %}
-<h1 id="site-name" style="color: white;">
-    DS Científica
+<h1 id="site-name">
+    <a href="{% url 'inicio' %}" aria-label="AXION - Central de módulos">
+        <span class="axion-brand-mark" aria-hidden="true">A</span>
+        <span class="axion-brand-copy">
+            <strong>AXION</strong>
+            <small>DS Científica</small>
+        </span>
+    </a>
 </h1>
+{% endblock %}
+
+{% block nav-global %}
+<nav class="axion-admin-links" aria-label="Navegação AXION">
+    <a href="{% url 'inicio' %}">Início</a>
+    <a href="{% url 'dashboard' %}">Dashboard</a>
+    {% if request.user.is_superuser and development_area %}<span class="axion-development-badge">Modo desenvolvimento</span>{% endif %}
+</nav>
+{% endblock %}
+
+{% block nav-sidebar %}{% endblock %}
+
+{% block breadcrumbs %}
+{% if opts|is_calibration_model %}
+<div class="breadcrumbs">
+    <a href="{% url 'inicio' %}">Início</a>
+    &rsaquo; <a href="{% url 'admin:calibracoes_index' %}">Calibrações</a>
+    {% if title %}&rsaquo; {{ title }}{% endif %}
+</div>
+{% else %}
+{{ block.super }}
+{% endif %}
 {% endblock %}
 
 {% block extrastyle %}
 {{ block.super }}
-<link rel="stylesheet" href="{% static 'css/custom.css' %}">
-<style>
-    #header {
-        background-color: #1f4e5f !important;
-    }
-
-    .module h2, .module caption {
-        background-color: #2f6f87 !important;
-    }
-
-    .button, input[type=submit], input[type=button] {
-        background-color: #1f4e5f !important;
-        border: none;
-    }
-</style>
+<link rel="stylesheet" href="{% static 'css/custom.css' %}?v=20260811-1">
 {% endblock %}

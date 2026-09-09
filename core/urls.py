@@ -4,17 +4,23 @@ from django.contrib import admin
 from django.urls import include, path, re_path
 from django.views.static import serve
 
+from .home_views import inicio
+from .calendar_views import calendario_integrado
 from .views import dashboard
 
 
 urlpatterns = [
-    path("", dashboard, name="dashboard"),
-    path("dashboard/", dashboard),
+    path("", inicio, name="inicio"),
+    path("inicio/", inicio),
+    path("dashboard/", dashboard, name="dashboard"),
+    path("calendario/", calendario_integrado, name="calendario_integrado"),
     path("admin/", admin.site.urls),
     path("clientes/", include("clientes.urls")),
     path("calibracao/", include("calibracao.urls")),
     path("comercial/", include("comercial.urls")),
     path("financeiro/", include("financeiro.urls")),
+    path("documentos/", include("documentos.urls")),
+    path("", include("certificados.urls")),
 ]
 
 

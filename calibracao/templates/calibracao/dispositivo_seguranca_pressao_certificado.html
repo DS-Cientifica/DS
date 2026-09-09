@@ -1,0 +1,180 @@
+{% load static %}
+<!doctype html>
+<html lang="pt-br">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{{ calibracao.numero_certificado }} - {{ document_title }}</title>
+    <style>
+        :root { --blue:#173f78; --line:#8d99a8; --soft:#edf3f9; --danger:#9f1d25; --ok:#126b3a; }
+        * { box-sizing:border-box; }
+        body { margin:0; background:#e8edf2; color:#17202b; font:10.5px Arial, sans-serif; }
+        .toolbar { position:sticky; top:0; padding:10px; text-align:center; background:#202a36; z-index:2; }
+        .toolbar button { border:0; border-radius:4px; padding:8px 18px; color:#fff; background:#1d64b5; font-weight:700; cursor:pointer; }
+        .sheet { width:210mm; min-height:297mm; margin:12px auto; padding:12mm 12mm 15mm; background:#fff; box-shadow:0 2px 14px #0002; }
+        .first-page { page-break-after:always; }
+        header { display:grid; grid-template-columns:38mm 1fr 34mm; align-items:center; border:1px solid var(--line); }
+        .logo { padding:7px; text-align:center; }
+        .logo img { max-width:32mm; max-height:21mm; }
+        .title { min-height:28mm; padding:7px; text-align:center; border-left:1px solid var(--line); border-right:1px solid var(--line); }
+        .title h1 { margin:1px 0 5px; color:var(--blue); font-size:15px; text-transform:uppercase; }
+        .title div { font-weight:700; }
+        .control { padding:7px; font-size:9px; line-height:1.55; }
+        .warning { margin:8px 0; padding:7px 9px; border:1px solid #d59aa0; background:#fff2f3; color:var(--danger); }
+        h2 { margin:11px 0 5px; padding:5px 7px; background:var(--blue); color:#fff; font-size:11px; text-transform:uppercase; }
+        .grid { display:grid; grid-template-columns:1fr 1fr; gap:0 10px; }
+        .data { display:grid; grid-template-columns:42mm 1fr; border:1px solid var(--line); border-bottom:0; }
+        .data:last-child { border-bottom:1px solid var(--line); }
+        .data b, .data span { padding:4px 6px; }
+        .data b { background:var(--soft); border-right:1px solid var(--line); }
+        table { width:100%; border-collapse:collapse; table-layout:fixed; }
+        th, td { border:1px solid var(--line); padding:4px 5px; vertical-align:middle; overflow-wrap:anywhere; }
+        th { background:var(--soft); color:#153b6d; }
+        .center th, .center td { text-align:center; }
+        .small { font-size:9px; }
+        .status-aprovado, .status-valido { color:var(--ok); font-weight:700; }
+        .status-reprovado, .status-vencido, .status-suspenso, .status-incompleto { color:var(--danger); font-weight:700; }
+        .note { line-height:1.45; text-align:justify; }
+        .signature { width:75mm; margin:22mm auto 0; padding-top:5px; border-top:1px solid #333; text-align:center; }
+        .signature strong { display:block; font-size:11px; }
+        footer { margin-top:10mm; padding-top:5px; border-top:1px solid var(--line); text-align:center; color:#566170; font-size:8.5px; }
+        @page { size:A4; margin:8mm; }
+        @media print {
+            body { background:#fff; }
+            .toolbar { display:none; }
+            .sheet { width:auto; min-height:auto; margin:0; padding:0; box-shadow:none; }
+            .first-page { page-break-after:always; }
+            h2, table, .grid, .signature { break-inside:avoid; }
+        }
+    </style>
+</head>
+<body>
+<div class="toolbar"><button type="button" onclick="window.print()">Imprimir / salvar em PDF</button></div>
+<main class="sheet first-page">
+    <header>
+        <div class="logo"><img src="{% static 'img/logo_ds.png' %}" alt="DS Científica"></div>
+        <div class="title">
+            <h1>{{ document_title }}</h1>
+            <div>{{ calibracao.numero_certificado }}</div>
+        </div>
+        <div class="control">
+            <strong>{{ empresa.codigo_documento }}</strong><br>
+            Revisão: {{ calibracao.revisao }}<br>
+            Página 1 de 2
+        </div>
+    </header>
+
+    {% if pendencias %}
+    <div class="warning"><strong>Documento não liberado para emissão.</strong> Pendências: {{ pendencias|join:"; " }}.</div>
+    {% endif %}
+
+    <h2>1. Identificação</h2>
+    <div class="grid">
+        <div>
+            <div class="data"><b>Contratante</b><span>{{ calibracao.contratante|default:"—" }}</span></div>
+            <div class="data"><b>Endereço</b><span>{{ calibracao.endereco_cliente|default:"—" }}</span></div>
+            <div class="data"><b>Ordem de serviço</b><span>{{ calibracao.ordem_servico|default:"—" }}</span></div>
+            <div class="data"><b>Local</b><span>{{ calibracao.get_local_calibracao_display }}</span></div>
+        </div>
+        <div>
+            <div class="data"><b>Data do serviço</b><span>{{ calibracao.data_calibracao|date:"d/m/Y" }}</span></div>
+            <div class="data"><b>Data de emissão</b><span>{{ calibracao.data_emissao|date:"d/m/Y" }}</span></div>
+            <div class="data"><b>Próxima calibração</b><span>{{ calibracao.proxima_calibracao|date:"d/m/Y"|default:"Não definida" }}</span></div>
+            <div class="data"><b>Status</b><span>{{ calibracao.get_status_display }}</span></div>
+        </div>
+    </div>
+
+    <h2>2. Dispositivo de segurança</h2>
+    <table>
+        <tr><th>Tipo</th><td>{{ calibracao.get_tipo_dispositivo_display }}</td><th>TAG</th><td>{{ calibracao.tag|default:"Não consta" }}</td></tr>
+        <tr><th>Fabricante</th><td>{{ calibracao.fabricante|default:"Não consta" }}</td><th>Modelo</th><td>{{ calibracao.modelo|default:"Não consta" }}</td></tr>
+        <tr><th>Número de série</th><td>{{ calibracao.numero_serie|default:"Não consta" }}</td><th>Tamanho nominal</th><td>{{ calibracao.tamanho_nominal|default:"Não consta" }}</td></tr>
+        <tr><th>Conexão</th><td>{{ calibracao.tipo_conexao|default:"Não consta" }}</td><th>Fluido de serviço</th><td>{{ calibracao.fluido_servico|default:"Não consta" }}</td></tr>
+        <tr><th>Equipamento protegido</th><td>{{ calibracao.equipamento_protegido|default:"Não consta" }}</td><th>Pressão de ajuste</th><td>{{ calibracao.pressao_ajuste_declarada|floatformat:"3"|default:"—" }} {{ calibracao.unidade }}</td></tr>
+        <tr><th>PMTA informada</th><td>{{ calibracao.pmta|floatformat:"3"|default:"—" }} {{ calibracao.unidade }}</td><th>Fluido de teste</th><td>{{ calibracao.fluido_teste|default:"—" }}</td></tr>
+    </table>
+
+    <h2>3. Método, condições e intervenção</h2>
+    <table>
+        <tr><th>Método</th><td>{{ calibracao.procedimento_numero|default:"Não informado" }}{% if calibracao.procedimento_revisao %} - Rev. {{ calibracao.procedimento_revisao }}{% endif %}</td></tr>
+        <tr><th>Referências aplicáveis</th><td>{{ calibracao.referencias_normativas|default:"Não informadas" }}</td></tr>
+        <tr><th>Condições ambientais</th><td>Temperatura: {{ calibracao.temperatura_inicial|floatformat:"1"|default:"—" }} a {{ calibracao.temperatura_final|floatformat:"1"|default:"—" }} °C; umidade: {{ calibracao.umidade_inicial|floatformat:"1"|default:"—" }} a {{ calibracao.umidade_final|floatformat:"1"|default:"—" }} %ur.</td></tr>
+        <tr><th>Intervenção</th><td>Com ajuste: {{ calibracao.ensaio_com_ajuste|yesno:"Sim,Não" }}; ensaio a quente: {{ calibracao.ensaio_a_quente|yesno:"Sim,Não" }}; manutenção: {{ calibracao.manutencao_realizada|yesno:"Sim,Não" }}.</td></tr>
+        <tr><th>Exame visual inicial</th><td>{{ calibracao.exame_visual_inicial|default:"Não informado" }}</td></tr>
+        <tr><th>Constatações / condição final</th><td>{{ calibracao.defeitos_constatados|default:"Sem constatações registradas" }}{% if calibracao.condicao_final %}<br>{{ calibracao.condicao_final }}{% endif %}</td></tr>
+    </table>
+
+    <h2>4. Rastreabilidade metrológica</h2>
+    <table class="center small">
+        <thead><tr><th>Identificação</th><th>Descrição</th><th>Certificado / laboratório</th><th>Calibração</th><th>Validade</th><th>Unidade</th><th>Situação</th></tr></thead>
+        <tbody>
+        {% for padrao in padroes %}
+            <tr>
+                <td>{{ padrao.codigo|default:"—" }}</td><td>{{ padrao.descricao|default:"—" }}</td>
+                <td>{{ padrao.numero_certificado|default:"—" }}<br>{{ padrao.laboratorio_emitente|default:"—" }}</td>
+                <td>{{ padrao.data_calibracao|date:"d/m/Y"|default:"—" }}</td><td>{{ padrao.validade|date:"d/m/Y"|default:"—" }}</td><td>{{ padrao.unidade|default:"—" }}</td>
+                <td class="status-{{ padrao.situacao_na_data }}">{{ padrao.get_situacao_na_data_display }}</td>
+            </tr>
+        {% empty %}<tr><td colspan="7">Nenhum padrão registrado.</td></tr>{% endfor %}
+        </tbody>
+    </table>
+
+    <footer>{{ empresa.nome }} | {{ empresa.cnpj }} | {{ empresa.email }} | {{ empresa.telefone }} | {{ empresa.site }}</footer>
+</main>
+
+<main class="sheet">
+    <header>
+        <div class="logo"><img src="{% static 'img/logo_ds.png' %}" alt="DS Científica"></div>
+        <div class="title">
+            <h1>{{ document_title }}</h1>
+            <div>{{ calibracao.numero_certificado }}</div>
+        </div>
+        <div class="control">
+            <strong>{{ empresa.codigo_documento }}</strong><br>
+            Revisão: {{ calibracao.revisao }}<br>
+            Página 2 de 2
+        </div>
+    </header>
+
+    <h2>5. Resultados</h2>
+    <table class="center small">
+        <thead>
+            <tr><th>Condição</th><th>P ref.<br>{{ calibracao.unidade }}</th><th colspan="3">Pressões de atuação</th><th>Média</th><th>Erro</th><th>Correção</th><th>Histerese</th><th>U</th><th>k</th><th>Resultado</th></tr>
+        </thead>
+        <tbody>
+        {% for item in resultados %}
+            <tr>
+                <td>{{ item.ponto.get_condicao_display }}</td><td>{{ item.ponto.pressao_referencia|floatformat:"3"|default:"—" }}</td>
+                <td>{{ item.ponto.atuacao_1|floatformat:"3"|default:"—" }}</td><td>{{ item.ponto.atuacao_2|floatformat:"3"|default:"—" }}</td><td>{{ item.ponto.atuacao_3|floatformat:"3"|default:"—" }}</td>
+                <td>{{ item.ponto.media_atuacao|floatformat:"3"|default:"—" }}</td><td>{{ item.ponto.erro|floatformat:"3"|default:"—" }}</td><td>{{ item.ponto.correcao|floatformat:"3"|default:"—" }}</td>
+                <td>{{ item.ponto.histerese|floatformat:"3"|default:"—" }}</td>
+                <td>{% if item.incerteza %}{{ item.incerteza.incerteza_expandida|floatformat:"3"|default:"—" }}{% else %}—{% endif %}</td>
+                <td>{% if item.incerteza %}{{ item.incerteza.fator_k|floatformat:"2"|default:"—" }}{% else %}—{% endif %}</td>
+                <td class="status-{{ item.ponto.resultado }}">{{ item.ponto.get_resultado_display }}</td>
+            </tr>
+        {% empty %}<tr><td colspan="12">Nenhum ponto/ciclo registrado.</td></tr>{% endfor %}
+        </tbody>
+    </table>
+    <p class="small note">P ref.: pressão de referência. Erro = média de atuação − pressão de referência. Correção = −erro. Histerese = |média de atuação − média de rearme|. A incerteza expandida U é obtida pela combinação quadrática das contribuições-padrão e multiplicação pelo fator de abrangência k.</p>
+
+    <h2>6. Critério, regra de decisão e conclusão</h2>
+    <table>
+        <tr><th>Critério de aceitação</th><td>{{ calibracao.criterio_valor|floatformat:"3"|default:"Não informado" }}{% if calibracao.criterio_tipo == "percentual" %} % da pressão de referência{% else %} {{ calibracao.unidade }}{% endif %}</td></tr>
+        <tr><th>Origem / referência</th><td>{{ calibracao.criterio_origem|default:"Não informada" }}{% if calibracao.criterio_referencia %} - {{ calibracao.criterio_referencia }}{% endif %}</td></tr>
+        <tr><th>Regra de decisão</th><td>{{ calibracao.get_regra_decisao_display }}</td></tr>
+        <tr><th>Como encontrado</th><td>{{ calibracao.get_resultado_inicial_display|default:"Não avaliado" }}</td></tr>
+        <tr><th>Como deixado</th><td>{{ calibracao.get_resultado_final_display|default:"Não avaliado" }}</td></tr>
+        <tr><th>Observações</th><td>{{ calibracao.observacoes_certificado|default:"Sem observações adicionais." }}</td></tr>
+    </table>
+
+    <p class="note">Os resultados referem-se exclusivamente ao dispositivo identificado neste certificado. Ajuste ou manutenção, quando realizados, não apagam a condição “como encontrada”; os dois estados permanecem registrados para assegurar rastreabilidade.</p>
+
+    <div class="signature">
+        <strong>{{ calibracao.responsavel_tecnico.nome|default:"Responsável não informado" }}</strong>
+        <span>{{ calibracao.responsavel_tecnico.cargo|default:"Responsável técnico" }}</span><br>
+        <small>Execução: {{ calibracao.tecnico_executante.nome|default:"não informada" }}</small>
+    </div>
+    <footer>{{ empresa.nome }} | {{ empresa.cnpj }} | {{ empresa.email }} | {{ empresa.telefone }} | {{ empresa.site }}</footer>
+</main>
+</body>
+</html>

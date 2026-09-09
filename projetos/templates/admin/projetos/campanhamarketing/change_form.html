@@ -44,18 +44,57 @@
     .campanha-panel .tabular.inline-related thead th {
         white-space: normal;
     }
+
+    .object-tools .duplicar-campanha-form {
+        display: inline;
+    }
+
+    .object-tools .duplicar-campanha-form button {
+        background: var(--object-tools-bg, #417690);
+        border: 0;
+        border-radius: 15px;
+        color: var(--object-tools-fg, #fff);
+        cursor: pointer;
+        font-size: 11px;
+        letter-spacing: .5px;
+        padding: 3px 12px;
+        text-transform: uppercase;
+    }
 </style>
+{% endblock %}
+
+{% block object-tools-items %}
+    {{ block.super }}
+    {% if change and original %}
+        <li>
+            <form method="post" action="{% url 'admin:projetos_campanhamarketing_duplicar' original.pk %}" class="duplicar-campanha-form">
+                {% csrf_token %}
+                <button type="submit" onclick="return confirm('Duplicar esta campanha como uma nova campanha em criação?');">Duplicar campanha</button>
+            </form>
+        </li>
+    {% endif %}
 {% endblock %}
 
 {% block field_sets %}
     <nav class="campanha-tabs" aria-label="Etapas da campanha">
         <button type="button" class="campanha-tab is-active" data-tab-target="dados-campanha">Campanha</button>
+        <button type="button" class="campanha-tab" data-tab-target="disparo-campanha">Disparo</button>
         <button type="button" class="campanha-tab" data-tab-target="midias-campanha">Midias</button>
     </nav>
 
     <section class="campanha-panel is-active" data-tab-panel="dados-campanha">
         {% for fieldset in adminform %}
-            {% include "admin/includes/fieldset.html" with heading_level=2 prefix="fieldset" id_prefix=0 id_suffix=forloop.counter0 %}
+            {% if "campanha-disparo" not in fieldset.classes %}
+                {% include "admin/includes/fieldset.html" with heading_level=2 prefix="fieldset" id_prefix=0 id_suffix=forloop.counter0 %}
+            {% endif %}
+        {% endfor %}
+    </section>
+
+    <section class="campanha-panel" data-tab-panel="disparo-campanha">
+        {% for fieldset in adminform %}
+            {% if "campanha-disparo" in fieldset.classes %}
+                {% include "admin/includes/fieldset.html" with heading_level=2 prefix="fieldset" id_prefix=1 id_suffix=forloop.counter0 %}
+            {% endif %}
         {% endfor %}
     </section>
 {% endblock %}

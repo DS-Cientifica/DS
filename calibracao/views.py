@@ -1,6 +1,6 @@
 from decimal import Decimal
 
-from django.contrib.auth.decorators import login_required
+from django.contrib.auth.decorators import login_required, permission_required
 from django.http import FileResponse
 from django.shortcuts import get_object_or_404, render
 
@@ -14,18 +14,11 @@ from .models import (
     _formatar_decimal_por_resolucao,
 )
 from .ph_models import CalibracaoPH
+from .balance_models import CalibracaoBalanca
+from .safety_models import CalibracaoDispositivoSegurancaPressao
+from .sphyg_models import CalibracaoEsfigmomanometro
 from .pdf import gerar_pdf_calibracao
-
-EMPRESA_CERTIFICADO = {
-    "nome": "DS Científica",
-    "site": "www.dscientifica.com.br",
-    "telefone": "(11) 98859-9577",
-    "cnpj": "63.669.660/0001-80",
-    "cidade": "Jundiaí / SP",
-    "email": "contato@dscientifica.com.br",
-    "codigo_documento": "CCDS-0001 Rev.00",
-}
-
+from .company import EMPRESA_CERTIFICADO
 
 @login_required
 def pdf_calibracao(request, calibracao_id):
@@ -36,6 +29,35 @@ def pdf_calibracao(request, calibracao_id):
         as_attachment=True,
         filename=f"calibracao_{calibracao.instrumento.codigo}.pdf",
     )
+
+
+@login_required
+@permission_required("calibracao.view_calibracaobalanca", raise_exception=True)
+def certificado_balanca(request, pk):
+    calibracao = get_object_or_404(
+        CalibracaoBalanca.objects.select_related(
+            "instrumento", "cliente", "procedimento_documento",
+            "responsavel_tecnico_ref", "tecnico_executante_ref",
+        ).prefetch_related(
+            "padroes_utilizados",
+            "repetibilidades",
+            "pontos_excentricidade",
+            "pontos_indicacao__padroes_aplicados",
+            "pontos_indicacao__incerteza",
+        ),
+        pk=pk,
+    )
+    pontos = list(calibracao.pontos_indicacao.all())
+    return render(request, "calibracao/balanca_certificado.html", {
+        "empresa": {**EMPRESA_CERTIFICADO, "codigo_documento": "CCDS-BAL Rev.00"},
+        "calibracao": calibracao,
+        "padroes": calibracao.padroes_utilizados.all(),
+        "repetibilidades": calibracao.repetibilidades.all(),
+        "excentricidades": calibracao.pontos_excentricidade.all(),
+        "pontos_encontrado": [ponto for ponto in pontos if ponto.condicao == "encontrado"],
+        "pontos_deixado": [ponto for ponto in pontos if ponto.condicao == "deixado"],
+        "pendencias": calibracao.certificate_pending_items(),
+    })
 
 
 def _formatar_decimal(valor, casas=4):
@@ -427,6 +449,94 @@ def pdf_calibracao_pressao(request, pk):
         "curva_calibracao": curva_calibracao,
     }
     return render(request, "calibracao/pressao_pdf.html", context)
+
+
+@login_required
+@permission_required(
+    "calibracao.view_calibracaodispositivosegurancapressao",
+    raise_exception=True,
+)
+def pdf_calibracao_dispositivo_seguranca(request, pk):
+    calibracao = get_object_or_404(
+        CalibracaoDispositivoSegurancaPressao.objects.select_related(
+            "instrumento", "cliente", "procedimento_documento",
+            "responsavel_tecnico", "tecnico_executante",
+        ).prefetch_related("padroes_utilizados", "pontos", "pontos_incerteza"),
+        pk=pk,
+    )
+    incertezas = {
+        (item.condicao, item.ordem): item for item in calibracao.pontos_incerteza.all()
+    }
+    pontos = sorted(
+        calibracao.pontos.all(),
+        key=lambda ponto: ({"encontrado": 0, "deixado": 1}.get(ponto.condicao, 9), ponto.ordem),
+    )
+    resultados = [
+        {"ponto": ponto, "incerteza": incertezas.get((ponto.condicao, ponto.ordem))}
+        for ponto in pontos
+    ]
+    return render(request, "calibracao/dispositivo_seguranca_pressao_certificado.html", {
+        "empresa": {**EMPRESA_CERTIFICADO, "codigo_documento": "CCDS-SEG Rev.00"},
+        "calibracao": calibracao,
+        "resultados": resultados,
+        "padroes": calibracao.padroes_utilizados.all(),
+        "pendencias": calibracao.pendencias_emissao(),
+        "document_title": calibracao.titulo_certificado,
+    })
+
+
+@login_required
+@permission_required("calibracao.view_calibracaoesfigmomanometro", raise_exception=True)
+def pdf_calibracao_esfigmomanometro(request, pk):
+    calibracao = get_object_or_404(
+        CalibracaoEsfigmomanometro.objects.select_related(
+            "instrumento", "cliente", "procedimento_documento",
+            "responsavel_tecnico", "tecnico_executante",
+        ).prefetch_related(
+            "padroes_utilizados", "pontos", "pontos_incerteza", "ensaios_vazamento"
+        ),
+        pk=pk,
+    )
+    incertezas = {item.ordem: item for item in calibracao.pontos_incerteza.all()}
+    resultados = []
+    for ponto in calibracao.pontos.all():
+        incerteza = incertezas.get(ponto.ordem)
+        resultados.append({
+            "ponto": ponto,
+            "incerteza": incerteza,
+            "referencia_fmt": calibracao.formatar_por_resolucao(ponto.pressao_referencia),
+            "media_crescente_fmt": calibracao.formatar_por_resolucao(ponto.media_crescente),
+            "erro_crescente_fmt": calibracao.formatar_por_resolucao(ponto.erro_crescente),
+            "correcao_crescente_fmt": calibracao.formatar_por_resolucao(ponto.correcao_crescente),
+            "media_decrescente_fmt": calibracao.formatar_por_resolucao(ponto.media_decrescente),
+            "erro_decrescente_fmt": calibracao.formatar_por_resolucao(ponto.erro_decrescente),
+            "correcao_decrescente_fmt": calibracao.formatar_por_resolucao(ponto.correcao_decrescente),
+            "histerese_fmt": calibracao.formatar_por_resolucao(ponto.histerese),
+            "incerteza_fmt": calibracao.formatar_por_resolucao(
+                getattr(incerteza, "incerteza_expandida", None)
+            ),
+        })
+    vazamentos = [
+        {
+            "ensaio": ensaio,
+            "pressao_inicial_fmt": calibracao.formatar_por_resolucao(ensaio.pressao_inicial),
+            "pressao_final_fmt": calibracao.formatar_por_resolucao(ensaio.pressao_final),
+            "taxa_fmt": calibracao.formatar_por_resolucao(ensaio.taxa_vazamento),
+            "limite_fmt": calibracao.formatar_por_resolucao(ensaio.limite_resolvido),
+        }
+        for ensaio in calibracao.ensaios_vazamento.all()
+    ]
+    return render(request, "calibracao/esfigmomanometro_certificado.html", {
+        "empresa": {**EMPRESA_CERTIFICADO, "codigo_documento": "CCDS-ESF Rev.00"},
+        "calibracao": calibracao,
+        "resultados": resultados,
+        "padroes": calibracao.padroes_utilizados.all(),
+        "vazamentos": vazamentos,
+        "resolucao_fmt": calibracao.formatar_por_resolucao(calibracao.resolucao),
+        "tolerancia_fmt": calibracao.formatar_por_resolucao(calibracao.tolerancia_resolvida),
+        "pendencias": calibracao.pendencias_emissao(),
+        "document_title": calibracao.titulo_certificado,
+    })
 
 
 @login_required

@@ -1,0 +1,20 @@
+{% extends "admin/change_form.html" %}
+
+{% block object-tools-items %}
+  {% if original %}
+    {% if original.prospeccao %}
+      <li>
+        <a href="{% url 'admin:comercial_prospeccaocomercial_change' original.prospeccao.pk %}" class="viewsitelink">
+          Abrir Prospecção
+        </a>
+      </li>
+    {% elif original.status != "convertido" %}
+      <li>
+        <a href="{% url 'admin:comercial_prospecto_iniciar_prospeccao' original.pk %}" class="addlink">
+          Transformar em Prospecção
+        </a>
+      </li>
+    {% endif %}
+  {% endif %}
+  {{ block.super }}
+{% endblock %}

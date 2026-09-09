@@ -1,0 +1,108 @@
+{% load static %}
+<!doctype html>
+<html lang="pt-br">
+<head>
+  <meta charset="utf-8">
+  <title>Certificado {{ calibracao.numero_certificado }}</title>
+  <style>
+    @page { size: A4; margin: 13mm; }
+    * { box-sizing: border-box; }
+    body { margin: 0; color: #10233c; font: 10.5px Arial, sans-serif; background: #eef3f8; }
+    .sheet { width: 210mm; min-height: 297mm; margin: 10px auto; padding: 13mm; background: #fff; }
+    header { display: flex; justify-content: space-between; align-items: center; border-bottom: 3px solid #164863; padding-bottom: 10px; }
+    h1 { margin: 0; font-size: 21px; color: #123d54; }
+    h2 { margin: 17px 0 6px; padding: 6px 8px; font-size: 12px; color: white; background: #164863; }
+    h3 { margin: 12px 0 5px; color: #164863; font-size: 11px; }
+    .meta { text-align: right; line-height: 1.45; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 5px 22px; }
+    .label { font-weight: bold; color: #31556a; }
+    table { width: 100%; border-collapse: collapse; margin-top: 5px; }
+    th, td { padding: 5px 4px; border-bottom: 1px solid #ccd8e0; text-align: center; }
+    th { color: #173f55; background: #e8f0f4; font-size: 9.5px; }
+    td.left, th.left { text-align: left; }
+    .warning { margin: 10px 0; padding: 8px; color: #7a2e0b; border: 1px solid #e6a578; background: #fff4e8; }
+    .note { color: #425d70; line-height: 1.45; }
+    .signatures { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; margin-top: 45px; }
+    .signature { padding-top: 7px; border-top: 1px solid #31556a; text-align: center; }
+    footer { margin-top: 24px; padding-top: 8px; border-top: 1px solid #ccd8e0; text-align: center; color: #667d8b; }
+    @media print { body { background: white; } .sheet { margin: 0; padding: 0; width: auto; min-height: auto; } .no-print { display: none; } }
+  </style>
+</head>
+<body>
+<main class="sheet">
+  <header>
+    <div><strong>{{ empresa.nome }}</strong><br>{{ empresa.cidade }}<br>{{ empresa.email }}</div>
+    <div class="meta"><h1>Certificado de Calibração de Balança</h1><strong>{{ calibracao.numero_certificado }}</strong><br>Revisão {{ calibracao.revisao }}</div>
+  </header>
+
+  {% if pendencias %}<div class="warning"><strong>RASCUNHO — emissão bloqueada por pendências:</strong> {{ pendencias|join:", " }}.</div>{% endif %}
+
+  <h2>Identificação</h2>
+  <div class="grid">
+    <div><span class="label">Cliente:</span> {{ calibracao.cliente }}</div>
+    <div><span class="label">Contratante:</span> {{ calibracao.contratante }}</div>
+    <div><span class="label">Instrumento:</span> {{ calibracao.equipamento_calibrado }}</div>
+    <div><span class="label">Identificação:</span> {{ calibracao.numero_identificacao }}</div>
+    <div><span class="label">Marca/modelo:</span> {{ calibracao.marca }} / {{ calibracao.modelo }}</div>
+    <div><span class="label">Série:</span> {{ calibracao.numero_serie|default:"—" }}</div>
+    <div><span class="label">Max / Min:</span> {{ calibracao.capacidade_maxima_formatada }} / {{ calibracao.capacidade_minima_formatada }} {{ calibracao.unidade }}</div>
+    <div><span class="label">d / e:</span> {{ calibracao.divisao_escala_formatada }} / {{ calibracao.intervalo_verificacao_formatado }} {{ calibracao.unidade }}</div>
+    <div><span class="label">Classe declarada:</span> {{ calibracao.classe_exatidao|default:"—" }}</div>
+    <div><span class="label">Data/local:</span> {{ calibracao.data_calibracao|date:"d/m/Y" }} — {{ calibracao.get_local_calibracao_display }}</div>
+  </div>
+
+  <h2>Método e condições ambientais</h2>
+  <p class="note">{{ calibracao.metodo_referencia }}{% if calibracao.procedimento_documento %}; procedimento {{ calibracao.procedimento_documento }}{% endif %}. O erro de indicação é calculado por E = I − mref e a correção por C = −E.</p>
+  <div class="grid">
+    <div><span class="label">Temperatura:</span> {{ calibracao.temperatura_inicial }} a {{ calibracao.temperatura_final }} °C</div>
+    <div><span class="label">Umidade relativa:</span> {{ calibracao.umidade_inicial }} a {{ calibracao.umidade_final }} %</div>
+    <div><span class="label">Pressão atmosférica:</span> {{ calibracao.pressao_atmosferica|default:"—" }} hPa</div>
+    <div><span class="label">Nivelamento verificado:</span> {{ calibracao.nivelamento_verificado|yesno:"Sim,Não" }}</div>
+  </div>
+
+  <h2>Padrões utilizados e rastreabilidade</h2>
+  <table>
+    <thead><tr><th class="left">Identificação</th><th>Valor nominal</th><th>Correção</th><th>U</th><th>k</th><th>Certificado</th><th>Validade</th></tr></thead>
+    <tbody>{% for padrao in padroes %}<tr><td class="left">{{ padrao.codigo }} — {{ padrao.descricao }}</td><td>{{ padrao.valor_nominal_formatado }} {{ calibracao.unidade }}</td><td>{{ padrao.correcao_formatada }} {{ calibracao.unidade }}</td><td>{{ padrao.incerteza_expandida_formatada }} {{ calibracao.unidade }}</td><td>{{ padrao.fator_k }}</td><td>{{ padrao.numero_certificado }}</td><td>{{ padrao.validade|date:"d/m/Y" }}</td></tr>{% empty %}<tr><td colspan="7">Não informado</td></tr>{% endfor %}</tbody>
+  </table>
+
+  {% if pontos_encontrado %}
+  <h2>Resultados — como encontrado</h2>
+  {% include "calibracao/includes/balanca_resultados_tabela.html" with pontos=pontos_encontrado %}
+  {% endif %}
+  {% if pontos_deixado %}
+  <h2>Resultados — como deixado</h2>
+  {% include "calibracao/includes/balanca_resultados_tabela.html" with pontos=pontos_deixado %}
+  {% endif %}
+
+  {% if pontos_encontrado or pontos_deixado %}
+  <h2>Critério de significância das contribuições</h2>
+  <p class="note">O orçamento completo é preservado. Somente parcelas cuja variância acumulada permaneça dentro do limite definido para o ponto são retiradas da incerteza adotada.</p>
+  <table>
+    <thead><tr><th>Condição/ponto</th><th>uc completa</th><th>uc adotada</th><th>Variância desconsiderada</th><th>Parcelas desconsideradas</th></tr></thead>
+    <tbody>
+      {% for ponto in pontos_encontrado %}{% if ponto.incerteza %}<tr><td>Encontrado / {{ ponto.ordem }}</td><td>{{ ponto.incerteza.incerteza_padrao_combinada_completa_formatada }}</td><td>{{ ponto.incerteza.incerteza_padrao_combinada_formatada }}</td><td>{{ ponto.incerteza.percentual_variancia_desconsiderada }}%</td><td class="left">{{ ponto.incerteza.componentes_desconsiderados|default:"Nenhuma" }}</td></tr>{% endif %}{% endfor %}
+      {% for ponto in pontos_deixado %}{% if ponto.incerteza %}<tr><td>Deixado / {{ ponto.ordem }}</td><td>{{ ponto.incerteza.incerteza_padrao_combinada_completa_formatada }}</td><td>{{ ponto.incerteza.incerteza_padrao_combinada_formatada }}</td><td>{{ ponto.incerteza.percentual_variancia_desconsiderada }}%</td><td class="left">{{ ponto.incerteza.componentes_desconsiderados|default:"Nenhuma" }}</td></tr>{% endif %}{% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+
+  <h2>Repetibilidade</h2>
+  <table><thead><tr><th>Condição</th><th>Carga</th><th>n</th><th>Média</th><th>Desvio padrão s</th></tr></thead><tbody>{% for item in repetibilidades %}<tr><td>{{ item.get_condicao_display }}</td><td>{{ item.carga_teste_formatada }} {{ calibracao.unidade }}</td><td>{{ item.numero_repeticoes }}</td><td>{{ item.media_formatada }}</td><td>{{ item.desvio_padrao_formatado }}</td></tr>{% empty %}<tr><td colspan="5">Não informado</td></tr>{% endfor %}</tbody></table>
+
+  <h2>Excentricidade</h2>
+  <table><thead><tr><th>Condição</th><th>Posição</th><th>Carga</th><th>Indicação</th><th>Diferença ao centro</th></tr></thead><tbody>{% for item in excentricidades %}<tr><td>{{ item.get_condicao_display }}</td><td>{{ item.get_posicao_display }}</td><td>{{ item.carga_teste_formatada }}</td><td>{{ item.indicacao_formatada }}</td><td>{{ item.diferenca_centro_formatada }}</td></tr>{% empty %}<tr><td colspan="5">Não informado</td></tr>{% endfor %}</tbody></table>
+
+  <h2>Declaração e observações</h2>
+  {% if calibracao.regra_decisao %}<p><strong>Regra de decisão:</strong> {{ calibracao.get_regra_decisao_display }}. <strong>Critério:</strong> {{ calibracao.criterio_referencia }}.</p>{% else %}<p>Não foi emitida declaração de conformidade. Os resultados metrológicos devem ser avaliados pelo usuário em relação aos requisitos de uso.</p>{% endif %}
+  {% if calibracao.ajuste_efetuado %}<p><strong>Ajuste efetuado mediante autorização:</strong> {{ calibracao.autorizacao_ajuste }}.</p>{% endif %}
+  <p>{{ calibracao.observacoes_certificado }}</p>
+
+  <div class="signatures">
+    <div class="signature">{{ calibracao.tecnico_executante_ref|default:"Técnico executante não informado" }}<br>Técnico executante</div>
+    <div class="signature">{{ calibracao.responsavel_tecnico_ref|default:"Responsável técnico não informado" }}<br>Responsável técnico</div>
+  </div>
+  <footer>{{ empresa.codigo_documento }} — Página destinada à impressão em PDF pelo navegador.</footer>
+</main>
+</body>
+</html>

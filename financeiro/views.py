@@ -1,6 +1,7 @@
 from django.contrib.auth.decorators import login_required
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
+from types import SimpleNamespace
 
 from .helpers import EMPRESA_COMPRADORA, contato_principal_cliente, endereco_cliente, formatar_moeda
 from .models import PedidoCompra, PedidoCompraItem
@@ -8,7 +9,24 @@ from .models import PedidoCompra, PedidoCompraItem
 
 def _pedido_contexto(pedido):
     fornecedor = pedido.fornecedor
-    contato = contato_principal_cliente(fornecedor)
+    if fornecedor:
+        contato = contato_principal_cliente(fornecedor)
+        endereco_fornecedor = endereco_cliente(fornecedor)
+    else:
+        fornecedor = SimpleNamespace(
+            razao_social=pedido.fornecedor_razao_social_snapshot,
+            nome_empresa=pedido.fornecedor_nome_fantasia_snapshot,
+            cnpj=pedido.fornecedor_cnpj_snapshot,
+            ie=pedido.fornecedor_ie_snapshot,
+            telefone=pedido.fornecedor_telefone_snapshot,
+            email=pedido.fornecedor_email_snapshot,
+        )
+        contato = SimpleNamespace(
+            nome=pedido.fornecedor_contato_snapshot,
+            telefone=pedido.fornecedor_telefone_snapshot,
+            email=pedido.fornecedor_email_snapshot,
+        ) if pedido.fornecedor_contato_snapshot else None
+        endereco_fornecedor = pedido.fornecedor_endereco_snapshot
 
     itens = []
     for numero, item in enumerate(pedido.itens.all(), start=1):
@@ -26,7 +44,7 @@ def _pedido_contexto(pedido):
         "pedido": pedido,
         "fornecedor": fornecedor,
         "contato": contato,
-        "endereco_fornecedor": endereco_cliente(fornecedor),
+        "endereco_fornecedor": endereco_fornecedor,
         "itens": itens,
         "subtotal": formatar_moeda(pedido.subtotal),
         "desconto_total": formatar_moeda(pedido.desconto),

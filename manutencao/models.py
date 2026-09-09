@@ -22,6 +22,7 @@ class Manutencao(models.Model):
         CONFORME = "conforme", "Conforme"
         NAO_CONFORME = "nao_conforme", "Não conforme"
         BLOQUEADO = "bloqueado", "Bloqueado"
+        PENDENTE_VALIDACAO = "pendente_validacao", "Validação pendente"
 
     cliente = models.ForeignKey(Cliente, on_delete=models.PROTECT, related_name="manutencoes")
     instrumento = models.ForeignKey(Instrumento, on_delete=models.PROTECT, related_name="manutencoes")

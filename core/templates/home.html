@@ -1,0 +1,171 @@
+{% load static %}
+<!doctype html>
+<html lang="pt-br">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="Central de módulos do AXION">
+    <title>Início | AXION</title>
+    <link rel="stylesheet" href="{% static 'css/home.css' %}?v=20260810-2">
+    <script src="{% static 'js/home.js' %}" defer></script>
+</head>
+<body>
+    <svg class="svg-sprite" aria-hidden="true">
+        <symbol id="icon-home" viewBox="0 0 24 24"><path d="M3 11.5 12 4l9 7.5v8a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></symbol>
+        <symbol id="icon-calendar" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M7 3v4M17 3v4M3 10h18M8 14h3M13 14h3M8 17h3"/></symbol>
+        <symbol id="icon-folder" viewBox="0 0 24 24"><path d="M3 6a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></symbol>
+        <symbol id="icon-quality" viewBox="0 0 24 24"><circle cx="12" cy="10" r="5"/><path d="m8.5 14-2 7 5.5-3 5.5 3-2-7M12 7v6M9 10h6"/></symbol>
+        <symbol id="icon-tools" viewBox="0 0 24 24"><path d="m14 6 4-4a5 5 0 0 1-6 6L4 16a2.8 2.8 0 1 0 4 4l8-8a5 5 0 0 1 6-6l-4 4z"/></symbol>
+        <symbol id="icon-commercial" viewBox="0 0 24 24"><circle cx="8" cy="8" r="3"/><circle cx="17" cy="9" r="2.5"/><path d="M2.5 20v-2a5.5 5.5 0 0 1 11 0v2M14 14.5a4.5 4.5 0 0 1 7.5 3.5v2"/></symbol>
+        <symbol id="icon-users" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3"/><path d="M3 20v-2a6 6 0 0 1 12 0v2M16 5.5a3 3 0 0 1 0 5.5M17 14a5 5 0 0 1 4 5v1"/></symbol>
+        <symbol id="icon-finance" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M15 8.5c-.8-.6-1.8-1-3-1-1.7 0-3 1-3 2.3 0 3.5 6 1.5 6 4.6 0 1.3-1.3 2.3-3 2.3-1.2 0-2.4-.4-3.2-1.1M12 5.5v13"/></symbol>
+        <symbol id="icon-chart" viewBox="0 0 24 24"><path d="M4 20V10h4v10M10 20V4h4v16M16 20v-7h4v7M2 20h20"/></symbol>
+        <symbol id="icon-search" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/></symbol>
+        <symbol id="icon-bell" viewBox="0 0 24 24"><path d="M18 9a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/></symbol>
+        <symbol id="icon-settings" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-2.8 2.8-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6v.2h-4V21a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1L4.2 17l.1-.1a1.7 1.7 0 0 0 .3-1.9A1.7 1.7 0 0 0 3 14H2.8v-4H3a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9L4.2 7 7 4.2l.1.1a1.7 1.7 0 0 0 1.9.3A1.7 1.7 0 0 0 10 3V2.8h4V3a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1L19.8 7l-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.6 1h.2v4H21a1.7 1.7 0 0 0-1.6 1z"/></symbol>
+        <symbol id="icon-grid" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></symbol>
+        <symbol id="icon-arrow" viewBox="0 0 24 24"><path d="M5 12h14M14 7l5 5-5 5"/></symbol>
+        <symbol id="icon-menu" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></symbol>
+    </svg>
+
+    <aside class="sidebar" id="sidebar" aria-label="Navegação principal">
+        <a class="brand" href="{% url 'inicio' %}" aria-label="AXION - Início">
+            <span class="brand-mark">A</span>
+            <span class="brand-name">AXION</span>
+        </a>
+
+        <nav class="sidebar-nav">
+            <a class="nav-link active" href="{% url 'inicio' %}"><svg><use href="#icon-home"></use></svg><span>Início</span></a>
+            <p class="nav-label">Acesso rápido</p>
+            {% if perms.calibracao.view_ordemservico %}<a class="nav-link" href="{% url 'admin:calibracao_ordemservico_changelist' %}"><span class="nav-monogram">OS</span><span>Ordens de serviço</span></a>{% endif %}
+            {% if perms.certificados.view_certificadocalibracao %}<a class="nav-link" href="{% url 'admin:certificados_certificadocalibracao_changelist' %}"><span class="nav-monogram">CE</span><span>Certificados</span></a>{% endif %}
+            {% if perms.calibracao.view_instrumento %}<a class="nav-link" href="{% url 'admin:calibracao_instrumento_changelist' %}"><span class="nav-monogram">IN</span><span>Instrumentos</span></a>{% endif %}
+            {% if perms.calibracao.view_padrao %}<a class="nav-link" href="{% url 'admin:calibracao_padrao_changelist' %}"><span class="nav-monogram">PD</span><span>Padrões</span></a>{% endif %}
+            {% if perms.clientes.view_cliente %}<a class="nav-link" href="{% url 'admin:clientes_cliente_changelist' %}"><span class="nav-monogram">CL</span><span>Clientes</span></a>{% endif %}
+            {% if perms.planejamento.view_planejamentoservico %}<a class="nav-link" href="{% url 'admin:planejamento_planejamentoservico_calendario' %}"><span class="nav-monogram">AG</span><span>Agenda técnica</span></a>{% endif %}
+            <a class="nav-link" href="{% url 'dashboard' %}"><span class="nav-monogram">DB</span><span>Dashboard</span></a>
+            <a class="nav-link" href="{% url 'calendario_integrado' %}"><svg><use href="#icon-calendar"></use></svg><span>Calendário</span></a>
+        </nav>
+
+        <div class="sidebar-footer">
+            <div class="company-signature">
+                <img src="{% static 'img/logo_ds.png' %}" alt="">
+                <span><strong>DS Científica</strong><small>Precisão que gera resultado.</small></span>
+            </div>
+            <button class="collapse-button" type="button" id="sidebar-toggle" aria-controls="sidebar" aria-expanded="true">
+                <span aria-hidden="true">«</span><span>Recolher menu</span>
+            </button>
+        </div>
+    </aside>
+
+    <div class="app-shell">
+        <header class="topbar">
+            <button class="mobile-menu" type="button" id="mobile-menu" aria-controls="sidebar" aria-expanded="false" aria-label="Abrir menu">
+                <svg><use href="#icon-menu"></use></svg>
+            </button>
+            <div class="welcome">
+                <h1>Bem-vindo, {{ nome_usuario }}!</h1>
+                <p>Selecione uma área para acessar os módulos do sistema.</p>
+            </div>
+
+            <div class="topbar-actions">
+                <label class="system-search" for="module-search">
+                    <svg><use href="#icon-search"></use></svg>
+                    <input id="module-search" type="search" aria-label="Buscar módulos e funções" placeholder="Buscar módulos e funções..." autocomplete="off">
+                    <kbd>Ctrl K</kbd>
+                </label>
+
+                {% if request.user.is_superuser %}
+                    <a class="development-link" href="{% url 'admin:index' %}" title="Área de Desenvolvimento" aria-label="Abrir Área de Desenvolvimento">
+                        <svg><use href="#icon-settings"></use></svg>
+                        <span class="sr-only">Área de Desenvolvimento</span>
+                    </a>
+                {% endif %}
+
+                <details class="notification-menu">
+                    <summary aria-label="{{ total_alertas }} alertas">
+                        <svg><use href="#icon-bell"></use></svg>
+                        {% if total_alertas %}<span class="notification-count">{{ total_alertas }}</span>{% endif %}
+                    </summary>
+                    <div class="popover alerts-popover">
+                        <strong>Alertas operacionais</strong>
+                        {% for alerta in alertas %}
+                            <a href="{{ alerta.url }}"><span>{{ alerta.rotulo }}</span><b>{{ alerta.total }}</b></a>
+                        {% empty %}
+                            <p>Nenhuma pendência crítica agora.</p>
+                        {% endfor %}
+                    </div>
+                </details>
+
+                <details class="user-menu">
+                    <summary>
+                        <span class="avatar">{{ inicial_usuario }}</span>
+                        <span class="user-copy"><strong>{{ request.user.get_full_name|default:request.user.username }}</strong><small>{% if request.user.is_superuser %}Administrador{% else %}Usuário do sistema{% endif %}</small></span>
+                        <span aria-hidden="true">⌄</span>
+                    </summary>
+                    <div class="popover user-popover">
+                        <a href="{% url 'admin:password_change' %}">Alterar senha</a>
+                        <form method="post" action="{% url 'admin:logout' %}">{% csrf_token %}<button type="submit">Sair</button></form>
+                    </div>
+                </details>
+            </div>
+        </header>
+
+        <main class="content">
+            <p class="search-status" id="search-status" aria-live="polite"></p>
+
+            {% for grupo in grupos %}
+                <section class="module-group module-group--central" data-group>
+                    {% if grupo.titulo %}
+                        <div class="group-heading {{ grupo.tom }}">
+                            <svg><use href="#icon-grid"></use></svg>
+                            <div><h2>{{ grupo.titulo }}</h2><p>{{ grupo.subtitulo }}</p></div>
+                        </div>
+                    {% endif %}
+                    <div class="module-grid">
+                        {% for modulo in grupo.modulos %}
+                            <article class="module-card" data-module data-search="{{ modulo.titulo }} {{ modulo.descricao }} {% for item in modulo.itens %} {{ item.rotulo }}{% endfor %}">
+                                <a class="module-header" href="{{ modulo.url }}" aria-label="Acessar área {{ modulo.titulo }}">
+                                    <span class="module-icon {{ modulo.tom }}"><svg><use href="#icon-{{ modulo.icone }}"></use></svg></span>
+                                    <div><h3>{{ modulo.titulo }}</h3><p>{{ modulo.descricao }}</p></div>
+                                </a>
+                                <ul>
+                                    {% for item in modulo.itens %}
+                                        <li data-module-item data-search="{{ item.rotulo }}"{% if item.destaque %} class="module-item--featured"{% endif %}>
+                                            <a href="{{ item.url }}">
+                                                <span class="list-dot" aria-hidden="true">{% if item.destaque %}★{% else %}✓{% endif %}</span>
+                                                <span class="module-item-label">{{ item.rotulo }}</span>
+                                                {% if item.destaque %}<span class="module-item-badge">Central</span>{% endif %}
+                                                <svg class="module-item-arrow" aria-hidden="true"><use href="#icon-arrow"></use></svg>
+                                            </a>
+                                        </li>
+                                    {% endfor %}
+                                </ul>
+                                <a class="access-link" href="{{ modulo.url }}">Acessar área <svg><use href="#icon-arrow"></use></svg></a>
+                            </article>
+                        {% endfor %}
+                    </div>
+                </section>
+            {% empty %}
+                <section class="empty-state"><h2>Nenhum módulo disponível</h2><p>Solicite ao administrador as permissões necessárias para o seu perfil.</p></section>
+            {% endfor %}
+
+            <section class="recent-panel">
+                <div class="recent-heading"><h2>Atividades recentes</h2><span>Alterações realizadas por você no sistema</span></div>
+                <div class="recent-list">
+                    {% for atividade in atividades_recentes %}
+                        <a class="recent-item" href="{{ atividade.url }}">
+                            <span class="recent-icon">{{ atividade.tipo|slice:":2"|upper }}</span>
+                            <span><strong>{{ atividade.rotulo|truncatechars:32 }}</strong><small>{{ atividade.tipo }} · {{ atividade.quando|timesince }} atrás</small></span>
+                        </a>
+                    {% empty %}
+                        <p class="recent-empty">As alterações realizadas no painel administrativo aparecerão aqui.</p>
+                    {% endfor %}
+                </div>
+            </section>
+        </main>
+
+        <footer>© {% now "Y" %} AXION · DS Científica. Todos os direitos reservados.</footer>
+    </div>
+</body>
+</html>

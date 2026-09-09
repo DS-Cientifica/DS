@@ -1,0 +1,18 @@
+{% extends "admin/index.html" %}
+
+{% block bodyclass %}{{ block.super }} development-dashboard{% endblock %}
+
+{% block content %}
+    <section class="development-notice" aria-labelledby="development-title">
+        <span class="development-notice__icon" aria-hidden="true">⚙</span>
+        <div>
+            <h2 id="development-title">Bastidores do sistema</h2>
+            <p>
+                Área restrita para configurações, permissões e manutenção estrutural.
+                As atividades operacionais devem ser executadas pela Central AXION.
+            </p>
+        </div>
+        <a href="{% url 'inicio' %}">Voltar para o início</a>
+    </section>
+    {{ block.super }}
+{% endblock %}

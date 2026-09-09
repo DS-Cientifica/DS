@@ -1,12 +1,15 @@
 import uuid
 from decimal import Decimal
+from pathlib import Path
 
 from django.contrib.auth.models import User
+from django.core.exceptions import ValidationError
 from django.db import models
+from django.utils import timezone
 
 from calibracao.models import Padrao
-from clientes.models import Cliente
-from comercial.models import ProdutoServico
+from clientes.models import Cliente, ContatoCliente
+from comercial.models import ProdutoServico, Prospecto
 from qualidade.models import Documento
 
 
@@ -318,6 +321,70 @@ class CampanhaMarketing(models.Model):
         blank=True,
         related_name="campanhas_marketing",
     )
+    enviar_email = models.BooleanField("Enviar por e-mail", default=False)
+    enviar_whatsapp = models.BooleanField("Enviar por WhatsApp", default=False)
+    assunto_email = models.CharField("Assunto do e-mail", max_length=255, blank=True)
+    conteudo_email = models.TextField("Conteúdo do e-mail", blank=True)
+    whatsapp_template_nome = models.CharField(
+        "Nome do modelo aprovado no WhatsApp",
+        max_length=255,
+        blank=True,
+    )
+    whatsapp_template_idioma = models.CharField(
+        "Idioma do modelo do WhatsApp",
+        max_length=20,
+        default="pt_BR",
+        blank=True,
+    )
+    mensagem_whatsapp_referencia = models.TextField(
+        "Texto de referência do WhatsApp",
+        blank=True,
+        help_text="Somente para conferência. O envio usa o modelo previamente aprovado pela Meta.",
+    )
+    destinatarios = models.ManyToManyField(
+        ContatoCliente,
+        blank=True,
+        related_name="campanhas_marketing",
+        verbose_name="Contatos destinatários",
+    )
+    destinatarios_prospectos = models.ManyToManyField(
+        Prospecto,
+        blank=True,
+        related_name="campanhas_marketing",
+        verbose_name="Prospects destinatários por e-mail",
+    )
+    enviar_todos_contatos_autorizados = models.BooleanField(
+        "Enviar a todos os contatos autorizados dos clientes ativos",
+        default=False,
+    )
+    enviar_todos_prospectos_email_autorizados = models.BooleanField(
+        "Enviar a todos os prospects autorizados por e-mail",
+        default=False,
+        help_text=(
+            "Inclui somente prospects ativos com e-mail, base legal, evidência e autorização válidas."
+        ),
+    )
+    agendado_para = models.DateTimeField("Agendado para", null=True, blank=True)
+    aprovada_por = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="campanhas_marketing_aprovadas",
+        verbose_name="Aprovada por",
+    )
+    aprovada_em = models.DateTimeField("Aprovada em", null=True, blank=True)
+    autorizar_disparo = models.BooleanField(
+        "Autorizar e preparar disparo",
+        default=False,
+        help_text="A campanha só entra na fila após aprovação formal e seleção de destinatários.",
+    )
+    disparo_solicitado_em = models.DateTimeField(
+        "Disparo solicitado em",
+        null=True,
+        blank=True,
+        editable=False,
+    )
     observacoes = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -337,6 +404,105 @@ class CampanhaMarketing(models.Model):
         if not self.codigo:
             self.codigo = self.gerar_codigo()
         super().save(*args, **kwargs)
+
+    def clean(self):
+        super().clean()
+        erros = {}
+        if self.autorizar_disparo:
+            if self.status != "aprovada":
+                erros["status"] = "Para autorizar o disparo, a campanha deve estar aprovada."
+            if not (self.enviar_email or self.enviar_whatsapp):
+                erros["autorizar_disparo"] = "Selecione pelo menos um canal de envio."
+            if self.enviar_email and (not self.assunto_email.strip() or not self.conteudo_email.strip()):
+                erros["conteudo_email"] = "Preencha assunto e conteúdo antes de autorizar e-mail."
+            if self.enviar_whatsapp and not self.whatsapp_template_nome.strip():
+                erros["whatsapp_template_nome"] = "Informe o modelo aprovado antes de autorizar WhatsApp."
+        if erros:
+            raise ValidationError(erros)
+
+    def marcar_aprovacao(self, usuario):
+        self.status = "aprovada"
+        self.aprovada_por = usuario
+        self.aprovada_em = timezone.now()
+
+
+class EnvioCampanha(models.Model):
+    CANAL_CHOICES = (("email", "E-mail"), ("whatsapp", "WhatsApp"))
+    STATUS_CHOICES = (
+        ("pendente", "Pendente"),
+        ("processando", "Processando"),
+        ("enviado", "Enviado"),
+        ("entregue", "Entregue"),
+        ("lido", "Lido"),
+        ("falha", "Falha"),
+        ("cancelado", "Cancelado"),
+    )
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    campanha = models.ForeignKey(
+        CampanhaMarketing,
+        on_delete=models.CASCADE,
+        related_name="envios",
+    )
+    contato = models.ForeignKey(
+        ContatoCliente,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="envios_marketing",
+    )
+    prospecto = models.ForeignKey(
+        Prospecto,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="envios_marketing",
+    )
+    cliente = models.ForeignKey(
+        Cliente,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="envios_marketing",
+    )
+    canal = models.CharField(max_length=20, choices=CANAL_CHOICES)
+    destinatario_nome = models.CharField(max_length=255, blank=True)
+    destinatario_endereco = models.CharField(max_length=255)
+    assunto_snapshot = models.CharField(max_length=255, blank=True)
+    conteudo_snapshot = models.TextField(blank=True)
+    template_snapshot = models.CharField(max_length=255, blank=True)
+    idioma_template_snapshot = models.CharField(max_length=20, blank=True)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="pendente")
+    agendado_para = models.DateTimeField()
+    tentativas = models.PositiveIntegerField(default=0)
+    ultima_tentativa_em = models.DateTimeField(null=True, blank=True)
+    enviado_em = models.DateTimeField(null=True, blank=True)
+    identificador_provedor = models.CharField(max_length=255, blank=True)
+    erro = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "Marketing - Envio da campanha"
+        verbose_name_plural = "Marketing - Envios das campanhas"
+        ordering = ("-created_at",)
+        constraints = [
+            models.UniqueConstraint(
+                fields=("campanha", "contato", "canal"),
+                name="projetos_envio_unico_contato_canal",
+            ),
+            models.UniqueConstraint(
+                fields=("campanha", "prospecto", "canal"),
+                name="projetos_envio_unico_prospecto_canal",
+            ),
+            models.UniqueConstraint(
+                fields=("campanha", "canal", "destinatario_endereco"),
+                condition=~models.Q(status="cancelado"),
+                name="projetos_envio_unico_destino_ativo",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.campanha.codigo} - {self.get_canal_display()} - {self.destinatario_endereco}"
 
 
 class MidiaMarketing(models.Model):
@@ -411,3 +577,26 @@ class MidiaMarketing(models.Model):
 
     def __str__(self):
         return self.titulo
+
+    def clean(self):
+        super().clean()
+        if not self.arquivo:
+            return
+        extensao = Path(self.arquivo.name).suffix.lower()
+        extensoes = {
+            "imagem": {".jpg", ".jpeg", ".png", ".gif", ".webp"},
+            "logo": {".jpg", ".jpeg", ".png", ".gif", ".webp", ".svg"},
+            "arte": {".jpg", ".jpeg", ".png", ".gif", ".webp", ".svg"},
+            "video": {".mp4", ".mov", ".webm"},
+            "documento": {".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx"},
+        }
+        permitidas = extensoes.get(self.tipo, set())
+        if extensao not in permitidas:
+            raise ValidationError(
+                {
+                    "arquivo": (
+                        f"O arquivo {extensao or 'sem extensão'} não corresponde ao tipo "
+                        f"{self.get_tipo_display()}. Corrija o tipo ou selecione outro arquivo."
+                    )
+                }
+            )

@@ -8,6 +8,8 @@ from reportlab.lib.enums import TA_CENTER
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import mm
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.platypus import Image, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
 
@@ -25,6 +27,34 @@ SOFT = colors.HexColor("#f4f6f9")
 LINE = colors.HexColor("#b9c1cd")
 LINE_SOFT = colors.HexColor("#d8dde6")
 MUTED = colors.HexColor("#5f6b7a")
+
+
+def _registrar_fontes_unicode():
+    candidatos = (
+        (
+            Path("C:/Windows/Fonts/DejaVuSans.ttf"),
+            Path("C:/Windows/Fonts/DejaVuSans-Bold.ttf"),
+        ),
+        (
+            Path("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"),
+            Path("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"),
+        ),
+    )
+    for regular, bold in candidatos:
+        if regular.exists() and bold.exists():
+            if "AxionSans" not in pdfmetrics.getRegisteredFontNames():
+                pdfmetrics.registerFont(TTFont("AxionSans", str(regular)))
+                pdfmetrics.registerFont(TTFont("AxionSans-Bold", str(bold)))
+                pdfmetrics.registerFontFamily(
+                    "AxionSans",
+                    normal="AxionSans",
+                    bold="AxionSans-Bold",
+                )
+            return "AxionSans", "AxionSans-Bold"
+    return "Helvetica", "Helvetica-Bold"
+
+
+FONT_REGULAR, FONT_BOLD = _registrar_fontes_unicode()
 
 
 def _logo_path():
@@ -88,7 +118,7 @@ def _section_title(titulo, width):
             titulo,
             ParagraphStyle(
                 "section-title",
-                fontName="Helvetica-Bold",
+                fontName=FONT_BOLD,
                 fontSize=10,
                 textColor=colors.white,
                 leading=13,
@@ -124,7 +154,7 @@ def gerar_pdf_manutencao(manutencao):
     styles.add(ParagraphStyle(
         name="DocTitle",
         parent=styles["Normal"],
-        fontName="Helvetica-Bold",
+        fontName=FONT_BOLD,
         fontSize=19,
         leading=18,
         textColor=PRIMARY,
@@ -133,7 +163,7 @@ def gerar_pdf_manutencao(manutencao):
     styles.add(ParagraphStyle(
         name="DocSub",
         parent=styles["Normal"],
-        fontName="Helvetica",
+        fontName=FONT_REGULAR,
         fontSize=10.2,
         leading=12,
         textColor=MUTED,
@@ -142,7 +172,7 @@ def gerar_pdf_manutencao(manutencao):
     styles.add(ParagraphStyle(
         name="Body",
         parent=styles["Normal"],
-        fontName="Helvetica",
+        fontName=FONT_REGULAR,
         fontSize=9.2,
         leading=12,
         textColor=colors.HexColor("#172033"),
@@ -156,7 +186,7 @@ def gerar_pdf_manutencao(manutencao):
     styles.add(ParagraphStyle(
         name="BodyBold",
         parent=styles["Normal"],
-        fontName="Helvetica-Bold",
+        fontName=FONT_BOLD,
         fontSize=9.2,
         leading=12,
         textColor=colors.HexColor("#172033"),
@@ -240,7 +270,7 @@ def gerar_pdf_manutencao(manutencao):
         ("INNERGRID", (0, 0), (-1, -1), 0.4, LINE_SOFT),
         ("BACKGROUND", (0, 0), (-1, 0), PRIMARY),
         ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("FONTNAME", (0, 0), (-1, 0), FONT_BOLD),
         ("FONTSIZE", (0, 0), (-1, 0), 10),
         ("VALIGN", (0, 0), (-1, -1), "TOP"),
         ("LEFTPADDING", (0, 0), (-1, -1), 6),
@@ -266,7 +296,7 @@ def gerar_pdf_manutencao(manutencao):
         ("SPAN", (0, 0), (-1, 0)),
         ("BACKGROUND", (0, 0), (-1, 0), PRIMARY),
         ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("FONTNAME", (0, 0), (-1, 0), FONT_BOLD),
         ("FONTSIZE", (0, 0), (-1, 0), 10),
         ("BACKGROUND", (0, 1), (0, -1), SOFT),
         ("BOX", (0, 0), (-1, -1), 0.8, LINE),
@@ -283,6 +313,8 @@ def gerar_pdf_manutencao(manutencao):
     for titulo, valor in [
         ("4. Diagnóstico", manutencao.diagnostico),
         ("5. Parecer técnico", manutencao.parecer_tecnico),
+        ("6. Critério de aceitação", manutencao.criterio_aceitacao),
+        ("7. Rastreabilidade", manutencao.rastreabilidade),
     ]:
         story.append(_section_title(titulo, 174 * mm))
         story.append(Spacer(1, 1.5 * mm))
@@ -301,7 +333,7 @@ def gerar_pdf_manutencao(manutencao):
         ("SPAN", (0, 0), (-1, 0)),
         ("BACKGROUND", (0, 0), (-1, 0), PRIMARY),
         ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("FONTNAME", (0, 0), (-1, 0), FONT_BOLD),
         ("FONTSIZE", (0, 0), (-1, 0), 10),
         ("BACKGROUND", (0, 1), (0, -1), SOFT),
         ("BOX", (0, 0), (-1, -1), 0.8, LINE),
@@ -349,7 +381,7 @@ def gerar_pdf_manutencao(manutencao):
         ("INNERGRID", (0, 0), (-1, -1), 0.4, LINE_SOFT),
         ("BACKGROUND", (0, 0), (0, -1), SOFT),
         ("TEXTCOLOR", (0, 0), (0, -1), PRIMARY),
-        ("FONTNAME", (0, 0), (0, -1), "Helvetica-Bold"),
+        ("FONTNAME", (0, 0), (0, -1), FONT_BOLD),
         ("VALIGN", (0, 0), (-1, -1), "TOP"),
         ("LEFTPADDING", (0, 0), (-1, -1), 6),
         ("RIGHTPADDING", (0, 0), (-1, -1), 6),
@@ -385,7 +417,7 @@ def gerar_pdf_manutencao(manutencao):
 
     def on_page(canvas, doc_obj):
         canvas.saveState()
-        canvas.setFont("Helvetica", 8)
+        canvas.setFont(FONT_REGULAR, 8)
         canvas.setFillColor(colors.HexColor("#5f6b7a"))
         canvas.drawRightString(doc_obj.pagesize[0] - doc_obj.rightMargin, 10 * mm, f"Página {doc_obj.page}")
         canvas.restoreState()

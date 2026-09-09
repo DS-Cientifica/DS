@@ -1,0 +1,12 @@
+.field-volume_aliquota_planejado .dilution-live-value,
+.field-volume_diluente_aproximado .dilution-live-value {
+    display: inline-block;
+    min-width: 92px;
+    padding: 6px 9px;
+    border: 1px solid #9fc7ee;
+    border-radius: 6px;
+    background: #eaf5ff;
+    color: #074f91;
+    font-weight: 800;
+    white-space: nowrap;
+}

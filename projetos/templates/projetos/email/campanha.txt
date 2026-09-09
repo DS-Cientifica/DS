@@ -1,0 +1,9 @@
+Olá, {{ envio.destinatario_nome|default:"cliente" }}.
+
+{{ envio.conteudo_snapshot }}
+{% if campanha.produto_servico %}
+Produto ou serviço em destaque: {{ campanha.produto_servico.nome }}
+{% endif %}
+
+Atenciosamente,
+Equipe DS Científica

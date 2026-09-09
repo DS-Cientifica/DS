@@ -1,0 +1,66 @@
+{% extends "admin/base_site.html" %}
+{% load i18n %}
+
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+    <a href="{% url 'inicio' %}">Início</a>
+    &rsaquo; <a href="{% url 'admin:app_list' app_label=opts.app_label %}">Comercial</a>
+    &rsaquo; <a href="{% url 'admin:comercial_prospecto_changelist' %}">Base de prospects</a>
+    &rsaquo; Importar Excel
+</div>
+{% endblock %}
+
+{% block content %}
+<div id="content-main">
+    <section class="module aligned">
+        <h1>{{ title }}</h1>
+        <p>Use a validação antes de gravar. Nenhum contato é criado na primeira etapa.</p>
+        <p>
+            Coluna obrigatória: <strong>razao_social</strong>. Para melhorar a prevenção de
+            duplicidades, informe também <strong>cnpj</strong>, <strong>email</strong> ou <strong>telefone</strong>.
+        </p>
+        <p><a class="button" href="{{ download_model_url }}">Baixar modelo .xlsx</a></p>
+
+        {% if preview %}
+            <div class="module" style="margin: 18px 0; padding: 16px;">
+                <h2>Resultado da validação</h2>
+                <p><strong>{{ preview.validos|length }}</strong> contatos válidos e <strong>{{ preview.duplicados }}</strong> duplicados.</p>
+                {% if preview.erros %}
+                    <div class="errornote">
+                        <strong>Corrija os erros antes de importar:</strong>
+                        <ul>{% for erro in preview.erros|slice:":30" %}<li>{{ erro }}</li>{% endfor %}</ul>
+                    </div>
+                {% elif token %}
+                    <form method="post">
+                        {% csrf_token %}
+                        <input type="hidden" name="token" value="{{ token }}">
+                        <input type="hidden" name="confirmar" value="1">
+                        <div class="submit-row">
+                            <input type="submit" class="default" value="Confirmar importação">
+                        </div>
+                    </form>
+                {% endif %}
+                {% if preview.amostra %}
+                    <h3>Amostra dos primeiros registros válidos</h3>
+                    <div class="results"><table>
+                        <thead><tr><th>Linha</th><th>Empresa</th><th>Contato</th><th>E-mail</th><th>Telefone</th></tr></thead>
+                        <tbody>{% for item in preview.amostra %}<tr>
+                            <td>{{ item.linha }}</td><td>{{ item.razao_social }}</td><td>{{ item.contato_nome }}</td>
+                            <td>{{ item.email }}</td><td>{{ item.telefone }}</td>
+                        </tr>{% endfor %}</tbody>
+                    </table></div>
+                {% endif %}
+            </div>
+        {% endif %}
+
+        <form method="post" enctype="multipart/form-data" novalidate>
+            {% csrf_token %}
+            <fieldset class="module aligned">{{ form.as_p }}</fieldset>
+            <div class="submit-row">
+                <input type="submit" name="validar" value="Validar planilha" class="default">
+                <a href="{% url 'admin:comercial_prospecto_changelist' %}" class="button cancel-link">Voltar</a>
+            </div>
+        </form>
+    </section>
+</div>
+{% endblock %}

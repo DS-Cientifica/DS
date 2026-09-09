@@ -1,0 +1,30 @@
+<details class="axion-filter-dropdown axion-filter-dropdown--text" data-filter-title="{{ title }}">
+  <summary>
+    <span class="axion-filter-dropdown__title">{{ title }}</span>
+    <strong class="axion-filter-dropdown__value">{{ spec.value|default:"Todos" }}</strong>
+  </summary>
+  <div class="axion-filter-dropdown__menu">
+    <form method="get" class="axion-text-filter-form">
+      {% for key, value in spec.request.GET.items %}
+        {% if key != spec.parameter_name and key != "p" %}
+          <input type="hidden" name="{{ key }}" value="{{ value }}">
+        {% endif %}
+      {% endfor %}
+      <label for="filter-{{ spec.parameter_name }}">{{ title }}</label>
+      <input
+        id="filter-{{ spec.parameter_name }}"
+        type="search"
+        name="{{ spec.parameter_name }}"
+        value="{{ spec.value|default:'' }}"
+        placeholder="{{ spec.placeholder }}"
+        autocomplete="off"
+      >
+      <div class="axion-text-filter-form__actions">
+        <button type="submit">Aplicar</button>
+        {% if spec.value %}
+          {% for choice in choices %}{% if forloop.first %}<a href="{{ choice.query_string }}">Limpar</a>{% endif %}{% endfor %}
+        {% endif %}
+      </div>
+    </form>
+  </div>
+</details>

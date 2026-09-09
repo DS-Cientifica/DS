@@ -12,6 +12,7 @@ class Documento(models.Model):
         ("norma", "Norma"),
         ("metodo", "Método"),
         ("formulario", "Formulário"),
+        ("treinamento", "Treinamento de cliente"),
         ("outros", "Outros"),
     )
 
@@ -26,10 +27,10 @@ class Documento(models.Model):
     titulo = models.CharField(max_length=200)
     tipo = models.CharField(max_length=30, choices=TIPO_CHOICES)
     revisao = models.CharField(max_length=10, default="REV.01")
-    data_emissao = models.DateField(default=date(2026, 1, 1))
-    data_ultima_revisao = models.DateField(default=date(2026, 1, 1))
+    data_emissao = models.DateField(blank=True, null=True, default=None)
+    data_ultima_revisao = models.DateField(blank=True, null=True, default=None)
     prazo_revisao_meses = models.PositiveIntegerField(default=12)
-    aprovado_por = models.CharField(max_length=100, default="Diego")
+    aprovado_por = models.CharField(max_length=100, blank=True, default="")
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="vigente")
     responsavel = models.CharField(max_length=100, blank=True, default="")
     area = models.CharField(max_length=100, blank=True, default="")
@@ -58,12 +59,8 @@ class Documento(models.Model):
             self.codigo = ""
         if not self.revisao:
             self.revisao = "REV.01"
-        if not self.data_emissao:
-            self.data_emissao = date(2026, 1, 1)
-        if not self.data_ultima_revisao:
+        if not self.data_ultima_revisao and self.data_emissao:
             self.data_ultima_revisao = self.data_emissao
-        if not self.aprovado_por:
-            self.aprovado_por = "Diego"
         if not self.status:
             self.status = "vigente"
 
@@ -80,9 +77,13 @@ class Documento(models.Model):
                 documento=self,
                 revisao=self.revisao,
                 defaults={
-                    "data": self.data_ultima_revisao,
-                    "alteracao": "Documento criado",
-                    "responsavel": self.aprovado_por,
+                    "data": self.data_ultima_revisao or date.today(),
+                    "alteracao": (
+                        "Documento cadastrado em elaboração"
+                        if self.status == "em_elaboracao"
+                        else "Documento criado"
+                    ),
+                    "responsavel": self.aprovado_por or self.responsavel or "DS Científica",
                     "status": self.status,
                 },
             )
@@ -98,16 +99,22 @@ class Documento(models.Model):
 
     @property
     def data_proxima_revisao(self):
+        if not self.data_ultima_revisao:
+            return None
         return self.data_ultima_revisao + relativedelta(months=self.prazo_revisao_meses)
 
     @property
     def vencimento_em_30_dias(self):
+        if not self.data_proxima_revisao:
+            return False
         hoje = date.today()
         limite = hoje + relativedelta(days=30)
         return hoje <= self.data_proxima_revisao <= limite
 
     @property
     def vencido(self):
+        if not self.data_proxima_revisao:
+            return False
         return self.data_proxima_revisao < date.today()
 
 
@@ -131,3 +138,35 @@ class DocumentoRevisao(models.Model):
 
     def __str__(self):
         return f"{self.documento} - {self.revisao}"
+
+
+class DocumentoAnexo(models.Model):
+    TIPO_CHOICES = (
+        ("foto", "Foto"),
+        ("video", "Vídeo"),
+        ("lista_presenca", "Lista de presença"),
+        ("certificado", "Certificado"),
+        ("material", "Material do treinamento"),
+        ("avaliacao", "Avaliação"),
+        ("outro", "Outro documento"),
+    )
+
+    documento = models.ForeignKey(
+        Documento,
+        on_delete=models.CASCADE,
+        related_name="anexos",
+    )
+    titulo = models.CharField(max_length=150, blank=True)
+    tipo = models.CharField(max_length=30, choices=TIPO_CHOICES, default="outro")
+    arquivo = models.FileField(upload_to="documentos/anexos/")
+    data_documento = models.DateField(null=True, blank=True)
+    descricao = models.TextField(blank=True)
+    created_at = models.DateTimeField(default=timezone.now, editable=False)
+
+    class Meta:
+        verbose_name = "Anexo do documento"
+        verbose_name_plural = "Anexos complementares"
+        ordering = ("-created_at", "titulo")
+
+    def __str__(self):
+        return self.titulo or self.arquivo.name

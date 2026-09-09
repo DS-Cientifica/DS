@@ -5,6 +5,10 @@ db.sqlite3
 .env
 media/
 staticfiles/
+private_documents/
+tmp/
+output/
+docs/importacoes/*.json
 *.sql
 .tmp.driveupload/
 AGENTS.md

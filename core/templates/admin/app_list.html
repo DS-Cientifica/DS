@@ -1,0 +1,62 @@
+{% load i18n %}
+
+{% if app_list %}
+  <div class="axion-app-grid{% if app_label %} is-app-index{% endif %}">
+    {% for app in app_list %}
+      <section class="axion-app-panel app-{{ app.app_label }}{% if app.app_url in request.path|urlencode %} current-app{% endif %}">
+        <header class="axion-app-panel__header">
+          <a href="{{ app.app_url }}" class="axion-app-panel__title" title="{% blocktranslate with name=app.name %}Models in the {{ name }} application{% endblocktranslate %}">
+            <span class="axion-app-panel__icon" aria-hidden="true">{{ app.name|slice:":2"|upper }}</span>
+            <span>
+              {% if app_label %}<small>Funções disponíveis</small>{% endif %}
+              <strong>{% if app_label %}Módulos e registros{% else %}{{ app.name }}{% endif %}</strong>
+            </span>
+          </a>
+          <span class="axion-app-panel__count">{{ app.models|length }} {% if app.models|length == 1 %}função{% else %}funções{% endif %}</span>
+        </header>
+
+        <div class="axion-model-grid">
+          {% for model in app.models %}
+            {% if model.group_label %}
+              <h3 class="admin-family-heading">{{ model.group_label }}</h3>
+            {% endif %}
+            {% with model_name=model.object_name|lower %}
+              <article class="axion-model-card model-{{ model_name }}{% if model.admin_url in request.path|urlencode %} current-model{% endif %}">
+                <div class="axion-model-card__main" id="{{ app.app_label }}-{{ model_name }}">
+                  <span class="axion-model-card__monogram" aria-hidden="true">{{ model.name|slice:":2"|upper }}</span>
+                  <span class="axion-model-card__copy">
+                    {% if model.admin_url %}
+                      <a href="{{ model.admin_url }}"{% if model.admin_url in request.path|urlencode %} aria-current="page"{% endif %}>{{ model.name }}</a>
+                    {% else %}
+                      <strong>{{ model.name }}</strong>
+                    {% endif %}
+                    <small>{% if model.view_only %}Consulta de registros{% else %}Cadastro e gerenciamento{% endif %}</small>
+                  </span>
+                </div>
+
+                <div class="axion-model-card__actions">
+                  {% if model.add_url %}
+                    <a href="{{ model.add_url }}" class="axion-action axion-action--add" aria-describedby="{{ app.app_label }}-{{ model_name }}">
+                      <span aria-hidden="true">+</span> {% translate 'Add' %}
+                    </a>
+                  {% endif %}
+                  {% if model.admin_url and show_changelinks %}
+                    <a href="{{ model.admin_url }}" class="axion-action axion-action--open" aria-describedby="{{ app.app_label }}-{{ model_name }}">
+                      {% if model.view_only %}{% translate 'View' %}{% else %}Abrir registros{% endif %}
+                      <span aria-hidden="true">→</span>
+                    </a>
+                  {% endif %}
+                </div>
+              </article>
+            {% endwith %}
+          {% endfor %}
+        </div>
+      </section>
+    {% endfor %}
+  </div>
+{% else %}
+  <div class="axion-admin-empty">
+    <strong>Nenhuma função disponível</strong>
+    <p>{% translate 'You don’t have permission to view or edit anything.' %}</p>
+  </div>
+{% endif %}

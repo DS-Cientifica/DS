@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="pt-BR">
+<body style="margin:0;background:#f3f7fb;font-family:Arial,sans-serif;color:#173657;">
+  <div style="max-width:680px;margin:24px auto;background:#ffffff;border:1px solid #dce6f0;border-radius:12px;overflow:hidden;">
+    <div style="padding:22px 28px;background:#0b4f9c;color:#ffffff;">
+      <div style="font-size:12px;letter-spacing:.08em;text-transform:uppercase;">DS Científica</div>
+      <h1 style="margin:8px 0 0;font-size:24px;">Agendamento de serviço</h1>
+    </div>
+    <div style="padding:28px;">
+      <p>Olá{% if contato_nome %}, <strong>{{ contato_nome }}</strong>{% endif %}.</p>
+      <p>O serviço abaixo foi agendado pela DS Científica:</p>
+      <table style="width:100%;border-collapse:collapse;margin:20px 0;">
+        <tr><td style="padding:9px;border-bottom:1px solid #e5edf5;"><strong>Código</strong></td><td style="padding:9px;border-bottom:1px solid #e5edf5;">{{ planejamento.codigo }}</td></tr>
+        <tr><td style="padding:9px;border-bottom:1px solid #e5edf5;"><strong>Serviço</strong></td><td style="padding:9px;border-bottom:1px solid #e5edf5;">{{ planejamento.titulo }}</td></tr>
+        <tr><td style="padding:9px;border-bottom:1px solid #e5edf5;"><strong>Tipo</strong></td><td style="padding:9px;border-bottom:1px solid #e5edf5;">{{ planejamento.get_tipo_agendamento_display }}</td></tr>
+        <tr><td style="padding:9px;border-bottom:1px solid #e5edf5;"><strong>Data e horário</strong></td><td style="padding:9px;border-bottom:1px solid #e5edf5;">{{ planejamento.intervalo_resumido }}</td></tr>
+        <tr><td style="padding:9px;border-bottom:1px solid #e5edf5;"><strong>Local</strong></td><td style="padding:9px;border-bottom:1px solid #e5edf5;">{{ planejamento.local_servico|default:"A combinar" }}</td></tr>
+        {% if tecnicos %}<tr><td style="padding:9px;border-bottom:1px solid #e5edf5;"><strong>Equipe técnica</strong></td><td style="padding:9px;border-bottom:1px solid #e5edf5;">{{ tecnicos|join:", " }}</td></tr>{% endif %}
+      </table>
+      {% if instrumentos %}<p><strong>Equipamentos previstos:</strong></p><ul>{% for instrumento in instrumentos %}<li>{{ instrumento }}</li>{% endfor %}</ul>{% endif %}
+      {% if planejamento.observacoes %}<p><strong>Observações:</strong><br>{{ planejamento.observacoes|linebreaksbr }}</p>{% endif %}
+      <p style="margin-top:24px;">Em caso de necessidade de alteração, responda a este e-mail ou entre em contato com a DS Científica.</p>
+    </div>
+  </div>
+</body>
+</html>

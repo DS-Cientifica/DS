@@ -1,14 +1,17 @@
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from io import BytesIO
 
 from django import forms
 from django.contrib import admin, messages
+from django.core.exceptions import ObjectDoesNotExist, ValidationError
+from django.core.exceptions import PermissionDenied
 from django.db import connection, transaction
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils.html import format_html, format_html_join
 from django.utils.safestring import mark_safe
+from django.utils import timezone
 from django.urls import path, reverse
 from openpyxl import Workbook, load_workbook
 
@@ -40,6 +43,7 @@ from .models import (
     PressaoIncertezaPonto,
     CalibracaoCondutividade,
 )
+from .admin_mixins import OrdemServicoAutomaticaAdminMixin
 from .ph_models import (
     CalibracaoPH,
     CalibracaoPHPadraoUtilizado,
@@ -47,6 +51,10 @@ from .ph_models import (
     CalibracaoPHIncertezaPonto,
     _join_address,
 )
+from . import balance_admin
+from . import safety_admin
+from . import sphyg_admin
+from . import dilution_admin
 
 
 def _decimal_places_for_form(field):
@@ -182,6 +190,183 @@ class InstrumentoAdminForm(forms.ModelForm):
 
     class Media:
         js = ("js/admin_instrumento_duplicate_alert.js",)
+
+
+class CalibracaoImportForm(forms.Form):
+    arquivo = forms.FileField(
+        label="Planilha Excel",
+        help_text="Envie um arquivo .xlsx seguindo o modelo oficial de importacao de calibracoes.",
+    )
+
+
+CALIBRACAO_IMPORT_TIPOS = {
+    "pressao",
+    "colorimetro",
+    "ph",
+    "turbidez",
+    "condutividade",
+}
+
+CALIBRACAO_IMPORT_REQUIRED_SHEETS = (
+    "CALIBRACOES",
+    "PADROES_UTILIZADOS",
+)
+
+CALIBRACAO_IMPORT_SHEETS = {
+    "CALIBRACOES": (
+        [
+            "tipo_calibracao",
+            "certificado_numero",
+            "cliente_codigo",
+            "cliente_cnpj",
+            "cliente_razao_social",
+            "instrumento_codigo",
+            "instrumento_tag",
+            "instrumento_numero_serie",
+            "data_calibracao",
+            "data_emissao",
+            "local_calibracao",
+            "temperatura_inicial",
+            "temperatura_final",
+            "umidade_inicial",
+            "umidade_final",
+            "resultado_final_status",
+            "observacoes",
+        ],
+        [
+            "colorimetro",
+            "BBOSCH-052629-COR-01",
+            "CL-0002",
+            "",
+            "",
+            "COR-052629",
+            "",
+            "202103B",
+            "2026-07-18",
+            "2026-07-18",
+            "DS Cientifica",
+            22,
+            22,
+            55,
+            55,
+            "aprovado",
+            "Exemplo de preenchimento.",
+        ],
+    ),
+    "PADROES_UTILIZADOS": (
+        [
+            "certificado_numero",
+            "padrao_codigo",
+            "descricao_padrao",
+            "numero_certificado_padrao",
+            "laboratorio_emitente",
+            "data_validade",
+            "resolucao",
+            "incerteza",
+            "fator_k",
+            "graus_liberdade",
+            "unidade",
+            "valor_nominal",
+        ],
+        [
+            "BBOSCH-052629-COR-01",
+            "DSP-024",
+            "Solucao Padrao de Cor",
+            "p.01.0205.042.30.75",
+            "Dinamica Quimica",
+            "2027-06-15",
+            "",
+            1.015,
+            2,
+            "infinito",
+            "Cor",
+            100,
+        ],
+    ),
+    "PRESSAO_LEITURAS": (
+        [
+            "certificado_numero",
+            "ordem",
+            "padrao",
+            "crescente_1",
+            "crescente_2",
+            "decrescente_1",
+            "decrescente_2",
+            "ema",
+            "criterio_tipo",
+            "criterio_valor",
+        ],
+        ["PRE-0001", 1, 1.0, 1.0, 1.0, 1.0, 1.0, 0.05, "numerico", 0.05],
+    ),
+    "COLORIMETRO_LEITURAS": (
+        [
+            "certificado_numero",
+            "ordem",
+            "valor_referencia",
+            "leitura_1",
+            "leitura_2",
+            "leitura_3",
+            "criterio_tipo",
+            "criterio_valor",
+            "criterio_origem",
+        ],
+        ["BBOSCH-052629-COR-01", 1, 100, 99, 99, 99, "porcentagem", 5, "Fabricante"],
+    ),
+    "PH_LEITURAS": (
+        [
+            "certificado_numero",
+            "ordem",
+            "valor_referencia",
+            "leitura_1",
+            "leitura_2",
+            "leitura_3",
+            "temperatura",
+            "criterio_tipo",
+            "criterio_valor",
+        ],
+        ["PH-0001", 1, 7.0, 7.01, 7.00, 7.02, 25, "numerico", 0.05],
+    ),
+    "TURBIDEZ_LEITURAS": (
+        [
+            "certificado_numero",
+            "ordem",
+            "valor_referencia",
+            "leitura_1",
+            "leitura_2",
+            "leitura_3",
+            "criterio_tipo",
+            "criterio_valor",
+        ],
+        ["TUR-0001", 1, 10, 10.1, 10.0, 10.2, "porcentagem", 10],
+    ),
+    "CONDUTIVIDADE_LEITURAS": (
+        [
+            "certificado_numero",
+            "ordem",
+            "valor_referencia",
+            "leitura_1",
+            "leitura_2",
+            "leitura_3",
+            "temperatura",
+            "criterio_tipo",
+            "criterio_valor",
+        ],
+        ["COND-0001", 1, 1413, 1410, 1412, 1411, 25, "porcentagem", 2],
+    ),
+    "INCERTEZAS": (
+        [
+            "certificado_numero",
+            "ordem",
+            "componente",
+            "valor",
+            "distribuicao",
+            "divisor",
+            "graus_liberdade",
+            "observacao",
+        ],
+        ["BBOSCH-052629-COR-01", 1, "Padrao", 1.015, "normal", 2, "infinito", ""],
+    ),
+}
 
 
 class InstrumentoImportForm(forms.Form):
@@ -795,6 +980,7 @@ class TurbidezPadraoInline(admin.TabularInline):
         "tipo",
         "ordem",
         "padrao",
+        "resultado_preparacao",
         "codigo",
         "descricao",
         "numero_certificado",
@@ -808,8 +994,9 @@ class TurbidezPadraoInline(admin.TabularInline):
         "unidade",
         "valor_nominal",
     )
+    readonly_fields = ("resultado_preparacao",)
     verbose_name = "Padrão"
-    verbose_name_plural = "Padrões"
+    verbose_name_plural = "Padrão mãe e padrões secundários preparados por diluição"
 
 
 class TurbidezVerificacaoInline(admin.TabularInline):
@@ -1185,12 +1372,14 @@ class CalibracaoEquipamentoFilter(admin.SimpleListFilter):
 
 
 @admin.register(Calibracao)
-class CalibracaoAdmin(admin.ModelAdmin):
+class CalibracaoAdmin(OrdemServicoAutomaticaAdminMixin, admin.ModelAdmin):
     form = CalibracaoAdminForm
     change_list_template = "admin/calibracao/calibracao/change_list.html"
+    change_form_template = "admin/calibracao/calibracao/change_form.html"
 
     list_display = (
         "instrumento",
+        "ordem_servico",
         "data_calibracao",
         "validade",
         "certificado_numero",
@@ -1216,6 +1405,7 @@ class CalibracaoAdmin(admin.ModelAdmin):
         "instrumento__cliente__cnpj",
         "instrumento__codigo",
         "instrumento__descricao",
+        "ordem_servico",
         "certificado_numero",
     )
 
@@ -1251,16 +1441,90 @@ class CalibracaoAdmin(admin.ModelAdmin):
                 obj.delete()
 
     def changelist_view(self, request, extra_context=None):
+        from certificados.models import CertificadoCalibracao
+        from django.contrib.contenttypes.models import ContentType
+        from django.db.models import Q
+
         extra_context = extra_context or {}
         empresa_atual = request.GET.get("empresa", "")
         equipamentos = Instrumento.objects.filter(calibracoes__isnull=False).distinct()
         if empresa_atual:
             equipamentos = equipamentos.filter(cliente_id=empresa_atual)
 
+        content_type_calibracao_geral = ContentType.objects.get_for_model(
+            Calibracao, for_concrete_model=False
+        )
+        certificados_especializados_qs = (
+            CertificadoCalibracao.objects
+            .select_related("cliente", "instrumento", "documento", "calibracao_content_type")
+            .filter(calibracao_content_type__app_label="calibracao")
+            .exclude(calibracao_content_type=content_type_calibracao_geral)
+        )
+        consulta = request.GET.get("q", "").strip()
+        if consulta:
+            certificados_especializados_qs = certificados_especializados_qs.filter(
+                Q(numero__icontains=consulta)
+                | Q(cliente__codigo__icontains=consulta)
+                | Q(cliente__razao_social__icontains=consulta)
+                | Q(cliente__nome_empresa__icontains=consulta)
+                | Q(instrumento__codigo__icontains=consulta)
+                | Q(instrumento__descricao__icontains=consulta)
+                | Q(instrumento__numero_serie__icontains=consulta)
+                | Q(documento__nome_original__icontains=consulta)
+            )
+        if empresa_atual:
+            certificados_especializados_qs = certificados_especializados_qs.filter(
+                cliente_id=empresa_atual
+            )
+        equipamento_atual = request.GET.get("equipamento", "")
+        if equipamento_atual:
+            certificados_especializados_qs = certificados_especializados_qs.filter(
+                instrumento_id=equipamento_atual
+            )
+        data_atual = request.GET.get("data_calibracao__exact", "")
+        if data_atual:
+            certificados_especializados_qs = certificados_especializados_qs.filter(
+                data_calibracao=data_atual
+            )
+
+        certificados_especializados = []
+        for certificado in certificados_especializados_qs.order_by(
+            "-data_calibracao", "numero"
+        ):
+            try:
+                calibracao_origem = certificado.calibracao
+            except (ValidationError, ValueError):
+                calibracao_origem = None
+            if calibracao_origem is None:
+                continue
+            origem_url = reverse(
+                "admin:"
+                f"{certificado.calibracao_content_type.app_label}_"
+                f"{certificado.calibracao_content_type.model}_change",
+                args=[certificado.calibracao_object_id],
+            )
+            certificados_especializados.append({
+                "certificado": certificado,
+                "tipo": calibracao_origem._meta.verbose_name,
+                "origem_url": origem_url,
+                "cadastro_url": reverse(
+                    "admin:certificados_certificadocalibracao_change",
+                    args=[certificado.pk],
+                ),
+                "download_url": (
+                    reverse("documentos:download", args=[certificado.documento_id])
+                    if certificado.documento_id
+                    and request.user.has_perm("documentos.view_documentoarquivo")
+                    else ""
+                ),
+            })
+
         extra_context.update({
             "filtro_empresa_atual": empresa_atual,
             "filtro_data_calibracao_atual": request.GET.get("data_calibracao__exact", ""),
             "filtro_equipamento_atual": request.GET.get("equipamento", ""),
+            "certificados_especializados": certificados_especializados,
+            "quantidade_certificados_especializados": len(certificados_especializados),
             "empresas_certificado_rapido": (
                 Cliente.objects.filter(instrumentos__calibracoes__isnull=False)
                 .distinct()
@@ -1274,7 +1538,283 @@ class CalibracaoAdmin(admin.ModelAdmin):
             response.context_data["quantidade_filtrada_certificados"] = changelist.result_count
         return response
 
+    def get_urls(self):
+        urls = super().get_urls()
+        custom_urls = [
+            path(
+                "importar-excel/",
+                self.admin_site.admin_view(self.importar_excel_view),
+                name="calibracao_calibracao_importar_excel",
+            ),
+            path(
+                "modelo-importacao/",
+                self.admin_site.admin_view(self.download_modelo_importacao_view),
+                name="calibracao_calibracao_modelo_importacao",
+            ),
+            path(
+                "<int:pk>/publicar-certificado/",
+                self.admin_site.admin_view(self.publicar_certificado_view),
+                name="calibracao_calibracao_publicar_certificado",
+            ),
+        ]
+        return custom_urls + urls
+
+    def changeform_view(self, request, object_id=None, form_url="", extra_context=None):
+        extra_context = extra_context or {}
+        if object_id:
+            from certificados.services import certificado_publico_da_calibracao
+
+            calibracao = self.get_object(request, object_id)
+            if calibracao:
+                extra_context["certificado_publico"] = certificado_publico_da_calibracao(calibracao)
+                extra_context["pode_publicar_certificado"] = (
+                    self.has_change_permission(request, calibracao)
+                    and request.user.has_perm("certificados.add_certificadocalibracao")
+                )
+        return super().changeform_view(request, object_id, form_url, extra_context)
+
+    def publicar_certificado_view(self, request, pk):
+        calibracao = get_object_or_404(Calibracao, pk=pk)
+        if request.method != "POST":
+            self.message_user(request, "A publicação deve ser confirmada pelo botão da calibração.", messages.ERROR)
+            return redirect("admin:calibracao_calibracao_change", pk)
+        if not self.has_change_permission(request, calibracao) or not request.user.has_perm(
+            "certificados.add_certificadocalibracao"
+        ):
+            self.message_user(request, "Você não possui permissão para publicar certificados.", messages.ERROR)
+            return redirect("admin:calibracao_calibracao_change", pk)
+
+        from certificados.services import publicar_calibracao_existente
+
+        try:
+            certificado, criado = publicar_calibracao_existente(calibracao, usuario=request.user)
+        except ValidationError as exc:
+            self.message_user(request, " ".join(exc.messages), messages.ERROR)
+        else:
+            consulta_url = reverse("certificados:consulta", args=[certificado.uuid_publico])
+            if criado:
+                mensagem = format_html(
+                    'Certificado publicado com cópia imutável. <a href="{}" target="_blank">Abrir consulta pública</a>.',
+                    consulta_url,
+                )
+                self.message_user(request, mensagem, messages.SUCCESS)
+            else:
+                mensagem = format_html(
+                    'Esta calibração já possui publicação. <a href="{}" target="_blank">Abrir consulta pública</a>.',
+                    consulta_url,
+                )
+                self.message_user(request, mensagem, messages.INFO)
+        return redirect("admin:calibracao_calibracao_change", pk)
+
+    def importar_excel_view(self, request):
+        if not self.has_add_permission(request):
+            self.message_user(request, "Voce nao tem permissao para importar calibracoes.", messages.ERROR)
+            return redirect("admin:calibracao_calibracao_changelist")
+
+        resultado = None
+        if request.method == "POST":
+            form = CalibracaoImportForm(request.POST, request.FILES)
+            if form.is_valid():
+                try:
+                    resultado = self._validar_planilha_calibracoes(form.cleaned_data["arquivo"])
+                except ValueError as exc:
+                    self.message_user(request, str(exc), messages.ERROR)
+                else:
+                    if resultado["erros"]:
+                        self.message_user(
+                            request,
+                            "Planilha validada com erros. Corrija antes de importar.",
+                            messages.ERROR,
+                        )
+                    else:
+                        self.message_user(
+                            request,
+                            "Planilha validada. Nesta etapa nenhum certificado foi gravado automaticamente.",
+                            messages.WARNING,
+                        )
+        else:
+            form = CalibracaoImportForm()
+
+        context = {
+            **self.admin_site.each_context(request),
+            "title": "Importar calibracoes por Excel",
+            "opts": self.model._meta,
+            "form": form,
+            "resultado": resultado,
+            "download_model_url": reverse("admin:calibracao_calibracao_modelo_importacao"),
+        }
+        return render(request, "admin/calibracao/calibracao/importar_excel.html", context)
+
+    def download_modelo_importacao_view(self, request):
+        workbook = Workbook()
+        workbook.remove(workbook.active)
+        self._criar_aba_instrucoes(workbook)
+
+        for nome_aba, (cabecalhos, exemplo) in CALIBRACAO_IMPORT_SHEETS.items():
+            self._criar_aba_modelo_importacao(workbook, nome_aba, cabecalhos, exemplo)
+
+        buffer = BytesIO()
+        workbook.save(buffer)
+        buffer.seek(0)
+
+        response = HttpResponse(
+            buffer.getvalue(),
+            content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+        response["Content-Disposition"] = 'attachment; filename="modelo_importacao_calibracoes.xlsx"'
+        return response
+
+    def _criar_aba_instrucoes(self, workbook):
+        sheet = workbook.create_sheet("INSTRUCOES")
+        linhas = [
+            ["Modelo oficial para importacao de calibracoes"],
+            [""],
+            ["Fluxo recomendado"],
+            ["1. Preencha uma linha na aba CALIBRACOES para cada certificado."],
+            ["2. Relacione padroes e leituras usando o mesmo certificado_numero."],
+            ["3. Use tipo_calibracao: pressao, colorimetro, ph, turbidez ou condutividade."],
+            ["4. Cliente deve ser identificado por codigo, CNPJ ou razao social."],
+            ["5. Instrumento deve ser identificado por codigo, tag ou numero de serie."],
+            ["6. Datas devem ser preenchidas como data do Excel ou AAAA-MM-DD."],
+            ["7. Esta primeira importacao faz pre-validacao; gravacao automatica sera habilitada por tipo."],
+            [""],
+            ["Risco tecnico"],
+            ["Nao altere nomes de abas ou cabecalhos. Isso compromete rastreabilidade e preenchimento automatico."],
+        ]
+        for linha in linhas:
+            sheet.append(linha)
+        sheet.column_dimensions["A"].width = 110
+
+    def _criar_aba_modelo_importacao(self, workbook, nome_aba, cabecalhos, exemplo):
+        sheet = workbook.create_sheet(nome_aba)
+        sheet.append(cabecalhos)
+        sheet.append(exemplo)
+        sheet.freeze_panes = "A2"
+        for column_cells in sheet.columns:
+            header = str(column_cells[0].value or "")
+            sheet.column_dimensions[column_cells[0].column_letter].width = max(14, min(34, len(header) + 4))
+
+    def _validar_planilha_calibracoes(self, arquivo):
+        nome_arquivo = (getattr(arquivo, "name", "") or "").lower()
+        if not nome_arquivo.endswith(".xlsx"):
+            raise ValueError("Envie um arquivo .xlsx. Arquivos .xls, .csv ou pdf nao sao aceitos neste importador.")
+
+        workbook = load_workbook(arquivo, data_only=True)
+        abas_faltantes = [
+            nome for nome in CALIBRACAO_IMPORT_REQUIRED_SHEETS
+            if nome not in workbook.sheetnames
+        ]
+        if abas_faltantes:
+            raise ValueError("Planilha incompleta. Abas obrigatorias ausentes: " + ", ".join(abas_faltantes))
+
+        resultado = {
+            "arquivo": getattr(arquivo, "name", ""),
+            "abas": [],
+            "erros": [],
+            "avisos": [],
+            "total_calibracoes": 0,
+            "tipos": {},
+        }
+
+        for nome_aba, (cabecalhos_esperados, _exemplo) in CALIBRACAO_IMPORT_SHEETS.items():
+            if nome_aba not in workbook.sheetnames:
+                resultado["avisos"].append(f"Aba opcional ausente: {nome_aba}.")
+                continue
+            sheet = workbook[nome_aba]
+            cabecalhos = self._cabecalhos_planilha(sheet)
+            ausentes = [
+                cabecalho for cabecalho in cabecalhos_esperados
+                if cabecalho not in cabecalhos
+            ]
+            linhas_preenchidas = self._contar_linhas_preenchidas(sheet)
+            resultado["abas"].append({
+                "nome": nome_aba,
+                "linhas": linhas_preenchidas,
+                "ausentes": ausentes,
+            })
+            if ausentes and nome_aba in CALIBRACAO_IMPORT_REQUIRED_SHEETS:
+                resultado["erros"].append(
+                    f"Aba {nome_aba}: cabecalhos obrigatorios ausentes: {', '.join(ausentes)}."
+                )
+
+        self._validar_aba_calibracoes(workbook["CALIBRACOES"], resultado)
+        return resultado
+
+    def _cabecalhos_planilha(self, sheet):
+        primeira_linha = next(sheet.iter_rows(min_row=1, max_row=1, values_only=True), [])
+        return [
+            InstrumentoAdmin._normalizar_cabecalho_excel(valor)
+            for valor in primeira_linha
+            if valor not in (None, "")
+        ]
+
+    def _contar_linhas_preenchidas(self, sheet):
+        total = 0
+        for row in sheet.iter_rows(min_row=2, values_only=True):
+            if not self._linha_planilha_vazia(row):
+                total += 1
+        return total
+
+    def _linha_planilha_vazia(self, row):
+        return not any(valor not in (None, "") for valor in row)
+
+    def _validar_aba_calibracoes(self, sheet, resultado):
+        cabecalhos = self._cabecalhos_planilha(sheet)
+        indices = {cabecalho: pos for pos, cabecalho in enumerate(cabecalhos)}
+        certificados = set()
+
+        for numero_linha, row in enumerate(sheet.iter_rows(min_row=2, values_only=True), start=2):
+            if self._linha_planilha_vazia(row):
+                continue
+
+            def valor(campo):
+                indice = indices.get(campo)
+                if indice is None or indice >= len(row):
+                    return ""
+                return InstrumentoAdmin._texto_excel(row[indice])
+
+            tipo = valor("tipo_calibracao").lower()
+            certificado_numero = valor("certificado_numero")
+            resultado["total_calibracoes"] += 1
+
+            if tipo:
+                resultado["tipos"][tipo] = resultado["tipos"].get(tipo, 0) + 1
+            if tipo not in CALIBRACAO_IMPORT_TIPOS:
+                resultado["erros"].append(
+                    f"CALIBRACOES linha {numero_linha}: tipo_calibracao invalido ou vazio ({tipo or '-'})."
+                )
+
+            if not certificado_numero:
+                resultado["erros"].append(f"CALIBRACOES linha {numero_linha}: certificado_numero e obrigatorio.")
+            elif certificado_numero in certificados:
+                resultado["erros"].append(
+                    f"CALIBRACOES linha {numero_linha}: certificado_numero duplicado na planilha ({certificado_numero})."
+                )
+            else:
+                certificados.add(certificado_numero)
+
+            if not (valor("cliente_codigo") or valor("cliente_cnpj") or valor("cliente_razao_social")):
+                resultado["erros"].append(
+                    f"CALIBRACOES linha {numero_linha}: informe cliente_codigo, cliente_cnpj ou cliente_razao_social."
+                )
+
+            if not (valor("instrumento_codigo") or valor("instrumento_tag") or valor("instrumento_numero_serie")):
+                resultado["erros"].append(
+                    f"CALIBRACOES linha {numero_linha}: informe instrumento_codigo, instrumento_tag ou instrumento_numero_serie."
+                )
+
+            data_calibracao_indice = indices.get("data_calibracao")
+            data_calibracao = row[data_calibracao_indice] if data_calibracao_indice is not None and data_calibracao_indice < len(row) else None
+            if data_calibracao in (None, ""):
+                resultado["erros"].append(f"CALIBRACOES linha {numero_linha}: data_calibracao e obrigatoria.")
+            else:
+                try:
+                    InstrumentoAdmin._normalizar_data_excel(data_calibracao)
+                except ValueError as exc:
+                    resultado["erros"].append(f"CALIBRACOES linha {numero_linha}: {exc}")
+
     readonly_fields = (
+        "certificado_numero",
         "validade",
         "created_at",
         "marca",
@@ -1410,7 +1950,7 @@ class CalibracaoAdmin(admin.ModelAdmin):
 
 
 @admin.register(CalibracaoTurbidez)
-class CalibracaoTurbidezAdmin(admin.ModelAdmin):
+class CalibracaoTurbidezAdmin(OrdemServicoAutomaticaAdminMixin, admin.ModelAdmin):
     form = CalibracaoTurbidezAdminForm
 
     change_form_template = "admin/calibracao/calibracaoturbidez/change_form.html"
@@ -1442,7 +1982,12 @@ class CalibracaoTurbidezAdmin(admin.ModelAdmin):
         "tecnico_executante_ref",
     )
 
-    readonly_fields = ("numero_certificado", "procedimento_numero", "procedimento_revisao")
+    readonly_fields = (
+        "numero_certificado",
+        "procedimento_numero",
+        "procedimento_revisao",
+        "revisao_de",
+    )
 
     fieldsets = (
         ("Planilha - Informações Gerais", {
@@ -1452,6 +1997,8 @@ class CalibracaoTurbidezAdmin(admin.ModelAdmin):
                 "data_calibracao",
                 "data_emissao",
                 "revisao",
+                "revisao_de",
+                "motivo_revisao",
                 "instrumento",
                 "cliente",
                 "contratante",
@@ -1490,6 +2037,7 @@ class CalibracaoTurbidezAdmin(admin.ModelAdmin):
                 "umidade_inicial",
                 "umidade_final",
                 "ajuste_efetuado",
+                "preparacao_padrao",
             )
         }),
         ("Certificado - Responsáveis e Observações", {
@@ -1502,7 +2050,6 @@ class CalibracaoTurbidezAdmin(admin.ModelAdmin):
             )
         }),
     )
-
     inlines = [
         TurbidezPadraoInline,
         TurbidezVerificacaoInline,
@@ -1511,7 +2058,12 @@ class CalibracaoTurbidezAdmin(admin.ModelAdmin):
     ]
 
     class Media:
-        js = ("js/calibracao_turbidez.js",)
+        css = {"all": ("css/padrao_autofill.css",)}
+        js = (
+            "js/calibracao_turbidez.js",
+            "js/calibracao_ordem_servico.js",
+            "js/padrao_autofill.js",
+        )
 
     def get_form(self, request, obj=None, change=False, **kwargs):
         form = super().get_form(request, obj=obj, change=change, **kwargs)
@@ -1544,12 +2096,24 @@ class CalibracaoTurbidezAdmin(admin.ModelAdmin):
             ).order_by("codigo", "titulo")
         if db_field.name == "padrao_referencia":
             kwargs["queryset"] = Padrao.objects.order_by("codigo", "descricao")
+        if db_field.name == "preparacao_padrao":
+            from .dilution_models import PreparacaoPadrao
+
+            kwargs["queryset"] = PreparacaoPadrao.objects.filter(
+                aplicacao="turbidez",
+            ).order_by("-data_preparacao", "-pk")
         return super().formfield_for_foreignkey(db_field, request, **kwargs)
 
     def save_related(self, request, form, formsets, change):
         super().save_related(request, form, formsets, change)
         calibracao = form.instance
-        calibracao.sincronizar_padrao_referencia_utilizado()
+        importados = calibracao.importar_padroes_da_preparacao()
+        if importados:
+            self.message_user(
+                request,
+                f"{importados} padrão(ões) importado(s) automaticamente da preparação.",
+                messages.SUCCESS,
+            )
         calibracao.sincronizar_pontos_incerteza()
 
     def get_urls(self):
@@ -1623,7 +2187,7 @@ class CalibracaoTurbidezAdmin(admin.ModelAdmin):
 
 
 @admin.register(CalibracaoColorimetro)
-class CalibracaoColorimetroAdmin(admin.ModelAdmin):
+class CalibracaoColorimetroAdmin(OrdemServicoAutomaticaAdminMixin, admin.ModelAdmin):
     form = CalibracaoColorimetroAdminForm
 
     change_form_template = "admin/calibracao/calibracaocolorimetro/change_form.html"
@@ -1720,7 +2284,12 @@ class CalibracaoColorimetroAdmin(admin.ModelAdmin):
     ]
 
     class Media:
-        js = ("js/calibracao_colorimetro.js",)
+        css = {"all": ("css/padrao_autofill.css",)}
+        js = (
+            "js/calibracao_colorimetro.js",
+            "js/calibracao_ordem_servico.js",
+            "js/padrao_autofill.js",
+        )
 
     def get_form(self, request, obj=None, change=False, **kwargs):
         form = super().get_form(request, obj=obj, change=change, **kwargs)
@@ -1874,6 +2443,7 @@ class OrdemServicoAdmin(admin.ModelAdmin):
         "status",
         "data_abertura",
         "data_conclusao",
+        "conta_receber_gerada",
         "total_equipamentos",
         "ver_anexo",
     )
@@ -1902,19 +2472,22 @@ class OrdemServicoAdmin(admin.ModelAdmin):
     filter_horizontal = ("instrumentos",)
 
     readonly_fields = (
+        "numero_automatico",
         "data_abertura",
+        "conta_receber_gerada",
         "ver_anexo",
     )
 
     fieldsets = (
         ("Dados da Ordem de Serviço", {
             "fields": (
-                "numero",
+                "numero_automatico",
                 "proposta",
                 "cliente",
                 "status",
                 "data_abertura",
                 "data_conclusao",
+                "conta_receber_gerada",
             )
         }),
         ("Equipamentos", {
@@ -1931,6 +2504,16 @@ class OrdemServicoAdmin(admin.ModelAdmin):
         }),
     )
 
+    @admin.display(description="Número")
+    def numero_automatico(self, obj):
+        if obj and obj.numero:
+            return obj.numero
+        ano = timezone.localdate().year % 100
+        return (
+            "Gerado automaticamente ao salvar. A sequência é contínua e "
+            f"somente o ano final é atualizado (ex.: 0001/{ano:02d})."
+        )
+
     def ver_anexo(self, obj):
         if obj.anexo:
             return format_html(
@@ -1946,6 +2529,20 @@ class OrdemServicoAdmin(admin.ModelAdmin):
 
     total_equipamentos.short_description = "Equipamentos"
 
+    @admin.display(description="Conta a receber")
+    def conta_receber_gerada(self, obj):
+        if not obj or not obj.pk:
+            return "Gerada conforme o faturamento da proposta após concluir a OS."
+        try:
+            conta = obj.conta_receber
+        except ObjectDoesNotExist:
+            return "—"
+        return format_html(
+            "<a href='{}'>R$ {}</a>",
+            reverse("admin:financeiro_contareceber_change", args=[conta.pk]),
+            conta.valor,
+        )
+
 
 # =========================
 # PADRÃO
@@ -1954,14 +2551,15 @@ class OrdemServicoAdmin(admin.ModelAdmin):
 @admin.register(Padrao)
 class PadraoAdmin(admin.ModelAdmin):
 
+    readonly_fields = ("codigo",)
+
     list_display = (
         "codigo",
-        "descricao",
+        "descricao_objetiva",
         "numero_certificado",
-        "laboratorio_emitente",
         "data_calibracao",
-        "status",
         "vencimento",
+        "situacao_operacional",
         "ver_certificado",
     )
 
@@ -1974,9 +2572,12 @@ class PadraoAdmin(admin.ModelAdmin):
 
     list_filter = (
         "status",
+        "vencimento",
+        "laboratorio_emitente",
     )
 
     ordering = ("codigo",)
+    list_per_page = 50
 
     fieldsets = (
         ("Identificação", {
@@ -2003,19 +2604,79 @@ class PadraoAdmin(admin.ModelAdmin):
         }),
     )
 
+    def get_queryset(self, request):
+        """Mantém resultados de diluição fora do cadastro geral de padrões."""
+        return super().get_queryset(request).filter(
+            resultado_preparacao_gerador__isnull=True,
+            preparacao_geradora__isnull=True,
+        )
+
+    def get_urls(self):
+        return [
+            path(
+                "<uuid:object_id>/dados/",
+                self.admin_site.admin_view(self.dados_metrologicos_view),
+                name="calibracao_padrao_dados_metrologicos",
+            ),
+        ] + super().get_urls()
+
+    def dados_metrologicos_view(self, request, object_id):
+        if not self.has_view_permission(request):
+            raise PermissionDenied
+        padrao = get_object_or_404(Padrao, pk=object_id)
+        return JsonResponse(
+            {
+                "id": str(padrao.pk),
+                "codigo": padrao.codigo,
+                "descricao": padrao.descricao,
+                "numero_certificado": padrao.numero_certificado,
+                "laboratorio_emitente": padrao.laboratorio_emitente,
+                "data_calibracao": padrao.data_calibracao.isoformat() if padrao.data_calibracao else "",
+                "validade": padrao.vencimento.isoformat(),
+                "resolucao": str(padrao.resolucao) if padrao.resolucao is not None else "",
+                "incerteza": str(padrao.incerteza) if padrao.incerteza is not None else "",
+                "fator_k": str(padrao.fator_k) if padrao.fator_k is not None else "",
+                "graus_liberdade": str(padrao.graus_liberdade) if padrao.graus_liberdade is not None else "",
+                "unidade": padrao.unidade,
+                "valor_nominal": str(padrao.valor_nominal) if padrao.valor_nominal is not None else "",
+                "status": padrao.status,
+                "certificado_url": padrao.certificado.url if padrao.certificado else "",
+            }
+        )
+
     def ver_certificado(self, obj):
         if obj.certificado:
             return format_html(
-                "<a href='{}' target='_blank'>Abrir</a>",
+                "<a href='{}' target='_blank'>Abrir PDF</a>",
                 obj.certificado.url
             )
         return "—"
 
-    ver_certificado.short_description = "Certificado"
+    ver_certificado.short_description = "PDF"
+
+    @admin.display(description="Padrão", ordering="descricao")
+    def descricao_objetiva(self, obj):
+        descricao = obj.descricao or "—"
+        resumo = descricao if len(descricao) <= 70 else f"{descricao[:67]}..."
+        return format_html('<span title="{}">{}</span>', descricao, resumo)
+
+    @admin.display(description="Situação", ordering="vencimento")
+    def situacao_operacional(self, obj):
+        if obj.status == "suspenso":
+            rotulo, classe = "Suspenso", "is-suspended"
+        elif obj.status == "vencido" or obj.vencimento < date.today():
+            rotulo, classe = "Vencido", "is-expired"
+        else:
+            rotulo, classe = "Válido", "is-valid"
+        return format_html(
+            '<span class="metrology-status {}">{}</span>',
+            classe,
+            rotulo,
+        )
 
 
 @admin.register(CalibracaoPressao)
-class CalibracaoPressaoAdmin(admin.ModelAdmin):
+class CalibracaoPressaoAdmin(OrdemServicoAutomaticaAdminMixin, admin.ModelAdmin):
     form = CalibracaoPressaoAdminForm
     change_form_template = "admin/calibracao/calibracaopressao/change_form.html"
 
@@ -2107,7 +2768,12 @@ class CalibracaoPressaoAdmin(admin.ModelAdmin):
     inlines = [PressaoPadraoInline, PressaoCalibracaoInline, PressaoIncertezaInline]
 
     class Media:
-        js = ("js/calibracao_pressao.js",)
+        css = {"all": ("css/padrao_autofill.css",)}
+        js = (
+            "js/calibracao_pressao.js",
+            "js/calibracao_ordem_servico.js",
+            "js/padrao_autofill.js",
+        )
 
     def get_form(self, request, obj=None, change=False, **kwargs):
         form = super().get_form(request, obj=obj, change=change, **kwargs)
@@ -2330,7 +2996,7 @@ class PHIncertezaInline(admin.TabularInline):
 
 
 @admin.register(CalibracaoPH)
-class CalibracaoPHAdmin(admin.ModelAdmin):
+class CalibracaoPHAdmin(OrdemServicoAutomaticaAdminMixin, admin.ModelAdmin):
     form = CalibracaoPHAdminForm
 
     change_form_template = "admin/calibracao/calibracaoph/change_form.html"
@@ -2441,7 +3107,12 @@ class CalibracaoPHAdmin(admin.ModelAdmin):
     ]
 
     class Media:
-        js = ("js/calibracao_ph.js",)
+        css = {"all": ("css/padrao_autofill.css",)}
+        js = (
+            "js/calibracao_ph.js",
+            "js/calibracao_ordem_servico.js",
+            "js/padrao_autofill.js",
+        )
 
     def get_form(self, request, obj=None, change=False, **kwargs):
         form = super().get_form(request, obj=obj, change=change, **kwargs)
@@ -2539,7 +3210,7 @@ class CalibracaoPHAdmin(admin.ModelAdmin):
 
 
 @admin.register(CalibracaoCondutividade)
-class CalibracaoCondutividadeAdmin(admin.ModelAdmin):
+class CalibracaoCondutividadeAdmin(OrdemServicoAutomaticaAdminMixin, admin.ModelAdmin):
     form = CalibracaoCondutividadeAdminForm
     list_display = (
         "numero_certificado",
@@ -2549,6 +3220,9 @@ class CalibracaoCondutividadeAdmin(admin.ModelAdmin):
         "resultado_final",
         "status",
     )
+
+
+# Registros especializados da calibração de balanças.
     list_filter = ("status", "resultado_final", "local_calibracao")
     search_fields = (
         "numero_certificado",

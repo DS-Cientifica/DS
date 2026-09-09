@@ -569,7 +569,8 @@ def dashboard(request):
             "projetos": Projeto.objects.count(),
             "campanhas": CampanhaMarketing.objects.count(),
         },
-        "admin_url": reverse("admin:index"),
+        "central_url": reverse("inicio"),
+        "development_url": reverse("admin:index") if request.user.is_superuser else "",
         "refresh_url": f"{reverse('dashboard')}?periodo={periodo_atual}",
     }
 

@@ -1,6 +1,15 @@
 {% extends "admin/change_form.html" %}
 {% load i18n admin_urls %}
 
+{% block extrahead %}
+    {{ block.super }}
+    <script>
+        window.propostaContatosConfig = {
+            url: "{{ contatos_cliente_url|escapejs }}"
+        };
+    </script>
+{% endblock %}
+
 {% block object-tools-items %}
     {{ block.super }}
     {% if original %}

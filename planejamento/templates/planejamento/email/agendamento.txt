@@ -1,0 +1,17 @@
+Olá{% if contato_nome %}, {{ contato_nome }}{% endif %}.
+
+O serviço abaixo foi agendado pela DS Científica:
+
+Código: {{ planejamento.codigo }}
+Serviço: {{ planejamento.titulo }}
+Tipo: {{ planejamento.get_tipo_agendamento_display }}
+Data e horário: {{ planejamento.intervalo_resumido }}
+Local: {{ planejamento.local_servico|default:"A combinar" }}
+{% if tecnicos %}Equipe técnica: {{ tecnicos|join:", " }}
+{% endif %}{% if instrumentos %}Equipamentos previstos:{% for instrumento in instrumentos %} {{ instrumento }}{% if not forloop.last %};{% endif %}{% endfor %}
+{% endif %}{% if planejamento.observacoes %}Observações: {{ planejamento.observacoes }}
+{% endif %}
+Em caso de necessidade de alteração, responda a este e-mail ou entre em contato com a DS Científica.
+
+Atenciosamente,
+DS Científica

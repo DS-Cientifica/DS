@@ -3,10 +3,12 @@ import uuid
 from datetime import datetime
 from decimal import Decimal, ROUND_HALF_UP
 
+from dateutil.relativedelta import relativedelta
+
 from django.contrib.auth.models import User
 from django.core.exceptions import ValidationError
-from django.db import models
-from django.db.models import Sum
+from django.db import models, transaction
+from django.db.models import Q, Sum
 from django.utils import timezone
 
 from clientes.models import Cliente
@@ -107,6 +109,12 @@ class CategoriaFinanceira(models.Model):
 
 class ContaPagar(models.Model):
 
+    TIPO_RECORRENCIA_CHOICES = (
+        ("unica", "Conta única"),
+        ("parcelada", "Conta parcelada"),
+        ("fixa_mensal", "Conta fixa mensal"),
+    )
+
 
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -147,6 +155,38 @@ class ContaPagar(models.Model):
     valor = models.DecimalField(max_digits=12, decimal_places=2)
 
     vencimento = models.DateField()
+
+    tipo_recorrencia = models.CharField(
+        "Tipo de lançamento",
+        max_length=20,
+        choices=TIPO_RECORRENCIA_CHOICES,
+        default="unica",
+    )
+    serie_recorrencia = models.UUIDField(
+        "Série de recorrência",
+        null=True,
+        blank=True,
+        editable=False,
+        db_index=True,
+    )
+    numero_ocorrencia = models.PositiveSmallIntegerField(
+        "Número da parcela/mês",
+        default=1,
+        editable=False,
+    )
+    total_ocorrencias = models.PositiveSmallIntegerField(
+        "Parcelas / meses a gerar",
+        default=1,
+        help_text="Para conta parcelada, informe as parcelas. Para conta fixa, informe os meses a projetar.",
+    )
+    valor_total_serie = models.DecimalField(
+        "Valor total projetado",
+        max_digits=14,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        editable=False,
+    )
 
     data_pagamento = models.DateField(null=True, blank=True)
 
@@ -204,9 +244,117 @@ class ContaPagar(models.Model):
 
         ordering = ("vencimento",)
 
+        constraints = (
+            models.CheckConstraint(
+                condition=Q(total_ocorrencias__gte=1),
+                name="contapagar_total_ocorrencias_gte_1",
+            ),
+            models.CheckConstraint(
+                condition=Q(numero_ocorrencia__gte=1) & Q(numero_ocorrencia__lte=models.F("total_ocorrencias")),
+                name="contapagar_numero_dentro_serie",
+            ),
+            models.UniqueConstraint(
+                fields=("serie_recorrencia", "numero_ocorrencia"),
+                condition=Q(serie_recorrencia__isnull=False),
+                name="contapagar_serie_numero_unicos",
+            ),
+        )
+
+    def clean(self):
+        super().clean()
+        if self.tipo_recorrencia == "unica":
+            self.total_ocorrencias = 1
+            return
+
+        if not 2 <= int(self.total_ocorrencias or 0) <= 120:
+            raise ValidationError(
+                {"total_ocorrencias": "Informe entre 2 e 120 parcelas ou meses."}
+            )
+        if self.pedido_compra_id:
+            raise ValidationError(
+                {"pedido_compra": "A conta gerada por pedido de compra deve permanecer como conta única."}
+            )
+        if self.data_pagamento:
+            raise ValidationError(
+                {"data_pagamento": "Crie a série como pendente e registre cada pagamento separadamente."}
+            )
+        if self.comprovante:
+            raise ValidationError(
+                {"comprovante": "Anexe o comprovante separadamente em cada parcela ou mensalidade."}
+            )
+        if self.status != "pendente":
+            raise ValidationError(
+                {"status": "Uma nova série recorrente deve ser criada com status Pendente."}
+            )
+
+    def _valores_da_serie(self):
+        quantidade = int(self.total_ocorrencias)
+        valor = Decimal(self.valor).quantize(Decimal("0.01"))
+        if self.tipo_recorrencia == "fixa_mensal":
+            return [valor] * quantidade
+
+        total_centavos = int(valor * 100)
+        base_centavos, resto = divmod(total_centavos, quantidade)
+        return [
+            Decimal(base_centavos + (1 if indice < resto else 0)) / Decimal("100")
+            for indice in range(quantidade)
+        ]
+
+    def identificacao_recorrencia(self):
+        if self.tipo_recorrencia == "unica":
+            return "Conta única"
+        if self.tipo_recorrencia == "parcelada":
+            return f"Parcela {self.numero_ocorrencia}/{self.total_ocorrencias}"
+        return f"Mensalidade {self.numero_ocorrencia}/{self.total_ocorrencias}"
+
 
 
     def save(self, *args, **kwargs):
+
+        nova_serie = (
+            self._state.adding
+            and self.tipo_recorrencia in ("parcelada", "fixa_mensal")
+            and not self.serie_recorrencia
+        )
+
+        if self.tipo_recorrencia == "unica":
+            self.total_ocorrencias = 1
+            self.numero_ocorrencia = 1
+
+        if nova_serie:
+            self.clean()
+            valores = self._valores_da_serie()
+            serie = uuid.uuid4()
+            vencimento_inicial = self.vencimento
+            valor_total = sum(valores, Decimal("0.00"))
+            self.serie_recorrencia = serie
+            self.numero_ocorrencia = 1
+            self.valor = valores[0]
+            self.valor_total_serie = valor_total
+            if self.vencimento < timezone.now().date():
+                self.status = "atrasado"
+
+            using = kwargs.get("using") or self._state.db or "default"
+            with transaction.atomic(using=using):
+                super().save(*args, **kwargs)
+                geradas = []
+                for indice, valor_ocorrencia in enumerate(valores[1:], start=2):
+                    ocorrencia = type(self).objects.using(using).create(
+                        descricao=self.descricao,
+                        fornecedor=self.fornecedor,
+                        categoria_id=self.categoria_id,
+                        valor=valor_ocorrencia,
+                        vencimento=vencimento_inicial + relativedelta(months=indice - 1),
+                        tipo_recorrencia=self.tipo_recorrencia,
+                        serie_recorrencia=serie,
+                        numero_ocorrencia=indice,
+                        total_ocorrencias=self.total_ocorrencias,
+                        valor_total_serie=valor_total,
+                        status="pendente",
+                    )
+                    geradas.append(ocorrencia)
+                self._recorrencias_geradas = geradas
+            return
 
         if self.status not in ("pago", "cancelado") and self.vencimento < timezone.now().date():
 
@@ -218,7 +366,8 @@ class ContaPagar(models.Model):
 
     def __str__(self):
 
-        return f"{self.descricao} - {self.fornecedor}"
+        recorrencia = "" if self.tipo_recorrencia == "unica" else f" - {self.identificacao_recorrencia()}"
+        return f"{self.descricao} - {self.fornecedor}{recorrencia}"
 
 
 
@@ -273,6 +422,15 @@ class ContaReceber(models.Model):
     descricao = models.CharField("Descrição", max_length=200, blank=True)
 
 
+
+    ordem_servico = models.OneToOneField(
+        "calibracao.OrdemServico",
+        verbose_name="Ordem de serviço de origem",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="conta_receber",
+    )
 
     valor = models.DecimalField("Valor", max_digits=12, decimal_places=2, default=0, blank=True)
 
@@ -340,19 +498,37 @@ class ContaReceber(models.Model):
 
     def clean(self):
 
-        if not self.cliente_id and not self.proposta_id:
+        if not self.cliente_id and not self.proposta_id and not self.ordem_servico_id:
 
-            raise ValidationError("Informe um cliente ou uma proposta aprovada.")
+            raise ValidationError("Informe um cliente, uma proposta aprovada ou uma ordem de serviço.")
 
+        if self.ordem_servico_id and self.proposta_id:
 
+            proposta_os_id = self.ordem_servico.proposta_id
 
-        if not self.proposta_id and self.valor in (None, Decimal("0")):
+            if proposta_os_id and proposta_os_id != self.proposta_id:
+
+                raise ValidationError(
+
+                    "A proposta da conta deve ser a mesma proposta vinculada à ordem de serviço."
+
+                )
+
+        if not self.proposta_id and not self.ordem_servico_id and self.valor in (None, Decimal("0")):
 
             raise ValidationError("Informe o valor da conta a receber.")
 
 
 
     def save(self, *args, **kwargs):
+
+        if self.ordem_servico_id:
+
+            if self.ordem_servico.proposta_id:
+
+                self.proposta = self.ordem_servico.proposta
+
+            self.cliente = self.ordem_servico.cliente
 
         if self.proposta_id:
 
@@ -473,10 +649,21 @@ class PedidoCompra(models.Model):
 
     fornecedor = models.ForeignKey(
         Cliente,
-        on_delete=models.PROTECT,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
         related_name="pedidos_compra",
         verbose_name="Fornecedor",
     )
+    fornecedor_codigo_snapshot = models.CharField(max_length=20, blank=True)
+    fornecedor_razao_social_snapshot = models.CharField(max_length=255, blank=True)
+    fornecedor_nome_fantasia_snapshot = models.CharField(max_length=255, blank=True)
+    fornecedor_cnpj_snapshot = models.CharField(max_length=18, blank=True)
+    fornecedor_ie_snapshot = models.CharField(max_length=30, blank=True)
+    fornecedor_contato_snapshot = models.CharField(max_length=100, blank=True)
+    fornecedor_telefone_snapshot = models.CharField(max_length=100, blank=True)
+    fornecedor_email_snapshot = models.EmailField(blank=True)
+    fornecedor_endereco_snapshot = models.CharField(max_length=500, blank=True)
 
     responsavel_compra = models.ForeignKey(
         User,
@@ -549,7 +736,9 @@ class PedidoCompra(models.Model):
         return f"Pedido de Compra {self.numero_pedido}"
 
     def _fornecedor_conta_pagar(self):
-        return self.fornecedor.razao_social or self.fornecedor.nome_empresa or str(self.fornecedor)
+        if self.fornecedor_id:
+            return self.fornecedor.razao_social or self.fornecedor.nome_empresa or str(self.fornecedor)
+        return self.fornecedor_razao_social_snapshot or self.fornecedor_nome_fantasia_snapshot or "Fornecedor arquivado"
 
     def _vencimento_conta_pagar(self):
         return self.vencimento_pagamento or self.prazo_entrega or self.data_emissao or timezone.now().date()
@@ -581,6 +770,32 @@ class PedidoCompra(models.Model):
         )
 
     def save(self, *args, **kwargs):
+        if self.fornecedor_id:
+            fornecedor = self.fornecedor
+            contato = fornecedor.contatos.order_by("-principal", "id").first()
+            partes_endereco = [
+                fornecedor.endereco,
+                fornecedor.numero,
+                fornecedor.bairro,
+                fornecedor.cidade,
+                fornecedor.uf,
+                fornecedor.cep,
+            ]
+            self.fornecedor_codigo_snapshot = fornecedor.codigo
+            self.fornecedor_razao_social_snapshot = fornecedor.razao_social
+            self.fornecedor_nome_fantasia_snapshot = fornecedor.nome_empresa
+            self.fornecedor_cnpj_snapshot = fornecedor.cnpj
+            self.fornecedor_ie_snapshot = fornecedor.ie
+            self.fornecedor_contato_snapshot = contato.nome if contato else ""
+            self.fornecedor_telefone_snapshot = (
+                contato.telefone if contato and contato.telefone else fornecedor.telefone
+            )
+            self.fornecedor_email_snapshot = (
+                contato.email if contato and contato.email else fornecedor.email
+            )
+            self.fornecedor_endereco_snapshot = ", ".join(
+                str(parte).strip() for parte in partes_endereco if parte and str(parte).strip()
+            )
         if not self.numero_pedido:
             self.numero_pedido = self.gerar_numero()
         super().save(*args, **kwargs)

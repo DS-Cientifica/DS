@@ -1,0 +1,18 @@
+{% load i18n %}
+<details class="axion-filter-dropdown" data-filter-title="{{ title }}">
+  <summary>
+    <span class="axion-filter-dropdown__title">{{ title }}</span>
+    <strong class="axion-filter-dropdown__value">
+      {% for choice in choices %}{% if choice.selected %}{{ choice.display }}{% endif %}{% endfor %}
+    </strong>
+  </summary>
+  <div class="axion-filter-dropdown__menu">
+    <ul>
+      {% for choice in choices %}
+        <li{% if choice.selected %} class="selected"{% endif %}>
+          <a href="{{ choice.query_string|iriencode }}"{% if choice.selected %} aria-current="true"{% endif %}>{{ choice.display }}</a>
+        </li>
+      {% endfor %}
+    </ul>
+  </div>
+</details>

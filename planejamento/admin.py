@@ -3,6 +3,7 @@ from datetime import date
 
 from django.contrib import admin
 from django.contrib.auth.models import User
+from django.db import transaction
 from django.shortcuts import get_object_or_404, render
 from django.urls import path, reverse
 from django.utils.html import format_html
@@ -10,6 +11,7 @@ from django.utils.html import format_html
 from clientes.models import Cliente
 
 from .models import EnvioEquipamentoSemNota, EnvioEquipamentoSemNotaItem, PlanejamentoServico
+from .email_notifications import enviar_email_agendamento_por_id
 
 
 @admin.register(PlanejamentoServico)
@@ -27,6 +29,7 @@ class PlanejamentoServicoAdmin(admin.ModelAdmin):
         "necessita_veiculo",
         "veiculo_descricao",
         "responsavel",
+        "status_email_badge",
         "botao_impressao",
     )
     list_filter = (
@@ -57,7 +60,12 @@ class PlanejamentoServicoAdmin(admin.ModelAdmin):
         "tecnicos",
     )
     filter_horizontal = ("instrumentos", "padroes")
-    readonly_fields = ("codigo",)
+    readonly_fields = (
+        "codigo",
+        "email_agendamento_enviado_em",
+        "email_agendamento_destinatario",
+        "email_agendamento_erro",
+    )
     date_hierarchy = "data_inicio"
     ordering = ("data_inicio", "hora_inicio", "cliente__razao_social")
 
@@ -123,6 +131,21 @@ class PlanejamentoServicoAdmin(admin.ModelAdmin):
                 )
             },
         ),
+        (
+            "Comunicação com o cliente",
+            {
+                "description": (
+                    "O e-mail é enviado ao contato selecionado após salvar o agendamento. "
+                    "Alterações relevantes geram uma nova mensagem; salvamentos sem alterações não duplicam o envio."
+                ),
+                "fields": (
+                    "notificar_cliente_email",
+                    "email_agendamento_enviado_em",
+                    "email_agendamento_destinatario",
+                    "email_agendamento_erro",
+                ),
+            },
+        ),
     )
 
     def get_urls(self):
@@ -150,6 +173,29 @@ class PlanejamentoServicoAdmin(admin.ModelAdmin):
         if not obj.responsavel_id:
             obj.responsavel = request.user
         super().save_model(request, obj, form, change)
+
+    def save_related(self, request, form, formsets, change):
+        super().save_related(request, form, formsets, change)
+        planejamento_id = form.instance.pk
+        transaction.on_commit(lambda: enviar_email_agendamento_por_id(planejamento_id))
+
+    def status_email_badge(self, obj):
+        if not obj.notificar_cliente_email:
+            fundo, texto, rotulo = "#e2e8f0", "#475569", "Desativado"
+        elif obj.email_agendamento_erro:
+            fundo, texto, rotulo = "#fee2e2", "#991b1b", "Falha"
+        elif obj.email_agendamento_enviado_em:
+            fundo, texto, rotulo = "#dcfce7", "#166534", "Enviado"
+        else:
+            fundo, texto, rotulo = "#fef3c7", "#92400e", "Pendente"
+        return format_html(
+            "<span style='background:{};color:{};padding:4px 8px;border-radius:999px;font-weight:700;'>{}</span>",
+            fundo,
+            texto,
+            rotulo,
+        )
+
+    status_email_badge.short_description = "E-mail"
 
     def status_badge(self, obj):
         cores = {

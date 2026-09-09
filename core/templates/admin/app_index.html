@@ -1,0 +1,32 @@
+{% extends "admin/index.html" %}
+{% load i18n %}
+
+{% block bodyclass %}{{ block.super }} app-{{ app_label }} axion-area-index{% endblock %}
+
+{% if not is_popup %}
+{% block nav-breadcrumbs %}
+  <nav aria-label="{% translate 'Breadcrumbs' %}">
+    <div class="breadcrumbs">
+      <a href="{% url 'inicio' %}">{% translate 'Home' %}</a>
+      &rsaquo;
+      {% for app in app_list %}{{ app.name }}{% endfor %}
+    </div>
+  </nav>
+{% endblock %}
+{% endif %}
+
+{% block content_title %}
+  {% for app in app_list %}
+    <section class="axion-area-hero">
+      <span class="axion-area-hero__icon" aria-hidden="true">{{ app.name|slice:":2"|upper }}</span>
+      <span class="axion-area-hero__copy">
+        <small>Área operacional</small>
+        <h1>{{ app.name }}</h1>
+        <p>Selecione uma função para consultar, adicionar ou gerenciar registros.</p>
+      </span>
+      <a href="{% url 'inicio' %}">Voltar para o início</a>
+    </section>
+  {% endfor %}
+{% endblock %}
+
+{% block sidebar %}{% endblock %}

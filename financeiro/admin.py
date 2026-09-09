@@ -1,7 +1,7 @@
 import calendar
 from datetime import date
 
-from django.contrib import admin
+from django.contrib import admin, messages
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import path, reverse
@@ -11,6 +11,7 @@ from django.db.models import Q, Sum
 from clientes.models import Cliente
 from comercial.models import Proposta
 
+from .forms import ContaPagarAdminForm
 from .helpers import EMPRESA_COMPRADORA, contato_principal_cliente, endereco_cliente
 from .models import (
     AnexoNotaFiscal,
@@ -35,19 +36,82 @@ class CategoriaFinanceiraAdmin(admin.ModelAdmin):
 @admin.register(ContaPagar)
 class ContaPagarAdmin(admin.ModelAdmin):
     change_list_template = "admin/financeiro/contapagar/change_list.html"
+    form = ContaPagarAdminForm
 
     list_display = (
         "descricao",
         "fornecedor",
         "pedido_compra",
+        "recorrencia",
         "valor",
         "vencimento",
         "status",
     )
-    list_filter = ("status", "vencimento", "categoria")
+    list_filter = ("status", "tipo_recorrencia", "vencimento", "categoria")
     search_fields = ("descricao", "fornecedor", "pedido_compra__numero_pedido")
     date_hierarchy = "vencimento"
     ordering = ("vencimento",)
+
+    fieldsets = (
+        (
+            "Identificação",
+            {"fields": ("descricao", "fornecedor", "pedido_compra", "categoria")},
+        ),
+        (
+            "Recorrência e parcelamento",
+            {
+                "description": (
+                    "Na conta parcelada, o valor informado é o total e será dividido. "
+                    "Na conta fixa mensal, o valor informado será repetido em cada mês."
+                ),
+                "fields": ("tipo_recorrencia", "total_ocorrencias"),
+            },
+        ),
+        (
+            "Dados financeiros",
+            {"fields": ("valor", "vencimento", "status", "data_pagamento", "comprovante")},
+        ),
+    )
+
+    @admin.display(description="Recorrência", ordering="tipo_recorrencia")
+    def recorrencia(self, obj):
+        return obj.identificacao_recorrencia()
+
+    def get_readonly_fields(self, request, obj=None):
+        campos = ("serie_recorrencia", "numero_ocorrencia", "valor_total_serie")
+        if obj and obj.serie_recorrencia:
+            return campos + ("tipo_recorrencia", "total_ocorrencias")
+        return campos
+
+    def get_fieldsets(self, request, obj=None):
+        fieldsets = list(super().get_fieldsets(request, obj))
+        if obj and obj.serie_recorrencia:
+            titulo, opcoes = fieldsets[1]
+            opcoes = dict(opcoes)
+            opcoes["fields"] = (
+                "tipo_recorrencia",
+                "serie_recorrencia",
+                "numero_ocorrencia",
+                "total_ocorrencias",
+                "valor_total_serie",
+            )
+            fieldsets[1] = (titulo, opcoes)
+        return fieldsets
+
+    def save_model(self, request, obj, form, change):
+        super().save_model(request, obj, form, change)
+        geradas = getattr(obj, "_recorrencias_geradas", [])
+        for ocorrencia in geradas:
+            self.log_addition(request, ocorrencia, "Gerada automaticamente pela série recorrente.")
+        if geradas:
+            self.message_user(
+                request,
+                f"Série criada com {len(geradas) + 1} lançamentos independentes.",
+                level=messages.SUCCESS,
+            )
+
+    class Media:
+        js = ("financeiro/js/conta_pagar_recorrencia.js",)
 
     def get_urls(self):
         urls = super().get_urls()
@@ -199,6 +263,7 @@ class ContaReceberAdmin(admin.ModelAdmin):
     change_list_template = "admin/financeiro/contareceber/change_list.html"
 
     list_display = (
+        "ordem_servico",
         "proposta",
         "cliente",
         "descricao",
@@ -208,12 +273,13 @@ class ContaReceberAdmin(admin.ModelAdmin):
     )
     list_filter = ("status", "vencimento")
     search_fields = (
+        "ordem_servico__numero",
         "proposta__codigo",
         "cliente__razao_social",
         "cliente__cnpj",
         "descricao",
     )
-    autocomplete_fields = ("proposta", "cliente")
+    autocomplete_fields = ("ordem_servico", "proposta", "cliente")
     date_hierarchy = "vencimento"
     ordering = ("vencimento",)
 
@@ -239,8 +305,9 @@ class ContaReceberAdmin(admin.ModelAdmin):
         (
             "Origem",
             {
-                "description": "Ao selecionar uma proposta aprovada, cliente, descrição e valor são preenchidos automaticamente.",
+                "description": "A ordem de serviço concluída mantém a rastreabilidade com a proposta, o cliente e o valor faturado.",
                 "fields": (
+                    "ordem_servico",
                     "proposta",
                     "cliente",
                 ),
@@ -428,7 +495,7 @@ class PedidoCompraAdmin(admin.ModelAdmin):
 
     list_display = (
         "numero_pedido",
-        "fornecedor",
+        "fornecedor_lista",
         "data_emissao",
         "prazo_entrega",
         "vencimento_pagamento",
@@ -437,7 +504,10 @@ class PedidoCompraAdmin(admin.ModelAdmin):
         "gerar_pdf",
     )
     list_filter = ("data_emissao", "prazo_entrega", "vencimento_pagamento", "fornecedor")
-    search_fields = ("numero_pedido", "fornecedor__razao_social", "fornecedor__cnpj", "condicao_pagamento")
+    search_fields = (
+        "numero_pedido", "fornecedor__razao_social", "fornecedor__cnpj",
+        "fornecedor_razao_social_snapshot", "fornecedor_cnpj_snapshot", "condicao_pagamento",
+    )
     date_hierarchy = "data_emissao"
     autocomplete_fields = ("fornecedor", "responsavel_compra")
     readonly_fields = (
@@ -604,35 +674,35 @@ class PedidoCompraAdmin(admin.ModelAdmin):
 
     def fornecedor_nome_fantasia(self, obj):
         if not obj.fornecedor_id:
-            return "-"
+            return obj.fornecedor_nome_fantasia_snapshot or "-"
         return getattr(obj.fornecedor, "nome_empresa", "-")
 
     fornecedor_nome_fantasia.short_description = "Nome fantasia"
 
     def fornecedor_razao_social(self, obj):
         if not obj.fornecedor_id:
-            return "-"
+            return obj.fornecedor_razao_social_snapshot or "-"
         return getattr(obj.fornecedor, "razao_social", "-")
 
     fornecedor_razao_social.short_description = "Razão social"
 
     def fornecedor_cnpj(self, obj):
         if not obj.fornecedor_id:
-            return "-"
+            return obj.fornecedor_cnpj_snapshot or "-"
         return getattr(obj.fornecedor, "cnpj", "-")
 
     fornecedor_cnpj.short_description = "CNPJ"
 
     def fornecedor_ie(self, obj):
         if not obj.fornecedor_id:
-            return "-"
+            return obj.fornecedor_ie_snapshot or "-"
         return getattr(obj.fornecedor, "ie", "-")
 
     fornecedor_ie.short_description = "Inscrição estadual"
 
     def fornecedor_contato(self, obj):
         if not obj.fornecedor_id:
-            return "-"
+            return obj.fornecedor_contato_snapshot or "-"
         contato = contato_principal_cliente(obj.fornecedor)
         return contato.nome if contato else "-"
 
@@ -640,7 +710,7 @@ class PedidoCompraAdmin(admin.ModelAdmin):
 
     def fornecedor_telefone(self, obj):
         if not obj.fornecedor_id:
-            return "-"
+            return obj.fornecedor_telefone_snapshot or "-"
         contato = contato_principal_cliente(obj.fornecedor)
         if contato and contato.telefone:
             return contato.telefone
@@ -650,7 +720,7 @@ class PedidoCompraAdmin(admin.ModelAdmin):
 
     def fornecedor_email(self, obj):
         if not obj.fornecedor_id:
-            return "-"
+            return obj.fornecedor_email_snapshot or "-"
         contato = contato_principal_cliente(obj.fornecedor)
         if contato and contato.email:
             return contato.email
@@ -659,9 +729,15 @@ class PedidoCompraAdmin(admin.ModelAdmin):
     fornecedor_email.short_description = "E-mail"
 
     def fornecedor_endereco(self, obj):
-        return endereco_cliente(obj.fornecedor) if obj.fornecedor_id else "-"
+        return endereco_cliente(obj.fornecedor) if obj.fornecedor_id else (obj.fornecedor_endereco_snapshot or "-")
 
     fornecedor_endereco.short_description = "Endereço"
+
+    def fornecedor_lista(self, obj):
+        return self.fornecedor_razao_social(obj)
+
+    fornecedor_lista.short_description = "Fornecedor"
+    fornecedor_lista.admin_order_field = "fornecedor__razao_social"
 
     def save_model(self, request, obj, form, change):
         if not obj.responsavel_compra_id:

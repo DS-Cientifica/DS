@@ -1,0 +1,18 @@
+{% extends "admin/change_form.html" %}
+
+{% block object-tools-items %}
+  {{ block.super }}
+  {% if change and original %}
+    {% if certificado_publico and certificado_publico.publicado %}
+      <li><a href="{% url 'certificados:consulta' certificado_publico.uuid_publico %}" target="_blank">Consulta pública</a></li>
+      <li><a href="{% url 'admin:certificados_certificadocalibracao_etiqueta' certificado_publico.pk %}" target="_blank">Imprimir QR Code</a></li>
+    {% elif pode_publicar_certificado %}
+      <li>
+        <form method="post" action="{% url 'admin:calibracao_calibracao_publicar_certificado' original.pk %}" style="display:inline">
+          {% csrf_token %}
+          <button type="submit" class="button" onclick="return confirm('Publicar uma cópia imutável deste certificado para consulta por QR Code?')">Publicar certificado / QR</button>
+        </form>
+      </li>
+    {% endif %}
+  {% endif %}
+{% endblock %}

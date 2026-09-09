@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{{ envio.assunto_snapshot }}</title>
+</head>
+<body style="margin:0;background:#eef3f8;font-family:Arial,Helvetica,sans-serif;color:#17324d;">
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#eef3f8;padding:24px 12px;">
+        <tr>
+            <td align="center">
+                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:680px;background:#ffffff;border-radius:12px;overflow:hidden;border:1px solid #dbe5ef;">
+                    <tr>
+                        <td style="background:#17324d;padding:24px 32px;">
+                            <img src="{{ logo_src }}" alt="DS Científica" width="180" style="display:block;max-width:180px;height:auto;">
+                        </td>
+                    </tr>
+                    <tr>
+                        <td style="padding:32px;">
+                            <p style="margin:0 0 18px;font-size:16px;line-height:1.6;">Olá, {{ envio.destinatario_nome|default:"cliente" }}.</p>
+                            <div style="font-size:16px;line-height:1.7;color:#334155;">{{ envio.conteudo_snapshot|linebreaks }}</div>
+                            {% if campanha.produto_servico %}
+                                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin:24px 0;background:#f1f6fb;border-left:4px solid #1d74b7;border-radius:6px;">
+                                    <tr>
+                                        <td style="padding:16px 18px;">
+                                            <strong style="display:block;color:#17324d;margin-bottom:5px;">Produto ou serviço em destaque</strong>
+                                            <span style="color:#334155;">{{ campanha.produto_servico.nome }}</span>
+                                        </td>
+                                    </tr>
+                                </table>
+                            {% endif %}
+                            {% for midia in midias_inline %}
+                                <div style="margin:24px 0;text-align:center;">
+                                    <img src="{{ midia.src }}" alt="{{ midia.titulo }}" style="display:block;width:100%;max-width:616px;height:auto;border-radius:8px;">
+                                </div>
+                            {% endfor %}
+                            <p style="margin:28px 0 0;font-size:16px;line-height:1.6;">Atenciosamente,<br><strong>Equipe DS Científica</strong></p>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td style="background:#f8fafc;border-top:1px solid #e2e8f0;padding:20px 32px;color:#64748b;font-size:12px;line-height:1.5;">
+                            Você recebeu esta mensagem porque autorizou comunicações da DS Científica.<br>
+                            Para deixar de receber campanhas, responda a este e-mail solicitando o cancelamento.
+                        </td>
+                    </tr>
+                </table>
+            </td>
+        </tr>
+    </table>
+</body>
+</html>

@@ -37,6 +37,22 @@ CSRF_TRUSTED_ORIGINS = [
 ]
 
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+SECURE_SSL_REDIRECT = os.getenv(
+    "SECURE_SSL_REDIRECT", "0" if DEBUG else "1"
+).lower() in ("1", "true", "yes", "on")
+SESSION_COOKIE_SECURE = os.getenv(
+    "SESSION_COOKIE_SECURE", "0" if DEBUG else "1"
+).lower() in ("1", "true", "yes", "on")
+CSRF_COOKIE_SECURE = os.getenv(
+    "CSRF_COOKIE_SECURE", "0" if DEBUG else "1"
+).lower() in ("1", "true", "yes", "on")
+SECURE_HSTS_SECONDS = int(os.getenv("SECURE_HSTS_SECONDS", "0" if DEBUG else "31536000"))
+SECURE_HSTS_INCLUDE_SUBDOMAINS = os.getenv(
+    "SECURE_HSTS_INCLUDE_SUBDOMAINS", "0"
+).lower() in ("1", "true", "yes", "on")
+SECURE_HSTS_PRELOAD = os.getenv("SECURE_HSTS_PRELOAD", "0").lower() in (
+    "1", "true", "yes", "on"
+)
 
 
 # ========================
@@ -60,6 +76,8 @@ INSTALLED_APPS = [
     "planejamento.apps.PlanejamentoConfig",
     "gestao.apps.GestaoConfig",
     "projetos.apps.ProjetosConfig",
+    "documentos.apps.DocumentosConfig",
+    "certificados.apps.CertificadosConfig",
     "core.apps.CoreConfig",
 ]
 
@@ -86,6 +104,7 @@ ROOT_URLCONF = "core.urls"
 # ========================
 # TEMPLATES
 # ========================
+# A aplicação core também fornece as tags de navegação compartilhadas do Admin.
 TEMPLATES = [
     {
         "BACKEND": "django.template.backends.django.DjangoTemplates",
@@ -206,12 +225,26 @@ if USE_CLOUD_MEDIA:
     else:
         MEDIA_URL = f"{AWS_S3_ENDPOINT_URL.rstrip('/')}/{AWS_STORAGE_BUCKET_NAME}/"
     MEDIA_ROOT = BASE_DIR / "media"
+
+# Documentos controlados: armazenamento local privado como padrão e R2 opcional.
 else:
     STORAGES["default"] = {
         "BACKEND": "django.core.files.storage.FileSystemStorage",
     }
     MEDIA_URL = "/media/"
     MEDIA_ROOT = BASE_DIR / "media"
+
+DOCUMENT_STORAGE_MODE = os.getenv("DOCUMENT_STORAGE_MODE", "local").strip().lower()
+DOCUMENT_LOCAL_ROOT = Path(os.getenv("DOCUMENT_LOCAL_ROOT", BASE_DIR / "private_documents"))
+DOCUMENT_R2_ENABLED = os.getenv(
+    "DOCUMENT_R2_ENABLED", "1" if USE_CLOUD_MEDIA else "0"
+).strip().lower() in {"1", "true", "yes", "on"}
+DOCUMENT_R2_BUCKET = AWS_STORAGE_BUCKET_NAME
+DOCUMENT_R2_ENDPOINT_URL = AWS_S3_ENDPOINT_URL
+DOCUMENT_R2_ACCESS_KEY_ID = AWS_ACCESS_KEY_ID
+DOCUMENT_R2_SECRET_ACCESS_KEY = AWS_SECRET_ACCESS_KEY
+DOCUMENT_R2_REGION = AWS_S3_REGION_NAME
+DOCUMENT_R2_PRESIGNED_URL_TTL = int(os.getenv("DOCUMENT_R2_PRESIGNED_URL_TTL", "600"))
 
 
 # ========================
@@ -231,6 +264,10 @@ EMAIL_USE_TLS = os.getenv("EMAIL_USE_TLS", "True").lower() in ("1", "true", "yes
 EMAIL_USE_SSL = os.getenv("EMAIL_USE_SSL", "False").lower() in ("1", "true", "yes", "on")
 EMAIL_TIMEOUT = int(os.getenv("EMAIL_TIMEOUT", "20"))
 DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", EMAIL_HOST_USER or "contato@dscientifica.com.br")
+
+WHATSAPP_ACCESS_TOKEN = os.getenv("WHATSAPP_ACCESS_TOKEN", "")
+WHATSAPP_PHONE_NUMBER_ID = os.getenv("WHATSAPP_PHONE_NUMBER_ID", "")
+WHATSAPP_API_VERSION = os.getenv("WHATSAPP_API_VERSION", "")
 
 LOGIN_REDIRECT_URL = "/admin/"
 LOGOUT_REDIRECT_URL = "/admin/login/"

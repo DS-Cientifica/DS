@@ -1,5 +1,15 @@
 {% extends "admin/change_list.html" %}
 
+{% block object-tools-items %}
+  <li>
+    <a href="{% url 'admin:calibracao_calibracao_modelo_importacao' %}" class="historylink">Baixar modelo Excel</a>
+  </li>
+  <li>
+    <a href="{% url 'admin:calibracao_calibracao_importar_excel' %}" class="historylink">Importar Excel</a>
+  </li>
+  {{ block.super }}
+{% endblock %}
+
 {% block search %}
 {{ block.super }}
 <div class="certificado-quick-filters">
@@ -40,12 +50,63 @@
   <div class="certificado-quick-filters__summary">
     <strong>Total filtrado:</strong>
     {{ quantidade_filtrada_certificados|default:0 }} certificado{{ quantidade_filtrada_certificados|default:0|pluralize }}
+    {% if quantidade_certificados_especializados %}
+      + {{ quantidade_certificados_especializados }} especializado{{ quantidade_certificados_especializados|pluralize }}
+    {% endif %}
     <span class="certificado-quick-filters__selected">
       <strong>Total selecionado:</strong>
       <span id="certificado-quantidade-selecionada">0 certificados</span>
     </span>
   </div>
 </div>
+
+{% if certificados_especializados %}
+  <section class="certificados-especializados" aria-labelledby="certificados-especializados-titulo">
+    <h2 id="certificados-especializados-titulo">Certificados de calibrações especializadas</h2>
+    <p>
+      Estes certificados pertencem às calibrações específicas e são exibidos aqui
+      sem duplicar o registro metrológico.
+    </p>
+    <div class="results">
+      <table id="certificados-especializados-lista">
+        <thead>
+          <tr>
+            <th>Certificado</th>
+            <th>Cliente</th>
+            <th>Equipamento</th>
+            <th>Tipo</th>
+            <th>Data</th>
+            <th>Revisão</th>
+            <th>Status</th>
+            <th>Arquivo</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for item in certificados_especializados %}
+            <tr>
+              <td><a href="{{ item.cadastro_url }}"><strong>{{ item.certificado.numero }}</strong></a></td>
+              <td>{{ item.certificado.cliente.codigo }} - {{ item.certificado.cliente.razao_social }}</td>
+              <td><a href="{{ item.origem_url }}">{{ item.certificado.instrumento.codigo }} - {{ item.certificado.instrumento.descricao }}</a></td>
+              <td>{{ item.tipo|capfirst }}</td>
+              <td>{{ item.certificado.data_calibracao|date:"d/m/Y" }}</td>
+              <td>{{ item.certificado.revisao|stringformat:"02d" }}</td>
+              <td>{{ item.certificado.get_status_display }}</td>
+              <td>
+                {% if item.download_url %}
+                  <a href="{{ item.download_url }}?inline=1" target="_blank" rel="noopener">{{ item.certificado.documento.nome_original }}</a>
+                {% elif item.certificado.documento %}
+                  {{ item.certificado.documento.nome_original }}
+                {% else %}
+                  —
+                {% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+{% endif %}
 
 <style>
   .certificado-quick-filters {
@@ -102,6 +163,35 @@
   .certificado-quick-filters__selected {
     display: inline-block;
     margin-left: 18px;
+  }
+
+  .certificados-especializados {
+    margin: 0 0 18px;
+    padding: 14px;
+    border: 1px solid var(--hairline-color, #ddd);
+    border-left: 4px solid #2456c4;
+    border-radius: 4px;
+    background: var(--body-bg, #fff);
+  }
+
+  .certificados-especializados h2 {
+    margin: 0 0 6px;
+    color: var(--body-fg, #222);
+    font-size: 18px;
+  }
+
+  .certificados-especializados p {
+    margin: 0 0 12px;
+  }
+
+  .certificados-especializados table {
+    width: 100%;
+  }
+
+  .certificados-especializados th,
+  .certificados-especializados td {
+    padding: 8px 10px;
+    vertical-align: top;
   }
 </style>
 
