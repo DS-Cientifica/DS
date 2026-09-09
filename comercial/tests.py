@@ -191,6 +191,70 @@ class ProspectoComercialTests(TestCase):
         self.assertContains(resposta, "Enviar apresentação comercial por e-mail")
         self.assertNotContains(resposta, "Ação antiga que foi substituída")
 
+    def test_lista_de_prospeccoes_alerta_quando_existe_acao_hoje(self):
+        prospeccao = ProspeccaoComercial.objects.create(
+            razao_social="Empresa com ação hoje",
+            responsavel=self.usuario,
+        )
+        ProspeccaoInteracao.objects.create(
+            prospeccao=prospeccao,
+            tipo="ligacao",
+            resultado="aguardando_retorno",
+            descricao="Confirmar recebimento da proposta",
+            data=timezone.make_aware(datetime(2026, 9, 8, 9, 0)),
+            proxima_acao_tipo="ligacao",
+            proxima_acao=timezone.make_aware(datetime(2026, 9, 9, 10, 30)),
+        )
+        self.client.force_login(self.usuario)
+
+        with patch("comercial.admin.timezone.localdate", return_value=date(2026, 9, 9)):
+            resposta = self.client.get(
+                reverse("admin:comercial_prospeccaocomercial_changelist")
+            )
+
+        self.assertEqual(resposta.status_code, 200)
+        self.assertContains(resposta, "Ações de prospecção para hoje")
+        self.assertContains(resposta, "Há 1")
+        self.assertContains(resposta, "ação programada")
+        self.assertContains(
+            resposta,
+            reverse("admin:comercial_prospeccaocomercial_agenda")
+            + "?data=2026-09-09",
+        )
+
+    def test_lista_de_prospeccoes_nao_alerta_acao_substituida(self):
+        prospeccao = ProspeccaoComercial.objects.create(
+            razao_social="Empresa com ação reprogramada",
+            responsavel=self.usuario,
+        )
+        ProspeccaoInteracao.objects.create(
+            prospeccao=prospeccao,
+            tipo="ligacao",
+            resultado="sem_resposta",
+            descricao="Ação inicialmente prevista para hoje",
+            data=timezone.make_aware(datetime(2026, 9, 8, 9, 0)),
+            proxima_acao_tipo="ligacao",
+            proxima_acao=timezone.make_aware(datetime(2026, 9, 9, 10, 30)),
+        )
+        ProspeccaoInteracao.objects.create(
+            prospeccao=prospeccao,
+            tipo="ligacao",
+            resultado="aguardando_retorno",
+            descricao="Ação reprogramada",
+            data=timezone.make_aware(datetime(2026, 9, 9, 11, 0)),
+            proxima_acao_tipo="email",
+            proxima_acao=timezone.make_aware(datetime(2026, 9, 10, 9, 0)),
+        )
+        self.client.force_login(self.usuario)
+
+        with patch("comercial.admin.timezone.localdate", return_value=date(2026, 9, 9)):
+            resposta = self.client.get(
+                reverse("admin:comercial_prospeccaocomercial_changelist")
+            )
+
+        self.assertEqual(resposta.status_code, 200)
+        self.assertNotContains(resposta, "Ações de prospecção para hoje")
+
     def test_calendario_geral_exibe_proximos_passos_do_mes(self):
         prospecto = Prospecto.objects.create(
             razao_social="Empresa no calendário mensal",

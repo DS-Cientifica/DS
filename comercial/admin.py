@@ -1400,6 +1400,38 @@ class ProspeccaoComercialAdmin(admin.ModelAdmin):
         ]
         return custom_urls + urls
 
+    def changelist_view(self, request, extra_context=None):
+        hoje = timezone.localdate()
+        ultima_interacao = ProspeccaoInteracao.objects.filter(
+            prospeccao=OuterRef("pk")
+        ).order_by("-data", "-pk")
+        total_acoes_hoje = (
+            self.get_queryset(request)
+            .exclude(status__in=("convertido", "perdido", "sem_interesse"))
+            .annotate(
+                proxima_acao_atual=Subquery(
+                    ultima_interacao.values("proxima_acao")[:1]
+                ),
+                ultimo_resultado=Subquery(
+                    ultima_interacao.values("resultado")[:1]
+                ),
+            )
+            .filter(proxima_acao_atual__date=hoje)
+            .exclude(ultimo_resultado__in=("sem_interesse", "convertido"))
+            .count()
+        )
+        contexto = {
+            "prospeccao_alerta_hoje_total": total_acoes_hoje,
+            "prospeccao_alerta_hoje_data": hoje,
+            "prospeccao_alerta_hoje_url": (
+                f'{reverse("admin:comercial_prospeccaocomercial_agenda")}'
+                f'?data={hoje.isoformat()}'
+            ),
+        }
+        if extra_context:
+            contexto.update(extra_context)
+        return super().changelist_view(request, extra_context=contexto)
+
     def agenda_view(self, request):
         data_texto = (request.GET.get("data") or "").strip()
         try:

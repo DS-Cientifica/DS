@@ -1,5 +1,31 @@
 {% extends "admin/change_list.html" %}
 
+{% block extrastyle %}
+  {{ block.super }}
+  <style>
+    .prospeccao-alerta-hoje {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 18px;
+      margin: 0 0 18px;
+      padding: 16px 18px;
+      border: 1px solid #e5a000;
+      border-left: 6px solid #e5a000;
+      border-radius: 8px;
+      background: #fff8df;
+      color: #4f3900;
+    }
+    .prospeccao-alerta-hoje strong { display: block; font-size: 16px; }
+    .prospeccao-alerta-hoje p { margin: 3px 0 0; }
+    .prospeccao-alerta-hoje .button { flex: 0 0 auto; }
+    @media (max-width: 767px) {
+      .prospeccao-alerta-hoje { align-items: stretch; flex-direction: column; }
+      .prospeccao-alerta-hoje .button { text-align: center; }
+    }
+  </style>
+{% endblock %}
+
 {% block object-tools-items %}
   <li>
     <a href="{% url 'admin:comercial_prospeccaocomercial_calendario' %}" class="viewlink">
@@ -11,5 +37,22 @@
       Agenda de Prospecção
     </a>
   </li>
+  {{ block.super }}
+{% endblock %}
+
+{% block content %}
+  {% if prospeccao_alerta_hoje_total %}
+    <div class="prospeccao-alerta-hoje" role="alert">
+      <div>
+        <strong>Ações de prospecção para hoje</strong>
+        <p>
+          Há {{ prospeccao_alerta_hoje_total }}
+          {% if prospeccao_alerta_hoje_total == 1 %}ação programada{% else %}ações programadas{% endif %}
+          para {{ prospeccao_alerta_hoje_data|date:"d/m/Y" }}.
+        </p>
+      </div>
+      <a class="button" href="{{ prospeccao_alerta_hoje_url }}">Abrir agenda de hoje</a>
+    </div>
+  {% endif %}
   {{ block.super }}
 {% endblock %}
