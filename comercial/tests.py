@@ -224,6 +224,15 @@ class ProspectoComercialTests(TestCase):
             reverse("admin:comercial_prospeccaocomercial_agenda")
             + "?data=2026-09-09",
         )
+        html = resposta.content.decode()
+        self.assertLess(
+            html.index('class="object-tools"'),
+            html.index('class="prospeccao-alerta-hoje"'),
+        )
+        self.assertLess(
+            html.index('class="prospeccao-alerta-hoje"'),
+            html.index('id="changelist"'),
+        )
 
     def test_lista_de_prospeccoes_nao_alerta_acao_substituida(self):
         prospeccao = ProspeccaoComercial.objects.create(

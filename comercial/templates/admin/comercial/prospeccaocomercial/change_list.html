@@ -4,7 +4,6 @@
   {{ block.super }}
   <style>
     .prospeccao-alerta-hoje {
-      clear: both;
       display: flex;
       align-items: center;
       justify-content: space-between;
@@ -41,7 +40,8 @@
   {{ block.super }}
 {% endblock %}
 
-{% block content %}
+{% block object-tools %}
+  {{ block.super }}
   {% if prospeccao_alerta_hoje_total %}
     <div class="prospeccao-alerta-hoje" role="alert">
       <div>
@@ -55,5 +55,4 @@
       <a class="button" href="{{ prospeccao_alerta_hoje_url }}">Abrir agenda de hoje</a>
     </div>
   {% endif %}
-  {{ block.super }}
 {% endblock %}
