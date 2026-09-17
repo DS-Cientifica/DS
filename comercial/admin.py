@@ -19,7 +19,7 @@ from django.utils import timezone
 from django.utils.html import format_html
 from django.urls import reverse
 from django.urls import path
-from django.db.models import OuterRef, Q, Subquery, Sum
+from django.db.models import Count, OuterRef, Q, Subquery, Sum
 from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
@@ -37,6 +37,7 @@ from .models import (
     DadosTecnicos,
     ProspeccaoComercial,
     ProspeccaoInteracao,
+    EmpresaProspecto,
     Prospecto,
     CRMRegistro,
     CRMInteracao,
@@ -662,7 +663,24 @@ class ProspeccaoComercialAdminForm(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.fields["razao_social"].required = False
+        empresa_id = None
+        prospecto_id = None
+        if self.is_bound:
+            empresa_id = self.data.get("empresa_prospecto")
+            prospecto_id = self.data.get("prospecto")
+        elif self.instance and self.instance.pk:
+            empresa_id = self.instance.empresa_prospecto_id
+            prospecto_id = self.instance.prospecto_id
+
+        if prospecto_id and not empresa_id:
+            empresa_id = Prospecto.objects.filter(pk=prospecto_id).values_list(
+                "empresa_id", flat=True
+            ).first()
+
+        self.fields["empresa_prospecto"].required = False
+        self.fields["empresa_prospecto"].label = "Empresa"
+        if "razao_social" in self.fields:
+            self.fields["razao_social"].required = False
         if "prospecto" in self.fields:
             queryset = Prospecto.objects.filter(
                 status__in=("disponivel", "em_prospeccao")
@@ -674,14 +692,29 @@ class ProspeccaoComercialAdminForm(forms.ModelForm):
                 )
             else:
                 queryset = queryset.filter(prospeccao__isnull=True)
-            self.fields["prospecto"].queryset = queryset.order_by(
-                "razao_social", "contato_nome"
+            if empresa_id:
+                queryset = queryset.filter(empresa_id=empresa_id)
+            else:
+                queryset = queryset.none()
+            self.fields["prospecto"].queryset = queryset.order_by("contato_nome", "email")
+            self.fields["prospecto"].label = "Pessoa de contato"
+            self.fields["prospecto"].widget.attrs["data-contatos-url"] = reverse(
+                "admin:comercial_prospeccaocomercial_contatos_empresa"
             )
 
     def clean(self):
         cleaned_data = super().clean()
         prospecto = cleaned_data.get("prospecto")
+        empresa = cleaned_data.get("empresa_prospecto")
         if prospecto:
+            empresa = empresa or prospecto.empresa
+            cleaned_data["empresa_prospecto"] = empresa
+            self.instance.empresa_prospecto = empresa
+            if prospecto.empresa_id != getattr(empresa, "pk", None):
+                self.add_error(
+                    "prospecto",
+                    "A pessoa de contato selecionada não pertence à empresa informada.",
+                )
             preenchimentos = {
                 "razao_social": prospecto.razao_social,
                 "contato_nome": prospecto.contato_nome,
@@ -694,12 +727,15 @@ class ProspeccaoComercialAdminForm(forms.ModelForm):
                 if not cleaned_data.get(campo):
                     cleaned_data[campo] = valor
                     setattr(self.instance, campo, valor)
-        elif not cleaned_data.get("razao_social"):
+        else:
             self.add_error(
-                "razao_social",
-                "Selecione um prospect ou informe a razão social.",
+                "prospecto",
+                "Selecione a pessoa responsável pelo contato nesta empresa.",
             )
         return cleaned_data
+
+    class Media:
+        js = ("comercial/admin/prospeccao_empresa_contato.js",)
 
 
 class ProspectoTextFilter(admin.SimpleListFilter):
@@ -741,12 +777,64 @@ class ProspectoCidadeFilter(ProspectoTextFilter):
         return queryset.filter(cidade__icontains=valor) if valor else queryset
 
 
+class ProspectoContatoInline(admin.TabularInline):
+    model = Prospecto
+    fk_name = "empresa"
+    extra = 1
+    show_change_link = True
+    fields = (
+        "contato_nome", "cargo", "telefone", "whatsapp", "email", "status",
+    )
+    ordering = ("contato_nome", "email")
+
+
+@admin.register(EmpresaProspecto)
+class EmpresaProspectoAdmin(admin.ModelAdmin):
+    list_display = (
+        "razao_social", "nome_fantasia", "cnpj", "cidade", "uf", "segmento",
+        "total_contatos",
+    )
+    search_fields = (
+        "razao_social", "nome_fantasia", "cnpj", "cidade", "segmento",
+        "contatos__contato_nome", "contatos__email", "contatos__telefone",
+    )
+    list_filter = ("segmento", "uf", "origem")
+    ordering = ("razao_social",)
+    readonly_fields = ("chave_agrupamento", "criado_em", "atualizado_em")
+    inlines = (ProspectoContatoInline,)
+
+    fieldsets = (
+        ("Empresa", {
+            "fields": ("razao_social", "nome_fantasia", "cnpj", "segmento", "site"),
+        }),
+        ("Localização", {
+            "fields": ("endereco", "cidade", "uf", "cep"),
+        }),
+        ("Origem e observações", {
+            "fields": ("origem", "observacoes"),
+        }),
+        ("Rastreabilidade", {
+            "classes": ("collapse",),
+            "fields": ("chave_agrupamento", "criado_em", "atualizado_em"),
+        }),
+    )
+
+    @admin.display(description="Contatos", ordering="total_contatos_db")
+    def total_contatos(self, obj):
+        return obj.total_contatos_db
+
+    def get_queryset(self, request):
+        return super().get_queryset(request).annotate(
+            total_contatos_db=Count("contatos")
+        )
+
+
 @admin.register(Prospecto)
 class ProspectoAdmin(admin.ModelAdmin):
     change_form_template = "admin/comercial/prospecto/change_form.html"
     change_list_template = "admin/comercial/prospecto/change_list.html"
     list_display = (
-        "codigo", "razao_social", "contato_nome", "telefone", "email", "cidade", "uf",
+        "codigo", "empresa", "contato_nome", "telefone", "email", "cidade", "uf",
         "segmento", "status", "marketing_email_autorizado", "acao_prospeccao",
     )
     list_filter = (
@@ -761,21 +849,24 @@ class ProspectoAdmin(admin.ModelAdmin):
         "criado_em",
     )
     search_fields = (
-        "codigo", "referencia_externa", "razao_social", "nome_fantasia", "cnpj", "contato_nome", "telefone", "email",
+        "codigo", "referencia_externa", "empresa__razao_social", "empresa__nome_fantasia",
+        "empresa__cnpj", "razao_social", "nome_fantasia", "cnpj", "contato_nome", "telefone", "email",
         "cidade", "uf", "segmento",
     )
     readonly_fields = (
         "codigo", "chave_duplicidade", "lote_importacao", "linha_importacao", "cliente_convertido",
         "convertido_por", "data_conversao", "marketing_autorizado_em",
         "marketing_autorizado_por", "marketing_lote_autorizacao", "criado_em", "atualizado_em",
+        "razao_social", "nome_fantasia", "cnpj", "segmento", "site",
+        "endereco", "cidade", "uf", "cep", "origem",
     )
-    autocomplete_fields = ("responsavel",)
+    autocomplete_fields = ("empresa", "responsavel")
     ordering = ("razao_social", "contato_nome")
     list_per_page = 100
     actions = ("iniciar_prospeccao_em_lote", "autorizar_email_em_lote")
 
     fieldsets = (
-        ("Empresa", {"fields": ("razao_social", "nome_fantasia", "cnpj", "segmento", "site")}),
+        ("Empresa", {"fields": ("empresa",)}),
         ("Contato", {"fields": ("contato_nome", "cargo", "telefone", "whatsapp", "email")}),
         ("Autorização para campanhas por e-mail", {
             "fields": (
@@ -794,8 +885,16 @@ class ProspectoAdmin(admin.ModelAdmin):
                 "origem/evidência revisada antes de permitir campanhas."
             ),
         }),
-        ("Localização e origem", {"fields": ("codigo", "endereco", "cidade", "uf", "cep", "origem", "referencia_externa", "observacoes")}),
+        ("Origem do contato", {"fields": ("codigo", "referencia_externa", "observacoes")}),
         ("Controle", {"fields": ("responsavel", "status")}),
+        ("Dados empresariais preservados", {
+            "classes": ("collapse",),
+            "description": "Cópia histórica mantida para rastreabilidade dos registros importados.",
+            "fields": (
+                "razao_social", "nome_fantasia", "cnpj", "segmento", "site",
+                "endereco", "cidade", "uf", "cep", "origem",
+            ),
+        }),
         ("Rastreabilidade", {
             "classes": ("collapse",),
             "fields": (
@@ -808,7 +907,7 @@ class ProspectoAdmin(admin.ModelAdmin):
 
     def get_queryset(self, request):
         queryset = super().get_queryset(request).select_related(
-            "responsavel", "cliente_convertido"
+            "empresa", "responsavel", "cliente_convertido"
         )
         url_name = getattr(getattr(request, "resolver_match", None), "url_name", "")
         if url_name in {
@@ -1338,9 +1437,15 @@ class ProspeccaoComercialAdmin(admin.ModelAdmin):
         "crm_gerado",
         "botao_converter",
         "cliente",
+        "razao_social",
+        "contato_nome",
+        "cargo",
+        "telefone",
+        "email",
+        "segmento",
     )
 
-    autocomplete_fields = ("prospecto", "responsavel")
+    autocomplete_fields = ("empresa_prospecto", "responsavel")
     ordering = ("-data_cadastro", "-id")
     inlines = [ProspeccaoInteracaoInline]
 
@@ -1355,6 +1460,7 @@ class ProspeccaoComercialAdmin(admin.ModelAdmin):
         }),
         ("Empresa e contato", {
             "fields": (
+                "empresa_prospecto",
                 "prospecto",
                 "razao_social",
                 "contato_nome",
@@ -1383,6 +1489,11 @@ class ProspeccaoComercialAdmin(admin.ModelAdmin):
         urls = super().get_urls()
         custom_urls = [
             path(
+                "contatos-por-empresa/",
+                self.admin_site.admin_view(self.contatos_por_empresa_view),
+                name="comercial_prospeccaocomercial_contatos_empresa",
+            ),
+            path(
                 "calendario/",
                 self.admin_site.admin_view(self.calendario_view),
                 name="comercial_prospeccaocomercial_calendario",
@@ -1399,6 +1510,28 @@ class ProspeccaoComercialAdmin(admin.ModelAdmin):
             ),
         ]
         return custom_urls + urls
+
+    def contatos_por_empresa_view(self, request):
+        empresa_id = (request.GET.get("empresa_id") or "").strip()
+        queryset = Prospecto.objects.none()
+        if empresa_id:
+            queryset = Prospecto.objects.filter(
+                empresa_id=empresa_id,
+                status__in=("disponivel", "em_prospeccao"),
+            ).order_by("contato_nome", "email")
+        return JsonResponse({
+            "contatos": [
+                {
+                    "id": str(contato.pk),
+                    "nome": contato.contato_nome or "Contato sem nome",
+                    "cargo": contato.cargo,
+                    "email": contato.email,
+                    "telefone": contato.telefone or contato.whatsapp,
+                    "em_uso": hasattr(contato, "prospeccao"),
+                }
+                for contato in queryset
+            ]
+        })
 
     def get_queryset(self, request):
         ultima_interacao = ProspeccaoInteracao.objects.filter(

@@ -25,6 +25,7 @@ from financeiro.models import ContaReceber, PedidoCompra
 
 from .models import (
     CRMRegistro,
+    EmpresaProspecto,
     ItemProposta,
     Proposta,
     PropostaMovimentacao,
@@ -62,6 +63,24 @@ class ProspectoComercialTests(TestCase):
         self.assertEqual(prospeccao.razao_social, prospecto.razao_social)
         self.assertEqual(prospecto.status, "em_prospeccao")
 
+    def test_contatos_da_mesma_empresa_ficam_agrupados(self):
+        primeiro = Prospecto.objects.create(
+            razao_social="Indústria Agrupada Ltda",
+            contato_nome="Ana Compras",
+            email="ana@agrupada.example",
+        )
+        segundo = Prospecto.objects.create(
+            razao_social="  indústria agrupada ltda  ",
+            contato_nome="Bruno Manutenção",
+            email="bruno@agrupada.example",
+        )
+
+        self.assertEqual(primeiro.empresa_id, segundo.empresa_id)
+        self.assertEqual(
+            EmpresaProspecto.objects.get(pk=primeiro.empresa_id).contatos.count(),
+            2,
+        )
+
     def test_formulario_de_prospeccao_aceita_selecao_apenas_do_prospect(self):
         from .admin import ProspeccaoComercialAdminForm
 
@@ -82,6 +101,54 @@ class ProspectoComercialTests(TestCase):
         prospeccao = form.save()
         self.assertEqual(prospeccao.razao_social, prospecto.razao_social)
         self.assertEqual(prospeccao.contato_nome, prospecto.contato_nome)
+        self.assertEqual(prospeccao.empresa_prospecto, prospecto.empresa)
+
+    def test_formulario_limita_contatos_a_empresa_selecionada(self):
+        from .admin import ProspeccaoComercialAdminForm
+
+        contato_a = Prospecto.objects.create(
+            razao_social="Empresa A Ltda",
+            contato_nome="Contato A",
+            email="a@empresa.example",
+        )
+        contato_b = Prospecto.objects.create(
+            razao_social="Empresa B Ltda",
+            contato_nome="Contato B",
+            email="b@empresa.example",
+        )
+        form = ProspeccaoComercialAdminForm(data={
+            "empresa_prospecto": str(contato_a.empresa_id),
+            "prospecto": str(contato_b.pk),
+            "status": "novo",
+            "origem_lead": "outro",
+            "razao_social": "",
+            "data_cadastro": "2026-09-17 12:00:00",
+        })
+
+        self.assertFalse(form.is_valid())
+        self.assertIn("prospecto", form.errors)
+
+    def test_endpoint_retorna_somente_contatos_da_empresa(self):
+        contato_a = Prospecto.objects.create(
+            razao_social="Empresa Endpoint A",
+            contato_nome="Pessoa A",
+        )
+        Prospecto.objects.create(
+            razao_social="Empresa Endpoint B",
+            contato_nome="Pessoa B",
+        )
+        self.client.force_login(self.usuario)
+
+        resposta = self.client.get(
+            reverse("admin:comercial_prospeccaocomercial_contatos_empresa"),
+            {"empresa_id": str(contato_a.empresa_id)},
+        )
+
+        self.assertEqual(resposta.status_code, 200)
+        self.assertEqual(
+            [item["nome"] for item in resposta.json()["contatos"]],
+            ["Pessoa A"],
+        )
 
     def test_codigo_da_prospeccao_nao_reutiliza_lacuna_da_sequencia(self):
         ProspeccaoComercial.objects.create(
@@ -468,7 +535,12 @@ class ProspectoComercialTests(TestCase):
         resposta = self.client.get(reverse("admin:app_list", args=["comercial"]))
 
         self.assertEqual(resposta.status_code, 200)
-        self.assertContains(resposta, "Base de prospects")
+        self.assertContains(resposta, "Empresas para prospecção")
+        self.assertContains(resposta, "Contatos para prospecção")
+        self.assertContains(
+            resposta,
+            reverse("admin:comercial_empresaprospecto_changelist"),
+        )
         self.assertContains(resposta, reverse("admin:comercial_prospecto_changelist"))
 
     def test_base_de_prospects_filtra_empresa_cidade_e_categoria(self):

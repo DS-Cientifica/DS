@@ -1162,6 +1162,47 @@ class ProspectoSequencia(models.Model):
         return str(self.ultimo_numero)
 
 
+class EmpresaProspecto(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    razao_social = models.CharField("Razão social / empresa", max_length=255, db_index=True)
+    nome_fantasia = models.CharField(max_length=255, blank=True)
+    cnpj = models.CharField(max_length=18, blank=True, db_index=True)
+    site = models.URLField(blank=True)
+    segmento = models.CharField(max_length=120, blank=True)
+    cidade = models.CharField(max_length=100, blank=True)
+    uf = models.CharField(max_length=2, blank=True)
+    endereco = models.CharField(max_length=255, blank=True)
+    cep = models.CharField(max_length=12, blank=True)
+    origem = models.CharField(max_length=120, blank=True)
+    observacoes = models.TextField(blank=True)
+    chave_agrupamento = models.CharField(max_length=64, unique=True, editable=False)
+    criado_em = models.DateTimeField(auto_now_add=True)
+    atualizado_em = models.DateTimeField(auto_now=True)
+
+    @staticmethod
+    def gerar_chave_agrupamento(razao_social):
+        texto = unicodedata.normalize("NFKD", str(razao_social or ""))
+        texto = "".join(
+            caractere for caractere in texto
+            if not unicodedata.combining(caractere)
+        )
+        normalizado = " ".join(texto.casefold().strip().split())
+        return hashlib.sha256(normalizado.encode("utf-8")).hexdigest()
+
+    def save(self, *args, **kwargs):
+        self.uf = (self.uf or "").strip().upper()[:2]
+        self.chave_agrupamento = self.gerar_chave_agrupamento(self.razao_social)
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return self.razao_social
+
+    class Meta:
+        ordering = ("razao_social",)
+        verbose_name = "Empresa para prospecção"
+        verbose_name_plural = "Empresas para prospecção"
+
+
 class Prospecto(models.Model):
     STATUS_CHOICES = (
         ("disponivel", "Disponível para prospecção"),
@@ -1175,6 +1216,14 @@ class Prospecto(models.Model):
     )
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    empresa = models.ForeignKey(
+        "comercial.EmpresaProspecto",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="contatos",
+        verbose_name="Empresa",
+    )
     codigo = models.CharField("Código", max_length=12, unique=True, blank=True, editable=False)
     referencia_externa = models.CharField(
         "ID original de origem", max_length=50, blank=True, db_index=True
@@ -1412,6 +1461,33 @@ class Prospecto(models.Model):
     def save(self, *args, **kwargs):
         using = kwargs.get("using") or self._state.db or "default"
         with transaction.atomic(using=using):
+            if not self.empresa_id and self.razao_social:
+                chave_empresa = EmpresaProspecto.gerar_chave_agrupamento(
+                    self.razao_social
+                )
+                self.empresa, _ = EmpresaProspecto.objects.using(using).get_or_create(
+                    chave_agrupamento=chave_empresa,
+                    defaults={
+                        "razao_social": self.razao_social,
+                        "nome_fantasia": self.nome_fantasia,
+                        "cnpj": self.cnpj,
+                        "site": self.site,
+                        "segmento": self.segmento,
+                        "cidade": self.cidade,
+                        "uf": self.uf,
+                        "endereco": self.endereco,
+                        "cep": self.cep,
+                        "origem": self.origem,
+                        "observacoes": self.observacoes,
+                    },
+                )
+            if self.empresa_id:
+                for campo in (
+                    "razao_social", "nome_fantasia", "cnpj", "site", "segmento",
+                    "cidade", "uf", "endereco", "cep", "origem",
+                ):
+                    if not getattr(self, campo):
+                        setattr(self, campo, getattr(self.empresa, campo))
             if not self.codigo:
                 self.codigo = self.reservar_codigos(1, using=using)[0]
             self.uf = (self.uf or "").strip().upper()[:2]
@@ -1453,7 +1529,7 @@ class Prospecto(models.Model):
     class Meta:
         ordering = ("razao_social", "contato_nome")
         verbose_name = "Contato para prospecção"
-        verbose_name_plural = "Base de prospects"
+        verbose_name_plural = "Contatos para prospecção"
         indexes = (
             models.Index(
                 fields=("status", "razao_social"),
@@ -1512,6 +1588,15 @@ class ProspeccaoComercial(models.Model):
         null=True,
         blank=True,
         related_name="prospeccao",
+        verbose_name="Contato da empresa",
+    )
+    empresa_prospecto = models.ForeignKey(
+        "comercial.EmpresaProspecto",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="prospeccoes",
+        verbose_name="Empresa",
     )
     cliente = models.ForeignKey("clientes.Cliente", on_delete=models.SET_NULL, null=True, blank=True)
     responsavel = models.ForeignKey("auth.User", on_delete=models.SET_NULL, null=True, blank=True)
@@ -1575,6 +1660,8 @@ class ProspeccaoComercial(models.Model):
 
     def sincronizar_dados_cliente(self):
         if self.prospecto_id:
+            if not self.empresa_prospecto_id:
+                self.empresa_prospecto = self.prospecto.empresa
             if not self.razao_social:
                 self.razao_social = self.prospecto.razao_social
             if not self.contato_nome:
