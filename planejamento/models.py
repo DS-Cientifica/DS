@@ -1,3 +1,4 @@
+import re
 import uuid
 from datetime import datetime
 
@@ -163,8 +164,17 @@ class PlanejamentoServico(models.Model):
             raise ValidationError({"data_fim": "A data final nao pode ser menor que a data inicial."})
 
     def gerar_codigo(self):
-        ano = datetime.now().strftime("%y")
-        numero = PlanejamentoServico.objects.exclude(codigo="").count() + 1
+        ano = timezone.localdate().strftime("%y")
+        padrao = re.compile(rf"^PLAN-(\d+)/{re.escape(ano)}$")
+        numeros = []
+        for codigo in PlanejamentoServico.objects.filter(
+            codigo__startswith="PLAN-",
+            codigo__endswith=f"/{ano}",
+        ).values_list("codigo", flat=True):
+            correspondencia = padrao.match(codigo)
+            if correspondencia:
+                numeros.append(int(correspondencia.group(1)))
+        numero = max(numeros, default=0) + 1
         return f"PLAN-{numero:04d}/{ano}"
 
     def intervalo_resumido(self):

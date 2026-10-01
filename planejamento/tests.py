@@ -2,6 +2,7 @@ from datetime import date, time
 
 from django.core import mail
 from django.test import TestCase, override_settings
+from django.utils import timezone
 
 from clientes.models import Cliente, ContatoCliente
 
@@ -93,3 +94,27 @@ class EmailAgendamentoTests(TestCase):
             "status_ignorado",
         )
         self.assertEqual(len(mail.outbox), 0)
+
+
+class CodigoPlanejamentoTests(TestCase):
+    def setUp(self):
+        self.cliente = Cliente.objects.create(
+            razao_social="Cliente Numeração Ltda.",
+            nome_empresa="Cliente Numeração",
+            cnpj="98.765.432/0001-10",
+        )
+
+    def test_codigo_avanca_apos_lacuna_sem_reutilizar_numero(self):
+        ano = timezone.localdate().strftime("%y")
+        PlanejamentoServico.objects.create(
+            cliente=self.cliente,
+            codigo=f"PLAN-0001/{ano}",
+        )
+        PlanejamentoServico.objects.create(
+            cliente=self.cliente,
+            codigo=f"PLAN-0003/{ano}",
+        )
+
+        novo = PlanejamentoServico.objects.create(cliente=self.cliente)
+
+        self.assertEqual(novo.codigo, f"PLAN-0004/{ano}")
