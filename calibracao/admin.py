@@ -44,6 +44,7 @@ from .models import (
     CalibracaoCondutividade,
 )
 from .admin_mixins import OrdemServicoAutomaticaAdminMixin
+from .deletion_policy import motivos_protecao_exclusao
 from .ph_models import (
     CalibracaoPH,
     CalibracaoPHPadraoUtilizado,
@@ -1414,7 +1415,38 @@ class CalibracaoAdmin(OrdemServicoAutomaticaAdminMixin, admin.ModelAdmin):
     date_hierarchy = "data_calibracao"
 
     def has_delete_permission(self, request, obj=None):
-        return True
+        if not super().has_delete_permission(request, obj):
+            return False
+        if obj is None:
+            return True
+        return not motivos_protecao_exclusao(obj)
+
+    @staticmethod
+    def _mensagem_protecao_exclusao(obj):
+        motivos = motivos_protecao_exclusao(obj)
+        return (
+            f"A calibração {obj} não pode ser excluída porque possui resultado "
+            f"oficial: {', '.join(motivos)}. Preserve o registro e utilize um "
+            "fluxo controlado de cancelamento."
+        )
+
+    def delete_view(self, request, object_id, extra_context=None):
+        obj = self.get_object(request, object_id)
+        if obj is not None and motivos_protecao_exclusao(obj):
+            if not super().has_delete_permission(request, obj):
+                raise PermissionDenied
+            self.message_user(
+                request,
+                self._mensagem_protecao_exclusao(obj),
+                level=messages.ERROR,
+            )
+            return redirect(
+                reverse(
+                    f"admin:{obj._meta.app_label}_{obj._meta.model_name}_change",
+                    args=(obj.pk,),
+                )
+            )
+        return super().delete_view(request, object_id, extra_context)
 
     def _delete_legacy_turbidimetro_relations(self, calibracao_id):
         legacy_tables = (
@@ -1422,21 +1454,38 @@ class CalibracaoAdmin(OrdemServicoAutomaticaAdminMixin, admin.ModelAdmin):
             "calibracao_turbidimetrocalibracaoponto",
             "calibracao_calibracaoturbidimetro",
         )
+        existing_tables = set(connection.introspection.table_names())
         with connection.cursor() as cursor:
             for table_name in legacy_tables:
+                if table_name not in existing_tables:
+                    continue
                 cursor.execute(
                     f"DELETE FROM {table_name} WHERE calibracao_id = %s",
                     [calibracao_id],
                 )
 
     def delete_model(self, request, obj):
+        if motivos_protecao_exclusao(obj):
+            raise PermissionDenied(self._mensagem_protecao_exclusao(obj))
         with transaction.atomic():
             self._delete_legacy_turbidimetro_relations(obj.pk)
             obj.delete()
 
     def delete_queryset(self, request, queryset):
+        objetos = list(queryset)
+        protegidos = [obj for obj in objetos if motivos_protecao_exclusao(obj)]
+        if protegidos:
+            identificadores = ", ".join(str(obj) for obj in protegidos[:5])
+            complemento = "" if len(protegidos) <= 5 else f" e mais {len(protegidos) - 5}"
+            self.message_user(
+                request,
+                "Nenhuma calibração foi excluída. A seleção contém registros "
+                f"protegidos por resultado oficial: {identificadores}{complemento}.",
+                level=messages.ERROR,
+            )
+            return
         with transaction.atomic():
-            for obj in queryset:
+            for obj in objetos:
                 self._delete_legacy_turbidimetro_relations(obj.pk)
                 obj.delete()
 

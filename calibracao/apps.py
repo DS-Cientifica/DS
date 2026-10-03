@@ -1,5 +1,5 @@
 from django.apps import AppConfig
-from django.db.models.signals import post_migrate, pre_save
+from django.db.models.signals import post_migrate, pre_delete, pre_save
 from django.http import JsonResponse
 
 
@@ -24,6 +24,7 @@ class CalibracaoConfig(AppConfig):
         from .safety_models import CalibracaoDispositivoSegurancaPressao
         from .sphyg_models import CalibracaoEsfigmomanometro
         from .services.ordem_servico import preencher_ordem_servico_da_calibracao
+        from .deletion_policy import impedir_exclusao_calibracao_oficial
 
         from .access_groups import apply_default_access_groups
 
@@ -94,3 +95,9 @@ class CalibracaoConfig(AppConfig):
                 sender=modelo,
                 dispatch_uid=f"calibracao.preencher_ordem_servico.{modelo._meta.label_lower}",
             )
+
+        pre_delete.connect(
+            impedir_exclusao_calibracao_oficial,
+            sender=Calibracao,
+            dispatch_uid="calibracao.impedir_exclusao_calibracao_oficial",
+        )

@@ -3,6 +3,8 @@ import os
 
 import dj_database_url
 
+from .configuration import database_password_from_environment, secret_key_from_environment
+
 try:
     from dotenv import load_dotenv
 
@@ -20,9 +22,9 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # ========================
 # SECURITY
 # ========================
-SECRET_KEY = os.getenv("DJANGO_SECRET_KEY", "django-insecure-dev-key")
-
 DEBUG = os.getenv("DEBUG", "False").lower() in ("1", "true", "yes", "on")
+
+SECRET_KEY = secret_key_from_environment(debug=DEBUG)
 
 ALLOWED_HOSTS = [
     host.strip()
@@ -91,7 +93,6 @@ MIDDLEWARE = [
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
-    "core.middleware.EnsureAdminUserMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
@@ -128,6 +129,10 @@ WSGI_APPLICATION = "core.wsgi.application"
 # DATABASE
 # ========================
 DATABASE_URL = os.getenv("DATABASE_URL")
+DB_PASSWORD = database_password_from_environment(
+    debug=DEBUG,
+    database_url=DATABASE_URL,
+)
 
 if DATABASE_URL:
     DATABASES = {
@@ -142,7 +147,7 @@ else:
             "ENGINE": "django.db.backends.postgresql",
             "NAME": os.getenv("DB_NAME", "axion_db"),
             "USER": os.getenv("DB_USER", "postgres"),
-            "PASSWORD": os.getenv("DB_PASSWORD", "DSc@1301"),
+            "PASSWORD": DB_PASSWORD,
             "HOST": os.getenv("DB_HOST", "localhost"),
             "PORT": os.getenv("DB_PORT", "5432"),
         }
