@@ -233,6 +233,78 @@ class EtiquetaCalibracaoQRTests(TestCase):
         self.assertNotEqual(calibracao.certificado_numero, self.etiqueta.codigo)
         self.assertEqual(self.etiqueta.status, EtiquetaCalibracaoQR.Status.DISPONIVEL)
 
+    def test_admin_superusuario_gera_e_ativa_lote_com_rastreabilidade(self):
+        usuario = User.objects.create_superuser(
+            username="admin-lotes-etiqueta",
+            email="admin-lotes@example.com",
+            password="senha-teste",
+        )
+        self.client.force_login(usuario)
+        url = reverse("admin:certificados_etiquetacalibracaoqr_lotes")
+        pagina = self.client.get(url)
+        self.assertEqual(pagina.status_code, 200)
+        self.assertContains(pagina, "PILOTO-2026-01")
+        self.assertContains(pagina, "certificados futuros da aba Calibração")
+
+        resposta = self.client.post(
+            url,
+            {
+                "acao": "gerar",
+                "lote": "PILOTO-ADMIN",
+                "quantidade": "5",
+                "confirmar": "sim",
+            },
+        )
+        self.assertEqual(resposta.status_code, 302)
+        lote = EtiquetaCalibracaoQR.objects.filter(lote="PILOTO-ADMIN")
+        self.assertEqual(lote.count(), 5)
+        self.assertEqual(
+            set(lote.values_list("status", flat=True)),
+            {EtiquetaCalibracaoQR.Status.AGUARDANDO_IMPRESSAO},
+        )
+        self.assertEqual(set(lote.values_list("criada_por", flat=True)), {usuario.pk})
+
+        resposta = self.client.post(
+            url,
+            {
+                "acao": "ativar",
+                "lote": "PILOTO-ADMIN",
+                "confirmar": "sim",
+            },
+        )
+        self.assertEqual(resposta.status_code, 302)
+        self.assertEqual(
+            set(lote.values_list("status", flat=True)),
+            {EtiquetaCalibracaoQR.Status.DISPONIVEL},
+        )
+        self.assertEqual(set(lote.values_list("ativada_por", flat=True)), {usuario.pk})
+        self.assertFalse(lote.filter(ativada_em__isnull=True).exists())
+
+    def test_admin_lotes_exige_superusuario_e_confirmacao(self):
+        operador = User.objects.create_user(
+            username="operador-lotes-etiqueta",
+            password="senha-teste",
+            is_staff=True,
+        )
+        self.client.force_login(operador)
+        url = reverse("admin:certificados_etiquetacalibracaoqr_lotes")
+        self.assertEqual(self.client.get(url).status_code, 403)
+
+        superusuario = User.objects.create_superuser(
+            username="supervisor-lotes-etiqueta",
+            email="supervisor-lotes@example.com",
+            password="senha-teste",
+        )
+        self.client.force_login(superusuario)
+        resposta = self.client.post(
+            url,
+            {"acao": "gerar", "lote": "SEM-CONFIRMACAO", "quantidade": "5"},
+        )
+        self.assertEqual(resposta.status_code, 200)
+        self.assertFalse(
+            EtiquetaCalibracaoQR.objects.filter(lote="SEM-CONFIRMACAO").exists()
+        )
+
 
 class DominioPublicoCertificadosTests(TestCase):
     host_publico = "certificados.exemplo.com.br"

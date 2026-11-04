@@ -132,6 +132,21 @@ class EtiquetaCalibracaoQR(models.Model):
         blank=True,
         related_name="etiquetas_calibracao_vinculadas",
     )
+    criada_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="lotes_etiquetas_qr_criados",
+    )
+    ativada_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="lotes_etiquetas_qr_ativados",
+    )
+    ativada_em = models.DateTimeField(null=True, blank=True)
     vinculada_em = models.DateTimeField(null=True, blank=True)
     reservada_em = models.DateTimeField(null=True, blank=True)
     motivo_bloqueio = models.TextField(blank=True)

@@ -1,6 +1,16 @@
+from io import StringIO
+
 from django.contrib import admin
-from django.shortcuts import get_object_or_404, render
+from django.contrib import messages
+from django.core.exceptions import PermissionDenied
+from django.core.management import call_command
+from django.core.management.base import CommandError
+from django.db import transaction
+from django.db.models import Count
+from django.shortcuts import get_object_or_404, redirect, render
+from django.template.response import TemplateResponse
 from django.urls import path, reverse
+from django.utils import timezone
 from django.utils.html import format_html
 
 from .models import (
@@ -171,9 +181,11 @@ class RevisaoCertificadoAdmin(admin.ModelAdmin):
 
 @admin.register(EtiquetaCalibracaoQR)
 class EtiquetaCalibracaoQRAdmin(admin.ModelAdmin):
+    change_list_template = "admin/certificados/etiquetacalibracaoqr/change_list.html"
     list_display = (
         "codigo", "lote", "sequencia", "status", "certificado",
-        "calibracao_exibicao", "vinculada_por", "vinculada_em", "criado_em",
+        "calibracao_exibicao", "criada_por", "ativada_por", "vinculada_por",
+        "vinculada_em", "criado_em",
     )
     list_filter = ("status", "lote")
     search_fields = ("codigo", "lote", "certificado__numero")
@@ -182,7 +194,8 @@ class EtiquetaCalibracaoQRAdmin(admin.ModelAdmin):
     readonly_fields = (
         "codigo", "lote", "sequencia", "token_publico", "status",
         "calibracao_content_type", "calibracao_object_id", "calibracao_exibicao",
-        "certificado", "reservada_em", "vinculada_por", "vinculada_em", "motivo_bloqueio",
+        "certificado", "criada_por", "ativada_por", "ativada_em", "reservada_em",
+        "vinculada_por", "vinculada_em", "motivo_bloqueio",
         "criado_em", "atualizado_em",
     )
 
@@ -191,6 +204,103 @@ class EtiquetaCalibracaoQRAdmin(admin.ModelAdmin):
 
     def has_delete_permission(self, request, obj=None):
         return False
+
+    def get_urls(self):
+        urls = super().get_urls()
+        custom_urls = [
+            path(
+                "lotes/",
+                self.admin_site.admin_view(self.lotes_view),
+                name="certificados_etiquetacalibracaoqr_lotes",
+            ),
+        ]
+        return custom_urls + urls
+
+    def lotes_view(self, request):
+        if not request.user.is_superuser:
+            raise PermissionDenied
+
+        if request.method == "POST":
+            acao = request.POST.get("acao", "").strip()
+            lote = request.POST.get("lote", "").strip()
+            confirmado = request.POST.get("confirmar") == "sim"
+            if not confirmado:
+                messages.error(request, "Marque a confirmação antes de executar a operação.")
+            elif acao == "gerar":
+                try:
+                    quantidade = int(request.POST.get("quantidade", ""))
+                except (TypeError, ValueError):
+                    messages.error(request, "Informe uma quantidade inteira válida.")
+                else:
+                    if EtiquetaCalibracaoQR.objects.filter(lote=lote).exists():
+                        messages.error(request, "Este lote já existe; nenhuma etiqueta foi criada.")
+                    else:
+                        saida = StringIO()
+                        try:
+                            with transaction.atomic():
+                                call_command(
+                                    "gerar_lote_etiquetas_qr",
+                                    lote=lote,
+                                    quantidade=quantidade,
+                                    apply=True,
+                                    stdout=saida,
+                                )
+                                EtiquetaCalibracaoQR.objects.filter(lote=lote).update(
+                                    criada_por=request.user
+                                )
+                        except CommandError as exc:
+                            messages.error(request, str(exc))
+                        else:
+                            messages.success(
+                                request,
+                                f"Lote {lote} gerado com {quantidade} etiqueta(s), aguardando impressão.",
+                            )
+                            return redirect(
+                                reverse("admin:certificados_etiquetacalibracaoqr_changelist")
+                                + f"?lote__exact={lote}"
+                            )
+            elif acao == "ativar":
+                saida = StringIO()
+                try:
+                    with transaction.atomic():
+                        call_command(
+                            "ativar_lote_etiquetas_qr",
+                            lote=lote,
+                            apply=True,
+                            stdout=saida,
+                        )
+                        EtiquetaCalibracaoQR.objects.filter(lote=lote).update(
+                            ativada_por=request.user,
+                            ativada_em=timezone.now(),
+                        )
+                except CommandError as exc:
+                    messages.error(request, str(exc))
+                else:
+                    messages.success(request, f"Lote {lote} ativado para uso nas calibrações DS.")
+                    return redirect(
+                        reverse("admin:certificados_etiquetacalibracaoqr_changelist")
+                        + f"?lote__exact={lote}"
+                    )
+            else:
+                messages.error(request, "Operação de lote inválida.")
+
+        lotes = list(
+            EtiquetaCalibracaoQR.objects.values("lote", "status")
+            .annotate(total=Count("id"))
+            .order_by("lote", "status")
+        )
+        context = {
+            **self.admin_site.each_context(request),
+            "title": "Controle de lotes de etiquetas QR",
+            "opts": self.model._meta,
+            "lotes": lotes,
+            "changelist_url": reverse("admin:certificados_etiquetacalibracaoqr_changelist"),
+        }
+        return TemplateResponse(
+            request,
+            "admin/certificados/etiquetacalibracaoqr/lotes.html",
+            context,
+        )
 
     @admin.display(description="Calibração reservada")
     def calibracao_exibicao(self, obj):

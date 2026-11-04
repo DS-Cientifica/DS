@@ -1,0 +1,89 @@
+{% extends "admin/base_site.html" %}
+{% load i18n admin_urls %}
+
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+  <a href="{% url 'admin:index' %}">Início</a>
+  &rsaquo; <a href="{% url 'admin:app_list' app_label='certificados' %}">Certificados</a>
+  &rsaquo; <a href="{{ changelist_url }}">Etiquetas de calibração com QR Code</a>
+  &rsaquo; Controle de lotes
+</div>
+{% endblock %}
+
+{% block content %}
+<div id="content-main">
+  <div class="module aligned">
+    <h2>Gerar lote</h2>
+    <div class="form-row">
+      <p>
+        Os códigos serão reservados para certificados futuros da aba Calibração e ficarão
+        em <strong>Aguardando impressão</strong>. Eles não serão consumidos até a ativação.
+      </p>
+    </div>
+    <form method="post">
+      {% csrf_token %}
+      <input type="hidden" name="acao" value="gerar">
+      <div class="form-row">
+        <label for="id_lote_gerar" class="required">Identificação do lote:</label>
+        <input id="id_lote_gerar" name="lote" maxlength="50" required value="PILOTO-2026-01">
+      </div>
+      <div class="form-row">
+        <label for="id_quantidade" class="required">Quantidade:</label>
+        <input id="id_quantidade" name="quantidade" type="number" min="1" max="500" required value="5">
+      </div>
+      <div class="form-row">
+        <label>
+          <input type="checkbox" name="confirmar" value="sim" required>
+          Confirmo a reserva permanente destes códigos. Um lote emitido não deve ser excluído nem reutilizado.
+        </label>
+      </div>
+      <div class="submit-row">
+        <input type="submit" value="Gerar lote aguardando impressão" class="default">
+      </div>
+    </form>
+  </div>
+
+  <div class="module aligned">
+    <h2>Ativar lote após conferência física</h2>
+    <div class="form-row">
+      <p>
+        Ative somente depois de conferir quantidade, legibilidade, dimensões de 60 × 30 mm,
+        QR Code de 20 mm e correspondência entre código impresso e QR.
+      </p>
+    </div>
+    <form method="post">
+      {% csrf_token %}
+      <input type="hidden" name="acao" value="ativar">
+      <div class="form-row">
+        <label for="id_lote_ativar" class="required">Identificação do lote:</label>
+        <input id="id_lote_ativar" name="lote" maxlength="50" required>
+      </div>
+      <div class="form-row">
+        <label>
+          <input type="checkbox" name="confirmar" value="sim" required>
+          Confirmo que todas as etiquetas deste lote foram impressas e verificadas.
+        </label>
+      </div>
+      <div class="submit-row">
+        <input type="submit" value="Ativar lote para calibrações DS">
+      </div>
+    </form>
+  </div>
+
+  <div class="module">
+    <h2>Resumo dos lotes registrados</h2>
+    {% if lotes %}
+      <table>
+        <thead><tr><th>Lote</th><th>Status</th><th>Quantidade</th></tr></thead>
+        <tbody>
+          {% for item in lotes %}
+            <tr><td>{{ item.lote }}</td><td>{{ item.status }}</td><td>{{ item.total }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <p>Nenhum lote registrado.</p>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}
