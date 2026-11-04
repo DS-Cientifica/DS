@@ -3,13 +3,18 @@ from django.shortcuts import get_object_or_404, redirect, render
 
 from documentos.services.documentos import verificar_integridade
 from documentos.services.storages import storage_para_backend
-from .models import CertificadoCalibracao
+from .models import CertificadoCalibracao, EtiquetaCalibracaoQR
 from .qr import gerar_qr_svg
 
 
 def consultar_certificado(request, uuid_publico):
     certificado = get_object_or_404(
-        CertificadoCalibracao.objects.select_related("instrumento", "cliente", "documento"),
+        CertificadoCalibracao.objects.select_related(
+            "instrumento",
+            "cliente",
+            "documento",
+            "documento__assinatura_digital",
+        ),
         uuid_publico=uuid_publico,
         publicado=True,
     )
@@ -19,6 +24,11 @@ def consultar_certificado(request, uuid_publico):
         "certificados/consulta.html",
         {
             "certificado": certificado,
+            "assinatura_digital": getattr(
+                certificado.documento,
+                "assinatura_digital",
+                None,
+            ) if certificado.documento_id else None,
             "url_consulta": url_consulta,
             "qr_svg": gerar_qr_svg(url_consulta),
         },
@@ -42,3 +52,24 @@ def baixar_certificado(request, uuid_publico):
     response["Cache-Control"] = "private, no-store"
     response["X-Content-Type-Options"] = "nosniff"
     return response
+
+
+def consultar_etiqueta(request, token_publico):
+    etiqueta = get_object_or_404(
+        EtiquetaCalibracaoQR.objects.select_related("certificado"),
+        token_publico=token_publico,
+    )
+    if (
+        etiqueta.status == EtiquetaCalibracaoQR.Status.VINCULADA
+        and etiqueta.certificado_id
+        and etiqueta.certificado.publicado
+    ):
+        return redirect(
+            "certificados:consulta",
+            uuid_publico=etiqueta.certificado.uuid_publico,
+        )
+    return render(
+        request,
+        "certificados/consulta_etiqueta.html",
+        {"etiqueta": etiqueta},
+    )

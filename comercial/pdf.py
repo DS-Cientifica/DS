@@ -7,6 +7,7 @@ from reportlab.lib.enums import TA_LEFT
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import mm
+from reportlab.lib.utils import ImageReader
 from reportlab.platypus import Image, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
 
@@ -33,6 +34,7 @@ def gerar_pdf_proposta(proposta, empresa, contexto):
     buffer = BytesIO()
     doc = SimpleDocTemplate(
         buffer,
+        invariant=1,
         pagesize=A4,
         leftMargin=14 * mm,
         rightMargin=14 * mm,
@@ -316,6 +318,70 @@ def gerar_pdf_proposta(proposta, empresa, contexto):
 
     story.append(section_title("CONDIÇÕES GERAIS DA PROPOSTA"))
     story.append(Paragraph(contexto["condicoes_gerais_proposta"].replace("\n", "<br/>"), styles["Body"]))
+
+    assinatura_conteudo = Spacer(1, 20 * mm)
+    assinatura_buffer = None
+    if proposta.incluir_assinatura_pdf and proposta.assinatura_imagem:
+        try:
+            with proposta.assinatura_imagem.open("rb") as arquivo_assinatura:
+                assinatura_buffer = BytesIO(arquivo_assinatura.read())
+            leitor = ImageReader(assinatura_buffer)
+            largura_original, altura_original = leitor.getSize()
+            escala = min(
+                (65 * mm) / largura_original,
+                (20 * mm) / altura_original,
+                1,
+            )
+            assinatura_buffer.seek(0)
+            assinatura_conteudo = Image(
+                assinatura_buffer,
+                width=largura_original * escala,
+                height=altura_original * escala,
+            )
+        except Exception:
+            assinatura_conteudo = Spacer(1, 20 * mm)
+
+    contato = contexto.get("contato")
+    nome_cliente = getattr(contato, "nome", "") if contato else ""
+
+    def bloco_assinatura(conteudo, nome, funcao):
+        bloco = Table(
+            [
+                [conteudo],
+                [Paragraph(nome or "-", styles["BodyBold"])],
+                [Paragraph(funcao, styles["Muted"])],
+            ],
+            colWidths=[84 * mm],
+            rowHeights=[22 * mm, None, None],
+        )
+        bloco.setStyle(TableStyle([
+            ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+            ("VALIGN", (0, 0), (-1, 0), "BOTTOM"),
+            ("LINEABOVE", (0, 1), (-1, 1), 0.8, TEXT),
+            ("TOPPADDING", (0, 1), (-1, 1), 4),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+        ]))
+        return bloco
+
+    story.append(Spacer(1, 8 * mm))
+    assinaturas = Table(
+        [[
+            bloco_assinatura(Spacer(1, 20 * mm), nome_cliente, "Aprovação do cliente"),
+            bloco_assinatura(
+                assinatura_conteudo,
+                proposta.assinatura_nome or "DIEGO H. A. SALDANHA",
+                proposta.assinatura_cargo or "DS Científica",
+            ),
+        ]],
+        colWidths=[84 * mm, 84 * mm],
+        hAlign="CENTER",
+    )
+    assinaturas.setStyle(TableStyle([
+        ("VALIGN", (0, 0), (-1, -1), "BOTTOM"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 0),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+    ]))
+    story.append(assinaturas)
 
     doc.build(story)
     buffer.seek(0)

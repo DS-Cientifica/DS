@@ -1,19 +1,23 @@
 import re
-import logging
 
 from django.contrib.contenttypes.models import ContentType
 from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.utils import timezone
 
-from documentos.services.documentos import registrar_documento
-from documentos.services.storages import storage_para_backend
+from documentos.services.assinaturas import (
+    assinatura_atual_para_pdf,
+    registrar_assinatura_pdf_a1,
+    ultima_assinatura_do_objeto,
+)
+from documentos.services.documentos import verificar_integridade
 
-from .models import CertificadoCalibracao, PadraoUtilizado, RevisaoCertificado
-
-
-logger = logging.getLogger(__name__)
-
+from .models import (
+    CertificadoCalibracao,
+    EtiquetaCalibracaoQR,
+    PadraoUtilizado,
+    RevisaoCertificado,
+)
 
 def situacao_padrao_na_data(padrao, data_utilizacao):
     if padrao.status == "suspenso":
@@ -55,6 +59,60 @@ def certificado_publico_da_calibracao(calibracao):
     )
 
 
+def _vincular_etiqueta_reservada(certificado, calibracao, *, usuario=None):
+    etiqueta = (
+        EtiquetaCalibracaoQR.objects.select_for_update()
+        .filter(codigo=certificado.numero)
+        .first()
+    )
+    if not etiqueta:
+        return None
+    content_type = ContentType.objects.get_for_model(calibracao, for_concrete_model=False)
+    if (
+        etiqueta.status != EtiquetaCalibracaoQR.Status.RESERVADA
+        or etiqueta.calibracao_content_type_id != content_type.pk
+        or etiqueta.calibracao_object_id != str(calibracao.pk)
+    ):
+        raise ValidationError(
+            "A etiqueta com este número não está reservada para esta calibração."
+        )
+    etiqueta.certificado = certificado
+    etiqueta.status = EtiquetaCalibracaoQR.Status.VINCULADA
+    etiqueta.vinculada_por = usuario if getattr(usuario, "is_authenticated", False) else None
+    etiqueta.vinculada_em = timezone.now()
+    etiqueta.full_clean()
+    etiqueta.save(
+        update_fields=(
+            "certificado",
+            "status",
+            "vinculada_por",
+            "vinculada_em",
+            "atualizado_em",
+        )
+    )
+    return etiqueta
+
+
+def _pdf_final_da_calibracao(calibracao):
+    if not calibracao.certificado_arquivo:
+        raise ValidationError("Anexe o PDF final do certificado antes da assinatura.")
+    with calibracao.certificado_arquivo.open("rb") as arquivo:
+        pdf = arquivo.read()
+    if not pdf.startswith(b"%PDF"):
+        raise ValidationError("O arquivo final do certificado não é um PDF válido.")
+    return pdf
+
+
+def assinatura_atual_da_calibracao(calibracao):
+    if not calibracao or not calibracao.pk or not calibracao.certificado_arquivo:
+        return None
+    try:
+        pdf = _pdf_final_da_calibracao(calibracao)
+    except (OSError, ValidationError):
+        return None
+    return assinatura_atual_para_pdf(calibracao, pdf)
+
+
 def _padroes_cadastrados_da_calibracao(calibracao):
     texto = (calibracao.padroes or "").strip()
     if not texto:
@@ -77,6 +135,11 @@ def _padroes_cadastrados_da_calibracao(calibracao):
 
 
 def _validar_publicacao_calibracao(calibracao):
+    if calibracao.origem_certificado != calibracao.OrigemCertificado.EMITIDO_DS:
+        raise ValidationError(
+            "A assinatura e a publicação por QR são permitidas somente para "
+            "certificados classificados como emitidos pela DS Científica."
+        )
     if calibracao.status != "concluida":
         raise ValidationError("Somente calibrações concluídas podem ser publicadas.")
     if not (calibracao.certificado_numero or "").strip():
@@ -96,6 +159,30 @@ def _validar_publicacao_calibracao(calibracao):
             + ", ".join(impedimentos)
         )
     return padroes
+
+
+def assinar_calibracao_a1(calibracao, *, certificado_a1, senha, usuario):
+    """Assina o PDF final antes da publicação, preservando o arquivo legado."""
+    _validar_publicacao_calibracao(calibracao)
+    existente = certificado_publico_da_calibracao(calibracao)
+    if existente and existente.publicado:
+        raise ValidationError(
+            "Este certificado já foi publicado. Use o fluxo controlado de substituição "
+            "para emitir uma nova revisão."
+        )
+    pdf = _pdf_final_da_calibracao(calibracao)
+    numero = (calibracao.certificado_numero or "certificado").strip()
+    nome_arquivo = re.sub(r"[^A-Za-z0-9._-]+", "-", numero).strip(".-")
+    return registrar_assinatura_pdf_a1(
+        objeto=calibracao,
+        pdf=pdf,
+        certificado_a1=certificado_a1,
+        senha=senha,
+        usuario=usuario,
+        nome_arquivo=f"{nome_arquivo or 'certificado'}-rev00.pdf",
+        revisao_referencia="00",
+        motivo=f"Assinatura digital do certificado de calibração {numero}",
+    )
 
 
 @transaction.atomic
@@ -120,18 +207,24 @@ def publicar_calibracao_existente(calibracao, *, usuario=None):
         return existente, False
 
     padroes = _validar_publicacao_calibracao(calibracao)
-    documento = None
-    try:
-        with calibracao.certificado_arquivo.open("rb") as arquivo:
-            documento = registrar_documento(
-                arquivo,
-                tipo_documento="certificado_calibracao_publicado",
-                objeto=calibracao,
-                usuario=usuario,
-                imutavel=True,
+    pdf = _pdf_final_da_calibracao(calibracao)
+    assinatura = assinatura_atual_para_pdf(calibracao, pdf)
+    if not assinatura:
+        if ultima_assinatura_do_objeto(calibracao):
+            raise ValidationError(
+                "O PDF foi alterado depois da assinatura digital. Assine novamente antes de publicar."
             )
+        raise ValidationError(
+            "Assine digitalmente o certificado com o A1 antes da publicação."
+        )
+    integro, _motivo_integridade = verificar_integridade(assinatura.documento_assinado)
+    if not integro:
+        raise ValidationError(
+            "O PDF assinado não passou na verificação de integridade e não pode ser publicado."
+        )
 
-        certificado = CertificadoCalibracao.objects.create(
+    documento = assinatura.documento_assinado
+    certificado = CertificadoCalibracao.objects.create(
             numero=calibracao.certificado_numero.strip(),
             calibracao_content_type=content_type,
             calibracao_object_id=str(calibracao.pk),
@@ -143,42 +236,32 @@ def publicar_calibracao_existente(calibracao, *, usuario=None):
             status=CertificadoCalibracao.Status.RASCUNHO,
             publicado=False,
             permitir_download_publico=False,
-        )
-        for padrao in padroes:
-            vincular_padrao(certificado, padrao)
+    )
+    for padrao in padroes:
+        vincular_padrao(certificado, padrao)
 
-        certificado.status = CertificadoCalibracao.Status.VALIDO
-        certificado.publicado = True
-        certificado.permitir_download_publico = True
-        certificado.aprovado_por = usuario if getattr(usuario, "is_authenticated", False) else None
-        certificado.aprovado_em = timezone.now()
-        certificado.save(
-            update_fields=(
-                "status", "publicado", "permitir_download_publico",
-                "aprovado_por", "aprovado_em", "atualizado_em",
-            )
+    certificado.status = CertificadoCalibracao.Status.VALIDO
+    certificado.publicado = True
+    certificado.permitir_download_publico = True
+    certificado.aprovado_por = usuario if getattr(usuario, "is_authenticated", False) else None
+    certificado.aprovado_em = timezone.now()
+    certificado.save(
+        update_fields=(
+            "status", "publicado", "permitir_download_publico",
+            "aprovado_por", "aprovado_em", "atualizado_em",
         )
-        RevisaoCertificado.objects.create(
-            certificado=certificado,
-            acao="publicado",
-            justificativa="Publicação controlada a partir da calibração concluída.",
-            usuario=usuario if getattr(usuario, "is_authenticated", False) else None,
-        )
-        return certificado, True
-    except Exception:
-        # O storage não participa da transação do banco. Compense a gravação física
-        # antes que o atomic externo reverta DocumentoArquivo e seus vínculos.
-        if documento is not None:
-            try:
-                storage_para_backend(documento.backend_primario).delete(
-                    documento.chave_armazenamento
-                )
-            except Exception:
-                logger.exception(
-                    "Falha ao remover arquivo órfão após erro na publicação do certificado %s.",
-                    calibracao.pk,
-                )
-        raise
+    )
+    _vincular_etiqueta_reservada(certificado, calibracao, usuario=usuario)
+    RevisaoCertificado.objects.create(
+        certificado=certificado,
+        acao="publicado",
+        justificativa=(
+            "Publicação controlada do PDF assinado digitalmente a partir da "
+            "calibração concluída."
+        ),
+        usuario=usuario if getattr(usuario, "is_authenticated", False) else None,
+    )
+    return certificado, True
 
 
 @transaction.atomic

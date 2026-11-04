@@ -1,4 +1,5 @@
 import secrets
+import re
 import uuid
 
 from django.conf import settings
@@ -9,6 +10,9 @@ from django.db import models
 
 
 ALFABETO_CODIGO = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+CODIGO_CERTIFICADO_ETIQUETA = re.compile(
+    r"^(?=(?:.*[A-Z]){3})(?=(?:.*\d){3})[A-Z0-9]{6}$"
+)
 
 
 def gerar_codigo_curto():
@@ -66,6 +70,10 @@ class CertificadoCalibracao(models.Model):
 
     def clean(self):
         super().clean()
+        if not CODIGO_CERTIFICADO_ETIQUETA.fullmatch((self.codigo or "").strip().upper()):
+            raise ValidationError(
+                "O código da etiqueta deve possuir seis caracteres, com três letras e três números."
+            )
         if self.certificado_anterior_id == self.pk:
             raise ValidationError("Um certificado não pode substituir a si próprio.")
         if self.status == self.Status.SUBSTITUIDO and self.permitir_download_publico:
@@ -79,6 +87,101 @@ class CertificadoCalibracao(models.Model):
             and self.documento_id
             and self.status in {self.Status.APROVADO, self.Status.VALIDO, self.Status.VENCIDO}
         )
+
+
+class EtiquetaCalibracaoQR(models.Model):
+    class Status(models.TextChoices):
+        AGUARDANDO_IMPRESSAO = "aguardando_impressao", "Aguardando impressão"
+        DISPONIVEL = "disponivel", "Disponível"
+        RESERVADA = "reservada", "Reservada para calibração"
+        VINCULADA = "vinculada", "Vinculada"
+        CANCELADA = "cancelada", "Cancelada"
+        INUTILIZADA = "inutilizada", "Inutilizada"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    token_publico = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
+    codigo = models.CharField(max_length=24, unique=True, editable=False)
+    lote = models.CharField(max_length=50, db_index=True, editable=False)
+    sequencia = models.PositiveIntegerField(editable=False)
+    status = models.CharField(
+        max_length=20,
+        choices=Status.choices,
+        default=Status.DISPONIVEL,
+        db_index=True,
+    )
+    calibracao_content_type = models.ForeignKey(
+        ContentType,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="etiquetas_calibracao_qr",
+    )
+    calibracao_object_id = models.CharField(max_length=64, null=True, blank=True, db_index=True)
+    calibracao = GenericForeignKey("calibracao_content_type", "calibracao_object_id")
+    certificado = models.OneToOneField(
+        CertificadoCalibracao,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="etiqueta_qr",
+    )
+    vinculada_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="etiquetas_calibracao_vinculadas",
+    )
+    vinculada_em = models.DateTimeField(null=True, blank=True)
+    reservada_em = models.DateTimeField(null=True, blank=True)
+    motivo_bloqueio = models.TextField(blank=True)
+    criado_em = models.DateTimeField(auto_now_add=True)
+    atualizado_em = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ("lote", "sequencia")
+        verbose_name = "Etiqueta de calibração com QR Code"
+        verbose_name_plural = "Etiquetas de calibração com QR Code"
+        constraints = [
+            models.UniqueConstraint(
+                fields=("lote", "sequencia"),
+                name="etiqueta_lote_sequencia_unica",
+            ),
+            models.UniqueConstraint(
+                fields=("calibracao_content_type", "calibracao_object_id"),
+                condition=models.Q(calibracao_content_type__isnull=False),
+                name="etiqueta_calibracao_unica",
+            ),
+        ]
+
+    def __str__(self):
+        return self.codigo
+
+    def clean(self):
+        super().clean()
+        possui_calibracao = bool(
+            self.calibracao_content_type_id and self.calibracao_object_id
+        )
+        if bool(self.calibracao_content_type_id) != bool(self.calibracao_object_id):
+            raise ValidationError("Informe a referência completa da calibração.")
+        if self.status in {self.Status.AGUARDANDO_IMPRESSAO, self.Status.DISPONIVEL} and (
+            possui_calibracao or self.certificado_id
+        ):
+            raise ValidationError("Uma etiqueta ainda não reservada não pode possuir vínculos.")
+        if self.status in {self.Status.RESERVADA, self.Status.VINCULADA} and not possui_calibracao:
+            raise ValidationError("A etiqueta reservada deve possuir calibração vinculada.")
+        if self.status == self.Status.RESERVADA and self.certificado_id:
+            raise ValidationError("A etiqueta reservada ainda não pode possuir certificado público.")
+        if self.status == self.Status.VINCULADA and not self.certificado_id:
+            raise ValidationError("Uma etiqueta vinculada deve possuir certificado.")
+        if self.certificado_id and self.status != self.Status.VINCULADA:
+            raise ValidationError("A etiqueta com certificado deve estar vinculada.")
+        if self.certificado_id and not self.certificado.publicado:
+            raise ValidationError("Somente certificados publicados podem receber etiqueta.")
+        if self.certificado_id and self.certificado.numero != self.codigo:
+            raise ValidationError("O código da etiqueta deve ser igual ao número do certificado.")
+        if self.status in {self.Status.CANCELADA, self.Status.INUTILIZADA} and not self.motivo_bloqueio.strip():
+            raise ValidationError("Informe o motivo do cancelamento ou inutilização.")
 
 
 class PadraoUtilizado(models.Model):

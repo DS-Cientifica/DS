@@ -1,5 +1,9 @@
 from django.contrib.admin.models import DELETION, LogEntry
 from django.contrib.auth.decorators import login_required
+from django.contrib import admin
+from django.core.exceptions import PermissionDenied
+from django.core.paginator import Paginator
+from django.http import Http404
 from django.shortcuts import render
 from django.urls import reverse
 from django.utils import timezone
@@ -151,12 +155,12 @@ def _montar_alertas(user):
     if _pode_acessar(user, "calibracao.view_instrumento"):
         total = Instrumento.objects.filter(ativo=True, proxima_calibracao__lt=hoje).count()
         if total:
-            alertas.append({"rotulo": "Calibrações vencidas", "total": total, "url": reverse("admin:calibracao_instrumento_changelist")})
+            alertas.append({"rotulo": "Calibrações vencidas", "total": total, "url": reverse("alerta_metrologico", args=["calibracoes"])})
 
     if _pode_acessar(user, "calibracao.view_padrao"):
-        total = Padrao.objects.filter(vencimento__lt=hoje).count()
+        total = Padrao.para_monitoramento().filter(vencimento__lt=hoje).count()
         if total:
-            alertas.append({"rotulo": "Padrões vencidos", "total": total, "url": reverse("admin:calibracao_padrao_changelist")})
+            alertas.append({"rotulo": "Padrões vencidos", "total": total, "url": reverse("alerta_metrologico", args=["padroes"])})
 
     if _pode_acessar(user, "qualidade.view_documento"):
         total = sum(1 for documento in Documento.objects.filter(status="vigente") if documento.data_proxima_revisao < hoje)
@@ -228,3 +232,52 @@ def inicio(request):
             "atividades_recentes": _atividades_recentes(request.user),
         },
     )
+
+
+@login_required
+def alerta_metrologico(request, tipo):
+    hoje = timezone.localdate()
+    if tipo == "calibracoes":
+        modelo = Instrumento
+        titulo = "Calibrações vencidas"
+        campo_data = "proxima_calibracao"
+        motivo = "Instrumentos ativos com a próxima calibração anterior à data de hoje."
+        acao = "Verifique o histórico e programe a calibração. Se ela já foi realizada, confira os registros antes de atualizar o cadastro."
+        filtros = {"ativo": True, "proxima_calibracao__lt": hoje}
+    elif tipo == "padroes":
+        modelo = Padrao
+        titulo = "Padrões vencidos"
+        campo_data = "vencimento"
+        motivo = "Padrões com a data de vencimento cadastrada anterior à data de hoje."
+        acao = "Avalie a adequação do padrão antes do uso e providencie sua regularização. Confira o certificado e os registros antes de atualizar o vencimento."
+        filtros = {"vencimento__lt": hoje}
+    else:
+        raise Http404
+    nome = modelo._meta.model_name
+    if not request.user.is_staff or not _pode_acessar(request.user, f"calibracao.view_{nome}"):
+        raise PermissionDenied
+    registros = modelo.objects.filter(**filtros)
+    if tipo == "padroes":
+        registros = Padrao.para_monitoramento(registros)
+    registros = registros.order_by(campo_data, "codigo")
+    if tipo == "calibracoes":
+        registros = registros.select_related("cliente")
+    pagina = Paginator(registros, 50).get_page(request.GET.get("page"))
+    itens = []
+    for registro in pagina:
+        vencimento = getattr(registro, campo_data)
+        itens.append({
+            "codigo": registro.codigo,
+            "descricao": registro.descricao,
+            "referencia": str(registro.cliente) if tipo == "calibracoes" else registro.numero_certificado,
+            "vencimento": vencimento,
+            "dias": (hoje - vencimento).days,
+            "url": reverse(f"admin:calibracao_{nome}_change", args=[registro.pk]),
+        })
+    context = {
+        **admin.site.each_context(request),
+        "title": titulo, "motivo": motivo, "acao": acao,
+        "hoje": hoje, "pagina": pagina, "itens": itens,
+        "referencia_titulo": "Cliente" if tipo == "calibracoes" else "Certificado",
+    }
+    return render(request, "admin/alerta_metrologico.html", context)

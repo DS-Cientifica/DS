@@ -208,3 +208,73 @@ class DocumentoVinculo(models.Model):
             f"{self.documento} -> {self.content_type.app_label}."
             f"{self.content_type.model}:{self.object_id}"
         )
+
+
+class AssinaturaDigitalDocumento(models.Model):
+    class Status(models.TextChoices):
+        VALIDA = "valida", "Válida"
+        SUBSTITUIDA = "substituida", "Substituída"
+        CANCELADA = "cancelada", "Cancelada"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    content_type = models.ForeignKey(
+        ContentType,
+        on_delete=models.PROTECT,
+        related_name="assinaturas_digitais",
+    )
+    object_id = models.CharField(max_length=64, db_index=True)
+    objeto_relacionado = GenericForeignKey("content_type", "object_id")
+    documento_original = models.ForeignKey(
+        DocumentoArquivo,
+        on_delete=models.PROTECT,
+        related_name="assinaturas_como_original",
+    )
+    documento_assinado = models.OneToOneField(
+        DocumentoArquivo,
+        on_delete=models.PROTECT,
+        related_name="assinatura_digital",
+    )
+    formato = models.CharField(max_length=20, default="PAdES")
+    revisao_referencia = models.CharField(max_length=30, blank=True)
+    motivo = models.CharField(max_length=255, blank=True)
+    signatario_nome = models.CharField(max_length=255)
+    certificado_numero_serie = models.CharField(max_length=160)
+    certificado_emissor = models.TextField()
+    certificado_fingerprint_sha256 = models.CharField(max_length=64)
+    certificado_valido_de = models.DateTimeField()
+    certificado_valido_ate = models.DateTimeField()
+    assinado_em = models.DateTimeField()
+    integridade_verificada = models.BooleanField(default=False)
+    status = models.CharField(
+        max_length=20,
+        choices=Status.choices,
+        default=Status.VALIDA,
+        db_index=True,
+    )
+    autorizado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="assinaturas_digitais_autorizadas",
+    )
+    criado_em = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ("-criado_em",)
+        verbose_name = "Assinatura digital"
+        verbose_name_plural = "Assinaturas digitais"
+        indexes = [
+            models.Index(
+                fields=("content_type", "object_id", "status"),
+                name="doc_assin_obj_status_idx",
+            )
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=("content_type", "object_id"),
+                condition=models.Q(status="valida"),
+                name="doc_uma_assinatura_valida_obj",
+            )
+        ]
+
+    def __str__(self):
+        return f"{self.signatario_nome} - {self.get_status_display()} - {self.assinado_em:%d/%m/%Y %H:%M}"

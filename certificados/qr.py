@@ -4,7 +4,9 @@ from reportlab.graphics.shapes import Drawing
 
 
 def gerar_qr_svg(conteudo, *, tamanho=180):
-    qr = QrCodeWidget(conteudo)
+    # Nível M tolera danos moderados na etiqueta sem comprometer em excesso
+    # o tamanho dos módulos em um QR impresso com 20 mm.
+    qr = QrCodeWidget(conteudo, barLevel="M", barBorder=4)
     x1, y1, x2, y2 = qr.getBounds()
     largura = x2 - x1
     altura = y2 - y1

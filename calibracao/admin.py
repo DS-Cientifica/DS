@@ -1,13 +1,14 @@
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from io import BytesIO
+import re
 
 from django import forms
 from django.contrib import admin, messages
 from django.core.exceptions import ObjectDoesNotExist, ValidationError
 from django.core.exceptions import PermissionDenied
 from django.db import connection, transaction
-from django.http import HttpResponse, JsonResponse
+from django.http import FileResponse, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils.html import format_html, format_html_join
 from django.utils.safestring import mark_safe
@@ -129,6 +130,37 @@ class OrdemServicoNumeroFilter(admin.SimpleListFilter):
 
 
 CalibracaoAdminForm = build_three_decimal_form(Calibracao)
+
+
+class AssinaturaCertificadoA1Form(forms.Form):
+    certificado_a1 = forms.FileField(
+        label="Certificado digital A1",
+        help_text="Selecione o arquivo .pfx ou .p12. O arquivo não será armazenado.",
+        widget=forms.ClearableFileInput(attrs={"accept": ".pfx,.p12"}),
+    )
+    senha = forms.CharField(
+        label="Senha do certificado",
+        strip=False,
+        widget=forms.PasswordInput(
+            render_value=False,
+            attrs={"autocomplete": "new-password"},
+        ),
+        help_text="A senha será usada somente nesta operação e não será gravada.",
+    )
+    confirmacao = forms.BooleanField(
+        label=(
+            "Confirmo que revisei o certificado final, os resultados, a incerteza, "
+            "a rastreabilidade e autorizo a assinatura digital desta emissão."
+        )
+    )
+
+    def clean_certificado_a1(self):
+        arquivo = self.cleaned_data["certificado_a1"]
+        if not arquivo.name.lower().endswith((".pfx", ".p12")):
+            raise forms.ValidationError("Envie um certificado A1 no formato .pfx ou .p12.")
+        if arquivo.size > 10 * 1024 * 1024:
+            raise forms.ValidationError("O certificado A1 deve ter no máximo 10 MB.")
+        return arquivo
 CalibracaoTurbidezAdminForm = build_three_decimal_form(CalibracaoTurbidez)
 TurbidezPadraoAdminForm = build_three_decimal_form(TurbidezPadraoUtilizado)
 TurbidezVerificacaoAdminForm = build_three_decimal_form(TurbidezVerificacaoPonto)
@@ -191,6 +223,94 @@ class InstrumentoAdminForm(forms.ModelForm):
 
     class Media:
         js = ("js/admin_instrumento_duplicate_alert.js",)
+
+
+class DuplicarInstrumentoForm(forms.Form):
+    codigo = forms.CharField(
+        label="Novo código interno",
+        max_length=50,
+        help_text="Identificador único do cadastro no AXION.",
+    )
+    tag = forms.CharField(
+        label="Nova TAG do cliente",
+        max_length=100,
+        help_text="Identificador operacional do ativo nas instalações do cliente.",
+    )
+    numero_serie = forms.CharField(
+        label="Número de série do novo instrumento",
+        max_length=100,
+        required=False,
+        help_text="Informe o número gravado pelo fabricante. Ele não é copiado do instrumento original.",
+    )
+    confirmar_sem_numero_serie = forms.BooleanField(
+        label="Confirmo que o novo instrumento não possui número de série identificável",
+        required=False,
+    )
+    local_instalacao = forms.CharField(
+        label="Local de instalação",
+        max_length=200,
+        required=False,
+        help_text="Revise este campo, pois o novo ativo pode estar instalado em outro ponto.",
+    )
+
+    def __init__(self, *args, instrumento_origem, **kwargs):
+        self.instrumento_origem = instrumento_origem
+        super().__init__(*args, **kwargs)
+        self.fields["local_instalacao"].initial = instrumento_origem.local_instalacao
+
+    def clean_codigo(self):
+        codigo = (self.cleaned_data.get("codigo") or "").strip()
+        if Instrumento.objects.filter(codigo__iexact=codigo).exists():
+            raise forms.ValidationError("Já existe um instrumento com este código.")
+        if codigo.casefold() == (self.instrumento_origem.codigo or "").strip().casefold():
+            raise forms.ValidationError("O novo código deve ser diferente do instrumento de origem.")
+        return codigo
+
+    def clean_tag(self):
+        tag = (self.cleaned_data.get("tag") or "").strip()
+        if Instrumento.objects.filter(
+            cliente=self.instrumento_origem.cliente,
+            tag__iexact=tag,
+        ).exists():
+            raise forms.ValidationError("Esta TAG já está cadastrada para o mesmo cliente.")
+        if tag.casefold() == (self.instrumento_origem.tag or "").strip().casefold():
+            raise forms.ValidationError("A nova TAG deve ser diferente do instrumento de origem.")
+        return tag
+
+    def clean(self):
+        cleaned_data = super().clean()
+        numero_serie = (cleaned_data.get("numero_serie") or "").strip()
+        sem_numero_serie = cleaned_data.get("confirmar_sem_numero_serie")
+
+        if numero_serie and sem_numero_serie:
+            self.add_error(
+                "confirmar_sem_numero_serie",
+                "Desmarque esta opção porque um número de série foi informado.",
+            )
+        elif not numero_serie and not sem_numero_serie:
+            self.add_error(
+                "numero_serie",
+                "Informe o número de série ou confirme explicitamente que ele não é identificável.",
+            )
+
+        origem_serie = (self.instrumento_origem.numero_serie or "").strip()
+        if numero_serie and origem_serie and numero_serie.casefold() == origem_serie.casefold():
+            self.add_error(
+                "numero_serie",
+                "O número de série deve identificar o novo instrumento e não pode repetir o da origem.",
+            )
+        if numero_serie and Instrumento.objects.filter(
+            cliente=self.instrumento_origem.cliente,
+            numero_serie__iexact=numero_serie,
+        ).exists():
+            self.add_error(
+                "numero_serie",
+                "Já existe um instrumento deste cliente com este número de série.",
+            )
+
+        cleaned_data["numero_serie"] = numero_serie
+        cleaned_data["local_instalacao"] = (cleaned_data.get("local_instalacao") or "").strip()
+        return cleaned_data
 
 
 class CalibracaoImportForm(forms.Form):
@@ -397,6 +517,7 @@ class ResponsavelCertificadoAdmin(admin.ModelAdmin):
 class InstrumentoAdmin(admin.ModelAdmin):
     form = InstrumentoAdminForm
     change_list_template = "admin/calibracao/instrumento/change_list.html"
+    change_form_template = "admin/calibracao/instrumento/change_form.html"
 
     list_display = (
         "codigo",
@@ -408,6 +529,7 @@ class InstrumentoAdmin(admin.ModelAdmin):
         "cliente",
         "status",
         "ver_certificados_padroes",
+        "acao_copiar",
     )
 
     list_filter = (
@@ -487,6 +609,11 @@ class InstrumentoAdmin(admin.ModelAdmin):
         urls = super().get_urls()
         custom_urls = [
             path(
+                "<uuid:object_id>/duplicar/",
+                self.admin_site.admin_view(self.duplicar_instrumento_view),
+                name="calibracao_instrumento_duplicar",
+            ),
+            path(
                 "importar-excel/",
                 self.admin_site.admin_view(self.importar_excel_view),
                 name="calibracao_instrumento_importar_excel",
@@ -508,6 +635,104 @@ class InstrumentoAdmin(admin.ModelAdmin):
             )
         ]
         return custom_urls + urls
+
+    @admin.display(description="Copiar")
+    def acao_copiar(self, obj):
+        return format_html(
+            '<a class="button" href="{}">Copiar</a>',
+            reverse("admin:calibracao_instrumento_duplicar", args=[obj.pk]),
+        )
+
+    def duplicar_instrumento_view(self, request, object_id):
+        instrumento_origem = get_object_or_404(
+            Instrumento.objects.select_related("cliente", "metodo_calibracao").prefetch_related(
+                "padroes",
+                "periodicidades",
+            ),
+            pk=object_id,
+        )
+        if not self.has_view_or_change_permission(request, instrumento_origem):
+            raise PermissionDenied
+        if not self.has_add_permission(request):
+            raise PermissionDenied
+
+        form = DuplicarInstrumentoForm(
+            request.POST or None,
+            instrumento_origem=instrumento_origem,
+        )
+        if request.method == "POST" and form.is_valid():
+            with transaction.atomic():
+                novo_instrumento = Instrumento(
+                    codigo=form.cleaned_data["codigo"],
+                    descricao=instrumento_origem.descricao,
+                    marca=instrumento_origem.marca,
+                    modelo=instrumento_origem.modelo,
+                    local_instalacao=form.cleaned_data["local_instalacao"],
+                    numero_serie=form.cleaned_data["numero_serie"] or None,
+                    tag=form.cleaned_data["tag"],
+                    cliente=instrumento_origem.cliente,
+                    status="ativo",
+                    proxima_calibracao=None,
+                    ativo=True,
+                    nome_anexo="",
+                    anexo=None,
+                    metodo_calibracao=instrumento_origem.metodo_calibracao,
+                )
+                novo_instrumento.full_clean(exclude=("padroes",))
+                novo_instrumento.save()
+                novo_instrumento.padroes.set(instrumento_origem.padroes.all())
+
+                try:
+                    dados_tecnicos = instrumento_origem.tecnico
+                except InstrumentoTecnico.DoesNotExist:
+                    dados_tecnicos = None
+                if dados_tecnicos:
+                    InstrumentoTecnico.objects.create(
+                        instrumento=novo_instrumento,
+                        faixa_medicao=dados_tecnicos.faixa_medicao,
+                        capacidade_total=dados_tecnicos.capacidade_total,
+                        menor_resolucao=dados_tecnicos.menor_resolucao,
+                        unidade=dados_tecnicos.unidade,
+                        classe=dados_tecnicos.classe,
+                        observacoes=dados_tecnicos.observacoes,
+                    )
+
+                Periodicidade.objects.bulk_create(
+                    [
+                        Periodicidade(
+                            instrumento=novo_instrumento,
+                            tipo=periodicidade.tipo,
+                            intervalo_meses=periodicidade.intervalo_meses,
+                        )
+                        for periodicidade in instrumento_origem.periodicidades.all()
+                    ]
+                )
+
+            self.message_user(
+                request,
+                (
+                    f'Instrumento "{instrumento_origem.codigo}" copiado como '
+                    f'"{novo_instrumento.codigo}". Revise os dados antes do uso operacional.'
+                ),
+                level=messages.SUCCESS,
+            )
+            return redirect(
+                reverse("admin:calibracao_instrumento_change", args=[novo_instrumento.pk])
+            )
+
+        context = {
+            **self.admin_site.each_context(request),
+            "opts": self.model._meta,
+            "title": "Copiar instrumento",
+            "instrumento_origem": instrumento_origem,
+            "form": form,
+            "media": self.media + form.media,
+        }
+        return render(
+            request,
+            "admin/calibracao/instrumento/duplicar_instrumento.html",
+            context,
+        )
 
     def check_duplicate_view(self, request):
         cliente_id = request.GET.get("cliente_id")
@@ -1387,6 +1612,7 @@ class CalibracaoAdmin(OrdemServicoAutomaticaAdminMixin, admin.ModelAdmin):
         "resultado",
         "local_calibracao",
         "empresa_emissora",
+        "origem_certificado",
         "ver_anexo",
     )
 
@@ -1396,6 +1622,7 @@ class CalibracaoAdmin(OrdemServicoAutomaticaAdminMixin, admin.ModelAdmin):
         CalibracaoEquipamentoFilter,
         "resultado",
         "empresa_emissora",
+        "origem_certificado",
         "status",
         "local_calibracao",
     )
@@ -1413,6 +1640,17 @@ class CalibracaoAdmin(OrdemServicoAutomaticaAdminMixin, admin.ModelAdmin):
     autocomplete_fields = ("instrumento",)
     list_select_related = ("instrumento", "instrumento__cliente")
     date_hierarchy = "data_calibracao"
+
+    def save_model(self, request, obj, form, change):
+        if change and form.changed_data:
+            from certificados.services import certificado_publico_da_calibracao
+            from documentos.services.assinaturas import substituir_assinaturas_do_objeto
+
+            # Depois da publicação, o documento assinado é um snapshot imutável.
+            # Alterações na origem não podem reclassificar silenciosamente o PDF público.
+            if not certificado_publico_da_calibracao(obj):
+                substituir_assinaturas_do_objeto(obj)
+        super().save_model(request, obj, form, change)
 
     def has_delete_permission(self, request, obj=None):
         if not super().has_delete_permission(request, obj):
@@ -1605,22 +1843,131 @@ class CalibracaoAdmin(OrdemServicoAutomaticaAdminMixin, admin.ModelAdmin):
                 self.admin_site.admin_view(self.publicar_certificado_view),
                 name="calibracao_calibracao_publicar_certificado",
             ),
+            path(
+                "<int:pk>/assinar-certificado/",
+                self.admin_site.admin_view(self.assinar_certificado_view),
+                name="calibracao_calibracao_assinar_certificado",
+            ),
+            path(
+                "<int:pk>/download-certificado-assinado/",
+                self.admin_site.admin_view(self.download_certificado_assinado_view),
+                name="calibracao_calibracao_download_certificado_assinado",
+            ),
         ]
         return custom_urls + urls
 
     def changeform_view(self, request, object_id=None, form_url="", extra_context=None):
         extra_context = extra_context or {}
         if object_id:
-            from certificados.services import certificado_publico_da_calibracao
+            from certificados.services import (
+                assinatura_atual_da_calibracao,
+                certificado_publico_da_calibracao,
+            )
 
             calibracao = self.get_object(request, object_id)
             if calibracao:
-                extra_context["certificado_publico"] = certificado_publico_da_calibracao(calibracao)
-                extra_context["pode_publicar_certificado"] = (
+                certificado_publico = certificado_publico_da_calibracao(calibracao)
+                assinatura_digital = assinatura_atual_da_calibracao(calibracao)
+                extra_context["certificado_publico"] = certificado_publico
+                extra_context["assinatura_digital"] = assinatura_digital
+                pode_controlar = (
                     self.has_change_permission(request, calibracao)
                     and request.user.has_perm("certificados.add_certificadocalibracao")
                 )
+                extra_context["pode_assinar_certificado"] = bool(
+                    pode_controlar
+                    and not certificado_publico
+                    and calibracao.status == "concluida"
+                    and calibracao.certificado_arquivo
+                    and calibracao.origem_certificado
+                    == Calibracao.OrigemCertificado.EMITIDO_DS
+                )
+                extra_context["pode_publicar_certificado"] = (
+                    pode_controlar
+                    and not certificado_publico
+                    and bool(assinatura_digital)
+                    and calibracao.origem_certificado
+                    == Calibracao.OrigemCertificado.EMITIDO_DS
+                )
         return super().changeform_view(request, object_id, form_url, extra_context)
+
+    def assinar_certificado_view(self, request, pk):
+        calibracao = get_object_or_404(Calibracao, pk=pk)
+        if not self.has_change_permission(request, calibracao) or not request.user.has_perm(
+            "certificados.add_certificadocalibracao"
+        ):
+            raise PermissionDenied
+
+        form = AssinaturaCertificadoA1Form(request.POST or None, request.FILES or None)
+        if request.method == "POST" and form.is_valid():
+            from certificados.services import assinar_calibracao_a1
+
+            try:
+                assinar_calibracao_a1(
+                    calibracao,
+                    certificado_a1=form.cleaned_data["certificado_a1"].read(),
+                    senha=form.cleaned_data["senha"],
+                    usuario=request.user,
+                )
+            except ValidationError as exc:
+                form.add_error(None, " ".join(exc.messages))
+            else:
+                self.message_user(
+                    request,
+                    "Certificado assinado com a integridade criptográfica verificada. "
+                    "Revise o PDF assinado antes da publicação.",
+                    messages.SUCCESS,
+                )
+                return redirect("admin:calibracao_calibracao_change", pk)
+
+        return render(
+            request,
+            "admin/calibracao/calibracao/assinar_certificado.html",
+            {
+                **self.admin_site.each_context(request),
+                "opts": self.model._meta,
+                "original": calibracao,
+                "title": f"Assinar certificado {calibracao.certificado_numero}",
+                "form": form,
+                "change_url": reverse("admin:calibracao_calibracao_change", args=[pk]),
+            },
+        )
+
+    def download_certificado_assinado_view(self, request, pk):
+        calibracao = get_object_or_404(Calibracao, pk=pk)
+        if not self.has_view_permission(request, calibracao):
+            raise PermissionDenied
+
+        from certificados.services import assinatura_atual_da_calibracao
+        from documentos.services.assinaturas import abrir_pdf_assinado
+        from documentos.services.documentos import verificar_integridade
+
+        assinatura = assinatura_atual_da_calibracao(calibracao)
+        if not assinatura:
+            self.message_user(
+                request,
+                "Não existe assinatura válida para o PDF atual. Assine novamente.",
+                messages.ERROR,
+            )
+            return redirect("admin:calibracao_calibracao_change", pk)
+        integro, _motivo = verificar_integridade(assinatura.documento_assinado)
+        if not integro:
+            self.message_user(
+                request,
+                "O PDF assinado não passou na verificação de integridade e foi bloqueado.",
+                messages.ERROR,
+            )
+            return redirect("admin:calibracao_calibracao_change", pk)
+        numero = re.sub(
+            r"[^A-Za-z0-9._-]+",
+            "-",
+            calibracao.certificado_numero or "certificado",
+        ).strip(".-")
+        return FileResponse(
+            abrir_pdf_assinado(assinatura),
+            as_attachment=True,
+            filename=f"{numero or 'certificado'}-assinado.pdf",
+        )
 
     def publicar_certificado_view(self, request, pk):
         calibracao = get_object_or_404(Calibracao, pk=pk)
@@ -1925,6 +2272,7 @@ class CalibracaoAdmin(OrdemServicoAutomaticaAdminMixin, admin.ModelAdmin):
                 "certificado_numero",
                 "certificado_arquivo",
                 "empresa_emissora",
+                "origem_certificado",
             )
         }),
 
@@ -2655,10 +3003,7 @@ class PadraoAdmin(admin.ModelAdmin):
 
     def get_queryset(self, request):
         """Mantém resultados de diluição fora do cadastro geral de padrões."""
-        return super().get_queryset(request).filter(
-            resultado_preparacao_gerador__isnull=True,
-            preparacao_geradora__isnull=True,
-        )
+        return self.model.para_monitoramento(super().get_queryset(request))
 
     def get_urls(self):
         return [

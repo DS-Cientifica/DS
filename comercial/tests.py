@@ -3,9 +3,12 @@ from decimal import Decimal
 from io import BytesIO
 from io import StringIO
 from pathlib import Path
+import base64
 import tempfile
+from types import SimpleNamespace
 from unittest.mock import patch
 
+from django.contrib import admin
 from django.contrib.auth import get_user_model
 from django.core import mail
 from django.core.exceptions import ValidationError
@@ -17,11 +20,14 @@ from django.test import override_settings
 from django.urls import reverse
 from django.utils import timezone
 from openpyxl import Workbook, load_workbook
+from pyhanko.pdf_utils.reader import PdfFileReader
 
 from clientes.models import Cliente
 from clientes.models import ContatoCliente
 from calibracao.models import OrdemServico
 from financeiro.models import ContaReceber, PedidoCompra
+from documentos.models import AssinaturaDigitalDocumento
+from documentos.tests import criar_certificado_a1_teste
 
 from .models import (
     CRMRegistro,
@@ -34,6 +40,7 @@ from .models import (
     ProspeccaoInteracao,
     Prospecto,
 )
+from .admin import PropostaAdmin
 
 
 class ProspectoComercialTests(TestCase):
@@ -841,6 +848,160 @@ class PropostaResponsavelTests(TestCase):
         self.assertContains(response, 'id="add_id_responsavel"', html=False)
 
 
+class PropostaAssinaturaTests(TestCase):
+    ASSINATURA_PNG = base64.b64decode(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
+    )
+
+    def setUp(self):
+        self.media_temp = tempfile.TemporaryDirectory()
+        self.documentos_temp = tempfile.TemporaryDirectory()
+        self.override_media = override_settings(
+            MEDIA_ROOT=self.media_temp.name,
+            DOCUMENT_LOCAL_ROOT=self.documentos_temp.name,
+            DOCUMENT_STORAGE_MODE="local",
+            DOCUMENT_R2_ENABLED=False,
+        )
+        self.override_media.enable()
+        self.usuario = get_user_model().objects.create_superuser(
+            username="admin_assinatura_proposta",
+            email="assinatura@example.com",
+            password="teste123456",
+        )
+        self.cliente = Cliente.objects.create(
+            razao_social="Cliente Assinatura Ltda",
+            nome_empresa="Cliente Assinatura",
+            cnpj="33.444.555/0001-66",
+        )
+
+    def tearDown(self):
+        self.override_media.disable()
+        self.media_temp.cleanup()
+        self.documentos_temp.cleanup()
+        super().tearDown()
+
+    def test_exige_imagem_antes_de_autorizar_assinatura(self):
+        proposta = Proposta(
+            cliente=self.cliente,
+            incluir_assinatura_pdf=True,
+        )
+
+        with self.assertRaisesMessage(ValidationError, "Envie a imagem da assinatura"):
+            proposta.full_clean()
+
+    def test_assinatura_autorizada_aparece_na_impressao_e_no_pdf(self):
+        proposta = Proposta(
+            cliente=self.cliente,
+            assinatura_imagem=SimpleUploadedFile(
+                "assinatura.png",
+                self.ASSINATURA_PNG,
+                content_type="image/png",
+            ),
+            assinatura_nome="Responsável Comercial",
+            assinatura_cargo="Direção da DS Científica",
+            incluir_assinatura_pdf=True,
+        )
+        proposta_admin = PropostaAdmin(Proposta, admin.site)
+        proposta_admin.save_model(
+            SimpleNamespace(user=self.usuario),
+            proposta,
+            SimpleNamespace(
+                changed_data=[
+                    "assinatura_imagem",
+                    "assinatura_nome",
+                    "assinatura_cargo",
+                    "incluir_assinatura_pdf",
+                ]
+            ),
+            change=False,
+        )
+
+        proposta.refresh_from_db()
+        self.assertEqual(proposta.assinatura_autorizada_por, self.usuario)
+        self.assertIsNotNone(proposta.assinatura_autorizada_em)
+
+        self.client.force_login(self.usuario)
+        formulario = self.client.get(
+            reverse("admin:comercial_proposta_change", args=[proposta.pk])
+        )
+        self.assertEqual(formulario.status_code, 200)
+        self.assertContains(formulario, "Assinatura visual da proposta")
+        self.assertContains(formulario, 'id="id_assinatura_imagem"', html=False)
+        self.assertContains(formulario, 'id="id_incluir_assinatura_pdf"', html=False)
+
+        impressao = self.client.get(reverse("pdf_proposta", args=[proposta.pk]))
+        self.assertEqual(impressao.status_code, 200)
+        self.assertContains(impressao, proposta.assinatura_imagem.url)
+        self.assertContains(impressao, "Responsável Comercial")
+
+        download = self.client.get(reverse("download_pdf_proposta", args=[proposta.pk]))
+        self.assertEqual(download.status_code, 200)
+        conteudo_pdf = b"".join(download.streaming_content)
+        self.assertTrue(conteudo_pdf.startswith(b"%PDF"))
+
+        segundo_download = self.client.get(reverse("download_pdf_proposta", args=[proposta.pk]))
+        segundo_conteudo = b"".join(segundo_download.streaming_content)
+        self.assertEqual(conteudo_pdf, segundo_conteudo)
+
+    def test_fluxo_admin_assina_baixa_e_bloqueia_apos_alteracao(self):
+        proposta = Proposta.objects.create(
+            cliente=self.cliente,
+            observacoes="Conteúdo revisado antes da assinatura.",
+        )
+        ItemProposta.objects.create(
+            proposta=proposta,
+            descricao="Serviço assinado",
+            quantidade=1,
+            valor_unitario=Decimal("100.00"),
+        )
+        self.client.force_login(self.usuario)
+
+        resposta = self.client.post(
+            reverse(
+                "admin:comercial_proposta_assinar_digitalmente",
+                args=[proposta.pk],
+            ),
+            {
+                "certificado_a1": SimpleUploadedFile(
+                    "certificado-teste.pfx",
+                    criar_certificado_a1_teste(),
+                    content_type="application/x-pkcs12",
+                ),
+                "senha": "senha-teste",
+                "confirmacao": "on",
+            },
+        )
+
+        self.assertEqual(resposta.status_code, 302)
+        assinatura = AssinaturaDigitalDocumento.objects.get()
+        self.assertEqual(assinatura.status, AssinaturaDigitalDocumento.Status.VALIDA)
+        self.assertTrue(assinatura.integridade_verificada)
+
+        download = self.client.get(
+            reverse("admin:comercial_proposta_download_assinado", args=[proposta.pk])
+        )
+        self.assertEqual(download.status_code, 200)
+        conteudo = b"".join(download.streaming_content)
+        self.assertTrue(conteudo.startswith(b"%PDF"))
+        assinatura_pdf = PdfFileReader(BytesIO(conteudo)).embedded_signatures[0]
+        self.assertEqual(
+            [int(valor) for valor in assinatura_pdf.sig_field["/Rect"]],
+            [280, 10, 555, 38],
+        )
+        self.assertIn("/N", assinatura_pdf.sig_field["/AP"])
+
+        proposta.observacoes = "Conteúdo alterado depois da assinatura."
+        proposta.save(update_fields=("observacoes",))
+        download_desatualizado = self.client.get(
+            reverse("admin:comercial_proposta_download_assinado", args=[proposta.pk])
+        )
+        self.assertEqual(download_desatualizado.status_code, 302)
+        self.assertRedirects(
+            download_desatualizado,
+            reverse("admin:comercial_proposta_change", args=[proposta.pk]),
+        )
+
+
 class PropostaContaReceberTests(TestCase):
     def setUp(self):
         self.cliente = Cliente.objects.create(
@@ -1029,6 +1190,13 @@ class PropostaContaReceberTests(TestCase):
 @override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend")
 class PropostaEmailTests(TestCase):
     def setUp(self):
+        self.documentos_temp = tempfile.TemporaryDirectory()
+        self.override_documentos = override_settings(
+            DOCUMENT_LOCAL_ROOT=self.documentos_temp.name,
+            DOCUMENT_STORAGE_MODE="local",
+            DOCUMENT_R2_ENABLED=False,
+        )
+        self.override_documentos.enable()
         self.user = get_user_model().objects.create_superuser(
             username="admin_email",
             email="admin@teste.com",
@@ -1059,6 +1227,11 @@ class PropostaEmailTests(TestCase):
             desconto=Decimal("0.00"),
         )
 
+    def tearDown(self):
+        self.override_documentos.disable()
+        self.documentos_temp.cleanup()
+        super().tearDown()
+
     @override_settings(
         EMAIL_HOST="smtp.zoho.com",
         EMAIL_HOST_USER="contato@dscientifica.com.br",
@@ -1079,6 +1252,46 @@ class PropostaEmailTests(TestCase):
         self.assertTrue(nome_anexo.endswith(".pdf"))
         self.assertEqual(mimetype, "application/pdf")
         self.assertTrue(conteudo.startswith(b"%PDF"))
+
+    @override_settings(
+        EMAIL_HOST="smtp.zoho.com",
+        EMAIL_HOST_USER="contato@dscientifica.com.br",
+        EMAIL_HOST_PASSWORD="senha-app",
+        DEFAULT_FROM_EMAIL="contato@dscientifica.com.br",
+    )
+    def test_envia_pdf_assinado_e_bloqueia_se_proposta_for_alterada(self):
+        self.client.force_login(self.user)
+        assinatura = self.client.post(
+            reverse(
+                "admin:comercial_proposta_assinar_digitalmente",
+                args=[self.proposta.pk],
+            ),
+            {
+                "certificado_a1": SimpleUploadedFile(
+                    "certificado-teste.p12",
+                    criar_certificado_a1_teste(),
+                    content_type="application/x-pkcs12",
+                ),
+                "senha": "senha-teste",
+                "confirmacao": "on",
+            },
+        )
+        self.assertEqual(assinatura.status_code, 302)
+
+        envio = self.client.post(reverse("enviar_proposta_email", args=[self.proposta.pk]))
+        self.assertEqual(envio.status_code, 302)
+        self.assertEqual(len(mail.outbox), 1)
+        nome_anexo, conteudo, _mimetype = mail.outbox[0].attachments[0]
+        self.assertTrue(nome_anexo.endswith("-assinado.pdf"))
+        self.assertIn(b"/ETSI.CAdES.detached", conteudo)
+
+        self.proposta.observacoes = "Alterada após assinatura"
+        self.proposta.save(update_fields=("observacoes",))
+        novo_envio = self.client.post(
+            reverse("enviar_proposta_email", args=[self.proposta.pk])
+        )
+        self.assertEqual(novo_envio.status_code, 302)
+        self.assertEqual(len(mail.outbox), 1)
 
 
 class MigrarClientesInativosParaProspeccaoTests(TestCase):

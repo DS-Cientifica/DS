@@ -32,6 +32,14 @@ ALLOWED_HOSTS = [
     if host.strip()
 ]
 
+# Quando configurado, este host aceita somente consultas públicas de
+# certificados/etiquetas. O restante do AXION retorna 404 nesse domínio.
+PUBLIC_CERTIFICATE_HOSTS = [
+    host.strip()
+    for host in os.getenv("PUBLIC_CERTIFICATE_HOSTS", "").split(",")
+    if host.strip()
+]
+
 CSRF_TRUSTED_ORIGINS = [
     origin.strip()
     for origin in os.getenv("CSRF_TRUSTED_ORIGINS", "https://*.onrender.com").split(",")
@@ -89,6 +97,7 @@ INSTALLED_APPS = [
 # ========================
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
+    "core.public_certificate_middleware.PublicCertificateHostMiddleware",
     "whitenoise.middleware.WhiteNoiseMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",

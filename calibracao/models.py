@@ -4,6 +4,7 @@ import uuid
 from random import SystemRandom
 from datetime import date
 from decimal import Decimal, InvalidOperation
+from django.contrib.contenttypes.models import ContentType
 from django.core.exceptions import ObjectDoesNotExist, ValidationError
 from django.db import IntegrityError, models, transaction
 from django.utils import timezone
@@ -23,7 +24,10 @@ from .services.ph_meter_calculation import (
 THREE_DECIMAL_PLACES = Decimal("0.001")
 SQRT_12 = Decimal(12).sqrt()
 CERTIFICADO_RANDOM = SystemRandom()
-CERTIFICADO_PATTERN = re.compile(r"^(?=(?:.*[A-Z]){3})(?=(?:.*\d){3})[A-Z0-9]{6}DS$")
+CERTIFICADO_PATTERN = re.compile(r"^(?=(?:.*[A-Z]){3})(?=(?:.*\d){3})[A-Z0-9]{6}$")
+CERTIFICADO_PATTERN_LEGADO = re.compile(
+    r"^(?=(?:.*[A-Z]){3})(?=(?:.*\d){3})[A-Z0-9]{6}DS$"
+)
 
 
 class NumeroCertificadoEmitido(models.Model):
@@ -85,7 +89,80 @@ def _candidato_numero_certificado():
         *(CERTIFICADO_RANDOM.choice(string.digits) for _ in range(3)),
     ]
     CERTIFICADO_RANDOM.shuffle(caracteres)
-    return "".join(caracteres) + "DS"
+    return "".join(caracteres)
+
+
+def _variantes_numero_certificado(numero):
+    """Evita que o formato atual reutilize a base de um número legado com sufixo DS."""
+    numero = (numero or "").strip().upper()
+    if CERTIFICADO_PATTERN.fullmatch(numero):
+        return {numero, f"{numero}DS"}
+    if CERTIFICADO_PATTERN_LEGADO.fullmatch(numero):
+        return {numero, numero[:-2]}
+    return {numero}
+
+
+def _numero_certificado_padronizado(numero):
+    return bool(
+        CERTIFICADO_PATTERN.fullmatch(numero)
+        or CERTIFICADO_PATTERN_LEGADO.fullmatch(numero)
+    )
+
+
+def _reservar_etiqueta_disponivel(instance, using):
+    """Consome atomicamente um número pré-impresso, quando houver lote ativo."""
+    # Etiquetas DS não podem ser consumidas por certificados de terceiros ou
+    # por registros ainda não classificados quanto à responsabilidade de emissão.
+    if getattr(instance, "origem_certificado", None) != "emitido_ds":
+        return None
+    from certificados.models import EtiquetaCalibracaoQR
+
+    etiqueta = (
+        EtiquetaCalibracaoQR.objects.using(using)
+        .select_for_update()
+        .filter(status=EtiquetaCalibracaoQR.Status.DISPONIVEL)
+        .order_by("lote", "sequencia")
+        .first()
+    )
+    if not etiqueta:
+        return None
+
+    codigo = etiqueta.codigo.strip().upper()
+    variantes = _variantes_numero_certificado(codigo)
+    if HistoricoNumeroCertificado.objects.using(using).filter(
+        models.Q(numero_anterior__in=variantes) | models.Q(numero_novo__in=variantes)
+    ).exists() or NumeroCertificadoEmitido.objects.using(using).filter(
+        codigo__in=variantes
+    ).exists():
+        raise ValidationError(
+            "O lote de etiquetas possui um código em conflito com o histórico de certificados."
+        )
+
+    app_label, modelo, objeto_id = _identidade_certificado(instance)
+    NumeroCertificadoEmitido.objects.using(using).create(
+        codigo=codigo,
+        app_label=app_label,
+        modelo=modelo,
+        objeto_id=objeto_id,
+    )
+    etiqueta.status = EtiquetaCalibracaoQR.Status.RESERVADA
+    etiqueta.calibracao_content_type = ContentType.objects.db_manager(using).get_for_model(
+        instance,
+        for_concrete_model=False,
+    )
+    etiqueta.calibracao_object_id = objeto_id
+    etiqueta.reservada_em = timezone.now()
+    etiqueta.save(
+        using=using,
+        update_fields=(
+            "status",
+            "calibracao_content_type",
+            "calibracao_object_id",
+            "reservada_em",
+            "atualizado_em",
+        ),
+    )
+    return codigo
 
 
 def garantir_numero_certificado(instance, field_name="numero_certificado"):
@@ -105,11 +182,24 @@ def garantir_numero_certificado(instance, field_name="numero_certificado"):
         return reserva_objeto.codigo
 
     if atual:
+        variantes = _variantes_numero_certificado(atual)
+        from certificados.models import EtiquetaCalibracaoQR
+
+        if EtiquetaCalibracaoQR.objects.using(using).filter(codigo__in=variantes).exists():
+            raise ValidationError(
+                {field_name: "Este número está reservado para uma etiqueta de calibração."}
+            )
         if HistoricoNumeroCertificado.objects.using(using).filter(
-            models.Q(numero_anterior=atual) | models.Q(numero_novo=atual)
+            models.Q(numero_anterior__in=variantes) | models.Q(numero_novo__in=variantes)
         ).exists():
             raise ValidationError(
                 {field_name: "Este número pertence ao histórico de outro certificado."}
+            )
+        if NumeroCertificadoEmitido.objects.using(using).filter(
+            codigo__in=variantes
+        ).exists():
+            raise ValidationError(
+                {field_name: "Este número de certificado já foi utilizado em outra calibração."}
             )
         try:
             with transaction.atomic(using=using):
@@ -118,7 +208,7 @@ def garantir_numero_certificado(instance, field_name="numero_certificado"):
                     app_label=app_label,
                     modelo=modelo,
                     objeto_id=objeto_id,
-                    historico=not bool(CERTIFICADO_PATTERN.fullmatch(atual)),
+                    historico=not _numero_certificado_padronizado(atual),
                 )
             return atual
         except IntegrityError as exc:
@@ -126,10 +216,25 @@ def garantir_numero_certificado(instance, field_name="numero_certificado"):
                 {field_name: "Este número de certificado já foi utilizado em outra calibração."}
             ) from exc
 
+    with transaction.atomic(using=using):
+        numero_etiqueta = _reservar_etiqueta_disponivel(instance, using)
+        if numero_etiqueta:
+            return numero_etiqueta
+
     for _ in range(200):
         candidato = _candidato_numero_certificado()
+        variantes = _variantes_numero_certificado(candidato)
+        from certificados.models import EtiquetaCalibracaoQR
+
+        if EtiquetaCalibracaoQR.objects.using(using).filter(codigo__in=variantes).exists():
+            continue
         if HistoricoNumeroCertificado.objects.using(using).filter(
-            models.Q(numero_anterior=candidato) | models.Q(numero_novo=candidato)
+            models.Q(numero_anterior__in=variantes)
+            | models.Q(numero_novo__in=variantes)
+        ).exists():
+            continue
+        if NumeroCertificadoEmitido.objects.using(using).filter(
+            codigo__in=variantes
         ).exists():
             continue
         try:
@@ -732,11 +837,43 @@ class Padrao(models.Model):
     vencimento = models.DateField()
 
     certificado = models.FileField(
-        upload_to='padroes/',
-        null=True,
-        blank=True
-    )
-
+        upload_to='padroes/',
+        null=True,
+        blank=True
+    )
+
+    @classmethod
+    def para_monitoramento(cls, queryset=None):
+        """Retorna apenas padrões permanentes que exigem ação após o vencimento.
+
+        Resultados preparados por diluição permanecem no histórico e continuam
+        sujeitos à validação na data de uso, mas não geram pendência operacional
+        depois do término de sua validade curta.
+        """
+        queryset = queryset if queryset is not None else cls.objects.all()
+        return queryset.filter(
+            resultado_preparacao_gerador__isnull=True,
+            preparacao_geradora__isnull=True,
+        )
+
+    def validar_utilizacao_em(self, data_utilizacao):
+        """Impede o uso quando o padrão estava suspenso ou vencido na data informada."""
+        if not data_utilizacao:
+            return
+        if self.status == "suspenso":
+            raise ValidationError(
+                {"padrao": f"O padrão {self.codigo} está suspenso e não pode ser utilizado."}
+            )
+        if self.vencimento and self.vencimento < data_utilizacao:
+            raise ValidationError(
+                {
+                    "padrao": (
+                        f"O padrão {self.codigo} venceu em {self.vencimento:%d/%m/%Y} "
+                        f"e não pode ser utilizado em {data_utilizacao:%d/%m/%Y}."
+                    )
+                }
+            )
+
     def save(self, *args, **kwargs):
         if self.codigo:
             return super().save(*args, **kwargs)
@@ -814,6 +951,11 @@ class Periodicidade(models.Model):
 # =========================
 class Calibracao(models.Model):
 
+    class OrigemCertificado(models.TextChoices):
+        NAO_CLASSIFICADO = "nao_classificado", "Não classificado"
+        EMITIDO_DS = "emitido_ds", "Emitido pela DS Científica"
+        EMITIDO_TERCEIRO = "emitido_terceiro", "Emitido por laboratório externo"
+
     ordem_servico = models.CharField(max_length=100, blank=True)
 
     STATUS_CHOICES = (
@@ -823,7 +965,8 @@ class Calibracao(models.Model):
     )
 
     RESULTADO_CHOICES = (
-        ("aprovado", "Aprovado"),
+        ("nao_declarado", "Não declarado no certificado"),
+        ("aprovado", "Aprovado"),
         ("ressalva", "Aprovado com ressalva"),
         ("reprovado", "Reprovado"),
     )
@@ -848,7 +991,18 @@ class Calibracao(models.Model):
     # 📎 CERTIFICADO
     certificado_numero = models.CharField(max_length=100, blank=True)
     certificado_arquivo = models.FileField(upload_to='calibracoes/', null=True, blank=True)
-    empresa_emissora = models.CharField(max_length=200, blank=True)
+    empresa_emissora = models.CharField(max_length=200, blank=True)
+
+    origem_certificado = models.CharField(
+        "Responsabilidade pela emissão",
+        max_length=30,
+        choices=OrigemCertificado.choices,
+        default=OrigemCertificado.NAO_CLASSIFICADO,
+        help_text=(
+            "Classifique a autoria do PDF. Somente certificados emitidos pela DS "
+            "Científica podem receber a assinatura digital A1 da empresa."
+        ),
+    )
 
     # 📏 METODOLOGIA
     metodo = models.TextField(blank=True)
@@ -1489,6 +1643,7 @@ class TurbidezPadraoUtilizado(models.Model):
         super().clean()
         if not self.padrao_id:
             return
+        self.padrao.validar_utilizacao_em(self.calibracao.data_calibracao)
         try:
             preparacao = self.padrao.preparacao_geradora
         except ObjectDoesNotExist:
@@ -2187,6 +2342,7 @@ class ColorimetroPadraoUtilizado(models.Model):
         super().clean()
         if not self.padrao_id:
             return
+        self.padrao.validar_utilizacao_em(self.calibracao.data_calibracao)
         try:
             preparacao = self.padrao.preparacao_geradora
         except ObjectDoesNotExist:

@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Consulta de etiqueta de calibração</title>
+  <style>
+    body{margin:0;background:#f3f6f8;color:#173247;font-family:Arial,sans-serif}
+    main{max-width:680px;margin:32px auto;padding:0 18px}
+    section{background:#fff;border-radius:10px;box-shadow:0 2px 12px #0001;padding:28px;border-left:6px solid #d49a00}
+    h1{color:#17667b;margin-top:0}.codigo{font-size:1.25rem;font-weight:700}.alerta{font-weight:700}
+  </style>
+</head>
+<body><main><section>
+  <h1>Etiqueta de calibração</h1>
+  <p class="codigo">{{ etiqueta.codigo }}</p>
+  {% if etiqueta.status == "aguardando_impressao" %}
+    <p class="alerta">Etiqueta ainda não ativada para uso.</p>
+    <p>Este QR Code não comprova a condição metrológica nem a validade de calibração de qualquer instrumento.</p>
+  {% elif etiqueta.status == "disponivel" %}
+    <p class="alerta">Etiqueta ainda não vinculada a uma calibração.</p>
+    <p>Este QR Code não comprova a condição metrológica nem a validade de calibração de qualquer instrumento.</p>
+  {% elif etiqueta.status == "cancelada" or etiqueta.status == "inutilizada" %}
+    <p class="alerta">Etiqueta {{ etiqueta.get_status_display|lower }} e sem validade.</p>
+    <p>Consulte a DS Científica em caso de dúvida.</p>
+  {% else %}
+    <p class="alerta">O certificado ainda não está disponível para consulta pública.</p>
+  {% endif %}
+</section></main></body>
+</html>

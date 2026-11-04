@@ -1,0 +1,22 @@
+{% extends "admin/base_site.html" %}
+{% block content %}
+<div class="card"><div class="card-body">
+    <p><a href="{% url 'inicio' %}">← Voltar ao início</a></p>
+    <h1>{{ title }}</h1>
+    <p><strong>{{ pagina.paginator.count }} registro{{ pagina.paginator.count|pluralize }} com pendência em {{ hoje|date:"d/m/Y" }}.</strong></p>
+    <p>{{ motivo }}</p>
+    <div class="alert alert-warning"><strong>Ação necessária:</strong> {{ acao }}</div>
+    <div style="overflow-x:auto">
+    <table class="table table-striped">
+        <thead><tr><th>Código</th><th>Descrição</th><th>{{ referencia_titulo }}</th><th>Vencimento</th><th>Atraso</th><th>Ação</th></tr></thead>
+        <tbody>{% for item in itens %}
+        <tr><td>{{ item.codigo }}</td><td>{{ item.descricao }}</td><td>{{ item.referencia|default:"—" }}</td><td>{{ item.vencimento|date:"d/m/Y" }}</td><td>{{ item.dias }} dia{{ item.dias|pluralize }}</td><td><a href="{{ item.url }}">Abrir cadastro</a></td></tr>
+        {% empty %}<tr><td colspan="6">Nenhuma pendência nesta categoria. Os registros podem ter sido atualizados desde a abertura do aviso.</td></tr>{% endfor %}</tbody>
+    </table></div>
+    {% if pagina.has_other_pages %}<nav aria-label="Paginação dos alertas">
+        {% if pagina.has_previous %}<a href="?page={{ pagina.previous_page_number }}">Anterior</a> · {% endif %}
+        Página {{ pagina.number }} de {{ pagina.paginator.num_pages }}
+        {% if pagina.has_next %} · <a href="?page={{ pagina.next_page_number }}">Próxima</a>{% endif %}
+    </nav>{% endif %}
+</div></div>
+{% endblock %}

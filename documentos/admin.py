@@ -1,6 +1,11 @@
 from django.contrib import admin
 
-from .models import DocumentoArquivo, DocumentoVinculo, SincronizacaoDocumento
+from .models import (
+    AssinaturaDigitalDocumento,
+    DocumentoArquivo,
+    DocumentoVinculo,
+    SincronizacaoDocumento,
+)
 
 
 class SincronizacaoDocumentoInline(admin.TabularInline):
@@ -119,3 +124,34 @@ class DocumentoVinculoAdmin(admin.ModelAdmin):
 
     def get_model_perms(self, request):
         return {}
+
+
+@admin.register(AssinaturaDigitalDocumento)
+class AssinaturaDigitalDocumentoAdmin(admin.ModelAdmin):
+    list_display = (
+        "signatario_nome",
+        "formato",
+        "revisao_referencia",
+        "status",
+        "integridade_verificada",
+        "assinado_em",
+    )
+    list_filter = ("status", "formato", "integridade_verificada", "content_type")
+    search_fields = (
+        "signatario_nome",
+        "certificado_numero_serie",
+        "certificado_fingerprint_sha256",
+        "object_id",
+    )
+    readonly_fields = tuple(field.name for field in AssinaturaDigitalDocumento._meta.fields)
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+    def get_actions(self, request):
+        actions = super().get_actions(request)
+        actions.pop("delete_selected", None)
+        return actions

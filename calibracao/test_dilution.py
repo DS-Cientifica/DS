@@ -431,3 +431,14 @@ class PreparacaoPadraoTests(TestCase):
         )
         with self.assertRaises(ValidationError):
             uso_incompativel.full_clean()
+
+        turbidez.data_calibracao = date(2026, 9, 23)
+        turbidez.save(update_fields=("data_calibracao",))
+        uso_vencido = TurbidezPadraoUtilizado(
+            calibracao=turbidez,
+            tipo="calibracao",
+            ordem=2,
+            padrao=preparacao.padrao_gerado,
+        )
+        with self.assertRaisesMessage(ValidationError, "não pode ser utilizado"):
+            uso_vencido.full_clean()

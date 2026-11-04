@@ -3,7 +3,12 @@ from django.shortcuts import get_object_or_404, render
 from django.urls import path, reverse
 from django.utils.html import format_html
 
-from .models import CertificadoCalibracao, PadraoUtilizado, RevisaoCertificado
+from .models import (
+    CertificadoCalibracao,
+    EtiquetaCalibracaoQR,
+    PadraoUtilizado,
+    RevisaoCertificado,
+)
 from .qr import gerar_qr_svg
 
 
@@ -162,3 +167,57 @@ class RevisaoCertificadoAdmin(admin.ModelAdmin):
 
     def get_model_perms(self, request):
         return {}
+
+
+@admin.register(EtiquetaCalibracaoQR)
+class EtiquetaCalibracaoQRAdmin(admin.ModelAdmin):
+    list_display = (
+        "codigo", "lote", "sequencia", "status", "certificado",
+        "calibracao_exibicao", "vinculada_por", "vinculada_em", "criado_em",
+    )
+    list_filter = ("status", "lote")
+    search_fields = ("codigo", "lote", "certificado__numero")
+    list_select_related = ("certificado", "vinculada_por")
+    actions = ("imprimir_etiquetas",)
+    readonly_fields = (
+        "codigo", "lote", "sequencia", "token_publico", "status",
+        "calibracao_content_type", "calibracao_object_id", "calibracao_exibicao",
+        "certificado", "reservada_em", "vinculada_por", "vinculada_em", "motivo_bloqueio",
+        "criado_em", "atualizado_em",
+    )
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+    @admin.display(description="Calibração reservada")
+    def calibracao_exibicao(self, obj):
+        return str(obj.calibracao) if obj.calibracao else "—"
+
+    @admin.action(description="Imprimir QR Codes das etiquetas selecionadas")
+    def imprimir_etiquetas(self, request, queryset):
+        etiquetas = []
+        for etiqueta in queryset.order_by("lote", "sequencia"):
+            caminho = reverse(
+                "certificados:consulta_etiqueta",
+                args=[etiqueta.token_publico],
+            )
+            url = request.build_absolute_uri(caminho)
+            etiquetas.append(
+                {
+                    "objeto": etiqueta,
+                    "url": url,
+                    "qr_svg": gerar_qr_svg(url, tamanho=150),
+                }
+            )
+        return render(
+            request,
+            "admin/certificados/etiquetacalibracaoqr/imprimir.html",
+            {
+                **self.admin_site.each_context(request),
+                "title": "Impressão de etiquetas de calibração",
+                "etiquetas": etiquetas,
+            },
+        )

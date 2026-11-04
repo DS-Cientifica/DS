@@ -29,10 +29,10 @@ class NumeroCertificadoGlobalTests(TestCase):
         )
 
     def assert_formato_novo(self, numero):
-        self.assertRegex(numero, r"^[A-Z0-9]{6}DS$")
-        corpo = numero[:6]
-        self.assertEqual(len(re.findall(r"[A-Z]", corpo)), 3)
-        self.assertEqual(len(re.findall(r"\d", corpo)), 3)
+        self.assertRegex(numero, r"^[A-Z0-9]{6}$")
+        self.assertEqual(len(re.findall(r"[A-Z]", numero)), 3)
+        self.assertEqual(len(re.findall(r"\d", numero)), 3)
+        self.assertFalse(numero.endswith("DS"))
 
     def test_modalidades_diferentes_usam_formato_e_reserva_globais(self):
         geral = Calibracao.objects.create(
@@ -99,4 +99,33 @@ class NumeroCertificadoGlobalTests(TestCase):
                 instrumento=self.instrumento,
                 data_calibracao=date(2026, 8, 11),
                 certificado_numero="CERTIFICADO-ANTIGO-001",
+            )
+
+    def test_numero_legado_com_ds_permanece_valido_e_imutavel(self):
+        calibracao = Calibracao.objects.create(
+            instrumento=self.instrumento,
+            data_calibracao=date(2026, 8, 11),
+            certificado_numero="A1B2C3DS",
+        )
+
+        registro = NumeroCertificadoEmitido.objects.get(codigo="A1B2C3DS")
+        self.assertEqual(calibracao.certificado_numero, "A1B2C3DS")
+        self.assertFalse(registro.historico)
+
+    def test_formato_novo_nao_pode_reutilizar_base_de_numero_legado(self):
+        Calibracao.objects.create(
+            instrumento=self.instrumento,
+            data_calibracao=date(2026, 8, 11),
+            certificado_numero="A1B2C3DS",
+        )
+
+        with self.assertRaisesMessage(
+            ValidationError,
+            "Este número de certificado já foi utilizado em outra calibração.",
+        ):
+            CalibracaoTurbidez.objects.create(
+                instrumento=self.instrumento,
+                cliente=self.cliente,
+                data_calibracao=date(2026, 8, 11),
+                numero_certificado="A1B2C3",
             )

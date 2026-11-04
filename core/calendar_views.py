@@ -186,7 +186,9 @@ def calendario_integrado(request):
                 _adicionar(eventos, ordem.data_abertura, titulo="Abertura de ordem de serviço", detalhe=f"OS {ordem.numero} · {ordem.cliente}", url=url, modulo="Metrologia", tom="metrologia")
                 _adicionar(eventos, ordem.data_conclusao, titulo="Conclusão de ordem de serviço", detalhe=f"OS {ordem.numero} · {ordem.cliente}", url=url, modulo="Metrologia", tom="metrologia")
         if _pode(request.user, "calibracao.view_padrao"):
-            for padrao in Padrao.objects.filter(vencimento__range=(inicio_grade, fim_grade)):
+            for padrao in Padrao.para_monitoramento().filter(
+                vencimento__range=(inicio_grade, fim_grade)
+            ):
                 _adicionar(eventos, padrao.vencimento, titulo="Vencimento de padrão", detalhe=str(padrao), url=reverse("admin:calibracao_padrao_change", args=[padrao.pk]), modulo="Metrologia", tom="metrologia")
 
     semanas = []

@@ -1,0 +1,54 @@
+{% extends "admin/base_site.html" %}
+{% load i18n admin_urls %}
+
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+    <a href="{% url 'admin:index' %}">Início</a>
+    &rsaquo; <a href="{% url 'admin:comercial_proposta_changelist' %}">Propostas</a>
+    &rsaquo; <a href="{{ change_url }}">{{ original.codigo }}</a>
+    &rsaquo; Assinar digitalmente
+</div>
+{% endblock %}
+
+{% block content %}
+<div id="content-main">
+    <div class="module" style="max-width: 820px; padding: 20px;">
+        <h2>Assinatura digital A1 — {{ original.codigo }}</h2>
+        <p>
+            O certificado e a senha serão processados somente em memória durante esta operação.
+            O AXION não armazena o arquivo A1 nem a senha.
+        </p>
+        <p class="help">
+            A assinatura será aplicada ao PDF desta revisão. Qualquer alteração posterior no
+            conteúdo ou criação de nova revisão exigirá uma nova assinatura.
+        </p>
+        <p class="help">
+            O AXION verifica o período de validade do A1 e a integridade criptográfica do PDF.
+            A validação completa da cadeia ICP-Brasil pode ser confirmada também no validador
+            oficial após a emissão.
+        </p>
+        <p class="help">
+            Um carimbo visível com o nome do certificado, data, ICP-Brasil e PAdES será inserido
+            automaticamente no rodapé da última página. A imagem de assinatura manuscrita da
+            proposta é opcional e independente deste carimbo digital.
+        </p>
+
+        <form method="post" enctype="multipart/form-data" novalidate>
+            {% csrf_token %}
+            {{ form.non_field_errors }}
+            {% for field in form %}
+                <div class="form-row{% if field.errors %} errors{% endif %}" style="padding: 12px 0;">
+                    {{ field.errors }}
+                    {{ field.label_tag }}
+                    {{ field }}
+                    {% if field.help_text %}<div class="help">{{ field.help_text }}</div>{% endif %}
+                </div>
+            {% endfor %}
+            <div class="submit-row">
+                <input type="submit" value="Assinar e verificar PDF" class="default">
+                <a href="{{ change_url }}" class="button cancel-link">Cancelar</a>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

@@ -4,7 +4,7 @@ from django.contrib import admin
 from django.urls import include, path, re_path
 from django.views.static import serve
 
-from .home_views import inicio
+from .home_views import inicio, alerta_metrologico
 from .calendar_views import calendario_integrado
 from .views import dashboard
 
@@ -12,6 +12,7 @@ from .views import dashboard
 urlpatterns = [
     path("", inicio, name="inicio"),
     path("inicio/", inicio),
+    path("alertas/<str:tipo>/", alerta_metrologico, name="alerta_metrologico"),
     path("dashboard/", dashboard, name="dashboard"),
     path("calendario/", calendario_integrado, name="calendario_integrado"),
     path("admin/", admin.site.urls),

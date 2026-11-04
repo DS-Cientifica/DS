@@ -13,7 +13,10 @@ from .models import Cliente, ContatoCliente, PerfilUsuario, ClienteAnexo
 class ClienteAnexoInline(admin.TabularInline):
     model = ClienteAnexo
     extra = 1
-    readonly_fields = ("ver_arquivo",)
+    fields = ("nome", "arquivo", "ver_arquivo", "data_upload")
+    readonly_fields = ("ver_arquivo", "data_upload")
+    verbose_name = "anexo adicional"
+    verbose_name_plural = "Anexos adicionais"
 
     def ver_arquivo(self, obj):
         if obj.arquivo:
@@ -33,6 +36,7 @@ class ClienteAnexoInline(admin.TabularInline):
 class ClienteAdmin(admin.ModelAdmin):
 
     readonly_fields = ("codigo",)
+    inlines = (ClienteAnexoInline,)
 
     list_display = (
         "codigo",
@@ -87,12 +91,15 @@ class ClienteAdmin(admin.ModelAdmin):
             )
         }),
 
-        # 🔥 AGORA CORRETO
-        ("Anexo", {
+        ("Anexo principal (legado)", {
             "fields": (
                 "nome_anexo",
                 "anexo",
-            )
+            ),
+            "description": (
+                "Arquivo mantido para compatibilidade com cadastros antigos. "
+                "Para incluir mais documentos, use a seção Anexos adicionais abaixo."
+            ),
         }),
 
         ("Controle", {

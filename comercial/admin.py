@@ -13,7 +13,7 @@ from django.core.files.storage import default_storage
 from django.core.validators import URLValidator, validate_email
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
-from django.http import HttpResponse, HttpResponseRedirect, JsonResponse
+from django.http import FileResponse, HttpResponse, HttpResponseRedirect, JsonResponse
 from django.shortcuts import redirect, render
 from django.utils import timezone
 from django.utils.html import format_html
@@ -113,6 +113,38 @@ class PropostaAdminForm(forms.ModelForm):
         self.fields["responsavel"].queryset = queryset
 
 
+class AssinaturaDigitalA1Form(forms.Form):
+    certificado_a1 = forms.FileField(
+        label="Certificado digital A1",
+        help_text="Selecione o arquivo .pfx ou .p12. O arquivo não será armazenado.",
+        widget=forms.ClearableFileInput(attrs={"accept": ".pfx,.p12"}),
+    )
+    senha = forms.CharField(
+        label="Senha do certificado",
+        strip=False,
+        widget=forms.PasswordInput(
+            render_value=False,
+            attrs={"autocomplete": "new-password"},
+        ),
+        help_text="A senha será usada somente durante esta operação e não será gravada.",
+    )
+    confirmacao = forms.BooleanField(
+        label=(
+            "Confirmo que revisei esta proposta e autorizo a aplicação da minha "
+            "assinatura digital nesta revisão."
+        )
+    )
+
+    def clean_certificado_a1(self):
+        arquivo = self.cleaned_data["certificado_a1"]
+        nome = arquivo.name.lower()
+        if not nome.endswith((".pfx", ".p12")):
+            raise forms.ValidationError("Envie um certificado A1 no formato .pfx ou .p12.")
+        if arquivo.size > 10 * 1024 * 1024:
+            raise forms.ValidationError("O certificado A1 deve ter no máximo 10 MB.")
+        return arquivo
+
+
 @admin.register(Proposta)
 class PropostaAdmin(admin.ModelAdmin):
     form = PropostaAdminForm
@@ -158,6 +190,9 @@ class PropostaAdmin(admin.ModelAdmin):
         "padroes_utilizados",
         "data_emissao",
         "ordem_servico_gerada",
+        "assinatura_autorizada_por",
+        "assinatura_autorizada_em",
+        "assinatura_digital_registrada",
     )
 
     class Media:
@@ -242,7 +277,45 @@ class PropostaAdmin(admin.ModelAdmin):
                 "observacoes",
             )
         }),
+
+        ("Assinatura visual da proposta", {
+            "description": (
+                "A imagem fica armazenada na proposta. Marcar a inclusão no PDF representa "
+                "a autorização para aplicar a assinatura nesta versão."
+            ),
+            "fields": (
+                "assinatura_imagem",
+                ("assinatura_nome", "assinatura_cargo"),
+                "incluir_assinatura_pdf",
+                ("assinatura_autorizada_por", "assinatura_autorizada_em"),
+            ),
+        }),
+        ("Assinatura digital A1", {
+            "description": (
+                "Registro da assinatura criptográfica PAdES desta revisão. "
+                "Use o botão 'Assinar digitalmente A1' no topo da tela."
+            ),
+            "fields": ("assinatura_digital_registrada",),
+        }),
     )
+
+    @admin.display(description="Assinatura digital")
+    def assinatura_digital_registrada(self, obj):
+        if not obj or not obj.pk:
+            return "Salve a proposta antes de assinar digitalmente."
+        from documentos.services.assinaturas import ultima_assinatura_do_objeto
+
+        assinatura = ultima_assinatura_do_objeto(obj)
+        if not assinatura:
+            return "Nenhuma assinatura digital registrada."
+        url = reverse("admin:comercial_proposta_download_assinado", args=[obj.pk])
+        return format_html(
+            "{} — {} em {} — <a href='{}'>baixar PDF assinado</a>",
+            assinatura.get_status_display(),
+            assinatura.signatario_nome,
+            timezone.localtime(assinatura.assinado_em).strftime("%d/%m/%Y %H:%M"),
+            url,
+        )
 
     def margem_calculada(self, obj):
         return obj.resumo_financeiro()["margem_valor"]
@@ -263,15 +336,40 @@ class PropostaAdmin(admin.ModelAdmin):
         )
 
     def save_model(self, request, obj, form, change):
+        if change and form.changed_data:
+            from documentos.services.assinaturas import substituir_assinaturas_do_objeto
+
+            substituir_assinaturas_do_objeto(obj)
+        campos_assinatura = {
+            "assinatura_imagem",
+            "assinatura_nome",
+            "assinatura_cargo",
+            "incluir_assinatura_pdf",
+        }
+        assinatura_alterada = bool(campos_assinatura.intersection(form.changed_data))
+        if obj.incluir_assinatura_pdf and obj.assinatura_imagem:
+            if assinatura_alterada or not obj.assinatura_autorizada_em:
+                obj.assinatura_autorizada_por = request.user
+                obj.assinatura_autorizada_em = timezone.now()
+        else:
+            obj.assinatura_autorizada_por = None
+            obj.assinatura_autorizada_em = None
         super().save_model(request, obj, form, change)
         obj.atualizar_total()
 
     def save_formset(self, request, form, formset, change):
         movimentacoes = self._movimentacoes_itens_proposta(formset)
+        altera_pdf_assinado = formset.model in {ItemProposta, PropostaAnexo} and any(
+            formulario.has_changed() for formulario in formset.forms
+        )
         super().save_formset(request, form, formset, change)
         obj = form.instance
         if not obj.pk:
             return
+        if altera_pdf_assinado:
+            from documentos.services.assinaturas import substituir_assinaturas_do_objeto
+
+            substituir_assinaturas_do_objeto(obj)
         for descricao in movimentacoes:
             PropostaMovimentacao.registrar(
                 proposta=obj,
@@ -358,6 +456,16 @@ class PropostaAdmin(admin.ModelAdmin):
                 self.admin_site.admin_view(self.criar_revisao_view),
                 name="comercial_proposta_criar_revisao",
             ),
+            path(
+                "<path:object_id>/assinar-digitalmente/",
+                self.admin_site.admin_view(self.assinar_digitalmente_view),
+                name="comercial_proposta_assinar_digitalmente",
+            ),
+            path(
+                "<path:object_id>/download-assinado/",
+                self.admin_site.admin_view(self.download_assinado_view),
+                name="comercial_proposta_download_assinado",
+            ),
         ]
         return custom_urls + urls
 
@@ -366,7 +474,104 @@ class PropostaAdmin(admin.ModelAdmin):
         extra_context["contatos_cliente_url"] = reverse(
             "admin:comercial_proposta_contatos_por_cliente"
         )
+        extra_context["tem_assinatura_digital"] = False
+        if object_id:
+            obj = self.get_object(request, object_id)
+            if obj:
+                from documentos.services.assinaturas import ultima_assinatura_do_objeto
+
+                extra_context["tem_assinatura_digital"] = bool(
+                    ultima_assinatura_do_objeto(obj)
+                )
         return super().changeform_view(request, object_id, form_url, extra_context)
+
+    def _pdf_atual(self, request, proposta):
+        from .pdf import gerar_pdf_proposta
+        from .views import EMPRESA_PROPOSTA, _contexto_proposta_pdf
+
+        contexto = _contexto_proposta_pdf(request, proposta)
+        return gerar_pdf_proposta(proposta, EMPRESA_PROPOSTA, contexto).getvalue(), contexto
+
+    def assinar_digitalmente_view(self, request, object_id):
+        obj = self.get_object(request, object_id)
+        if obj is None:
+            self.message_user(request, "Proposta não encontrada.", level=messages.ERROR)
+            return redirect("admin:comercial_proposta_changelist")
+        if not self.has_change_permission(request, obj):
+            from django.core.exceptions import PermissionDenied
+
+            raise PermissionDenied
+
+        form = AssinaturaDigitalA1Form(request.POST or None, request.FILES or None)
+        if request.method == "POST" and form.is_valid():
+            from documentos.services.assinaturas import registrar_assinatura_pdf_a1
+
+            try:
+                pdf, contexto_pdf = self._pdf_atual(request, obj)
+                certificado = form.cleaned_data["certificado_a1"]
+                registrar_assinatura_pdf_a1(
+                    objeto=obj,
+                    pdf=pdf,
+                    certificado_a1=certificado.read(),
+                    senha=form.cleaned_data["senha"],
+                    usuario=request.user,
+                    nome_arquivo=contexto_pdf["pdf_filename"],
+                    revisao_referencia=obj.revisao or "00",
+                    motivo=f"Assinatura digital da proposta {obj.codigo}, revisão {obj.revisao or '00'}",
+                    assinatura_visivel=True,
+                )
+            except DjangoValidationError as exc:
+                form.add_error(None, "; ".join(exc.messages))
+            else:
+                self.message_user(
+                    request,
+                    "Proposta assinada digitalmente com a integridade criptográfica verificada.",
+                    level=messages.SUCCESS,
+                )
+                return redirect("admin:comercial_proposta_change", obj.pk)
+
+        context = {
+            **self.admin_site.each_context(request),
+            "opts": self.model._meta,
+            "original": obj,
+            "title": f"Assinar digitalmente {obj.codigo}",
+            "form": form,
+            "change_url": reverse("admin:comercial_proposta_change", args=[obj.pk]),
+        }
+        return render(request, "admin/comercial/proposta/assinar_digitalmente.html", context)
+
+    def download_assinado_view(self, request, object_id):
+        obj = self.get_object(request, object_id)
+        if obj is None:
+            self.message_user(request, "Proposta não encontrada.", level=messages.ERROR)
+            return redirect("admin:comercial_proposta_changelist")
+        if not self.has_view_permission(request, obj):
+            from django.core.exceptions import PermissionDenied
+
+            raise PermissionDenied
+
+        from documentos.services.assinaturas import abrir_pdf_assinado, assinatura_atual_para_pdf
+        from documentos.services.documentos import verificar_integridade
+
+        pdf, contexto_pdf = self._pdf_atual(request, obj)
+        assinatura = assinatura_atual_para_pdf(obj, pdf)
+        if not assinatura:
+            self.message_user(
+                request,
+                "Não existe assinatura digital válida para o conteúdo atual. Revise e assine novamente.",
+                level=messages.ERROR,
+            )
+            return redirect("admin:comercial_proposta_change", obj.pk)
+        integro, _motivo = verificar_integridade(assinatura.documento_assinado)
+        if not integro:
+            self.message_user(
+                request,
+                "O arquivo assinado não passou na verificação de integridade e foi bloqueado.",
+                level=messages.ERROR,
+            )
+            return redirect("admin:comercial_proposta_change", obj.pk)
+        nome = contexto_pdf["pdf_filename"].rsplit(".", 1)[0] + "-assinado.pdf"
+        return FileResponse(abrir_pdf_assinado(assinatura), as_attachment=True, filename=nome)
 
     def contatos_por_cliente_view(self, request):
         cliente_id = request.GET.get("cliente", "").strip()
@@ -525,10 +730,14 @@ class PropostaAdmin(admin.ModelAdmin):
             self.message_user(request, "Proposta nao encontrada.", level=messages.ERROR)
             return HttpResponseRedirect(reverse("admin:comercial_proposta_changelist"))
 
-        revisao = obj.criar_revisao(
-            usuario=request.user,
-            descricao=f"Revisao {obj.revisao or '00'} criada a partir da proposta.",
-        )
+        from documentos.services.assinaturas import substituir_assinaturas_do_objeto
+
+        with transaction.atomic():
+            substituir_assinaturas_do_objeto(obj)
+            revisao = obj.criar_revisao(
+                usuario=request.user,
+                descricao=f"Revisao {obj.revisao or '00'} criada a partir da proposta.",
+            )
         self.message_user(request, f"Revisao {revisao} criada para a proposta {obj.codigo}.", level=messages.SUCCESS)
         return HttpResponseRedirect(reverse("admin:comercial_proposta_change", args=[obj.pk]))
 

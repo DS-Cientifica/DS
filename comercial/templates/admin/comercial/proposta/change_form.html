@@ -14,6 +14,18 @@
     {{ block.super }}
     {% if original %}
         <li>
+            <a href="{% url 'admin:comercial_proposta_assinar_digitalmente' original.pk %}" class="historylink">
+                Assinar digitalmente A1
+            </a>
+        </li>
+        {% if tem_assinatura_digital %}
+            <li>
+                <a href="{% url 'admin:comercial_proposta_download_assinado' original.pk %}" class="viewsitelink">
+                    Baixar PDF assinado
+                </a>
+            </li>
+        {% endif %}
+        <li>
             <a href="{% url 'admin:comercial_proposta_criar_revisao' original.pk %}" class="historylink">
                 Criar revisão
             </a>

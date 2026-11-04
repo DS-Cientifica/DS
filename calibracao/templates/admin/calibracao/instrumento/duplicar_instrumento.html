@@ -1,0 +1,56 @@
+{% extends "admin/base_site.html" %}
+{% load i18n admin_urls static %}
+
+{% block extrastyle %}{{ block.super }}<link rel="stylesheet" href="{% static 'admin/css/forms.css' %}">{% endblock %}
+{% block extrahead %}{{ block.super }}{{ media }}{% endblock %}
+
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+    <a href="{% url 'admin:index' %}">{% translate 'Home' %}</a>
+    &rsaquo; <a href="{% url 'admin:app_list' app_label=opts.app_label %}">{{ opts.app_config.verbose_name }}</a>
+    &rsaquo; <a href="{% url 'admin:calibracao_instrumento_changelist' %}">{{ opts.verbose_name_plural|capfirst }}</a>
+    &rsaquo; Copiar {{ instrumento_origem.codigo }}
+</div>
+{% endblock %}
+
+{% block content %}
+<div id="content-main">
+    <p>
+        O novo cadastro será baseado em <strong>{{ instrumento_origem.codigo }} — {{ instrumento_origem.descricao }}</strong>,
+        pertencente a <strong>{{ instrumento_origem.cliente }}</strong>.
+    </p>
+
+    <div class="module aligned">
+        <h2>Escopo da cópia controlada</h2>
+        <div class="form-row">
+            <p><strong>Serão copiados:</strong> descrição, marca, modelo, método, padrões vinculados, dados técnicos e periodicidades.</p>
+            <p><strong>Não serão copiados:</strong> número de série, anexo, histórico de calibração, certificados, situação anterior e próxima calibração.</p>
+            <p>O código identifica o registro dentro do AXION. A TAG identifica o ativo no processo do cliente. O número de série identifica a unidade física pelo fabricante.</p>
+        </div>
+    </div>
+
+    <form method="post" novalidate>
+        {% csrf_token %}
+        <fieldset class="module aligned">
+            <h2>Identificação do novo instrumento</h2>
+            {% if form.non_field_errors %}
+                <div class="errornote">{{ form.non_field_errors }}</div>
+            {% endif %}
+            {% for field in form %}
+                <div class="form-row{% if field.errors %} errors{% endif %}">
+                    {{ field.errors }}
+                    <div>
+                        {{ field.label_tag }}
+                        {{ field }}
+                        {% if field.help_text %}<div class="help">{{ field.help_text }}</div>{% endif %}
+                    </div>
+                </div>
+            {% endfor %}
+        </fieldset>
+        <div class="submit-row">
+            <input type="submit" value="Criar cópia controlada" class="default">
+            <a href="{% url 'admin:calibracao_instrumento_change' instrumento_origem.pk %}" class="closelink">Cancelar</a>
+        </div>
+    </form>
+</div>
+{% endblock %}

@@ -352,6 +352,36 @@ def enviar_proposta_email(request, pk):
     buffer = gerar_pdf_proposta(proposta, EMPRESA_PROPOSTA, contexto)
     pdf_bytes = buffer.getvalue()
 
+    # Se a proposta já entrou no fluxo de assinatura digital, nunca envie uma
+    # versão sem assinatura ou uma assinatura de conteúdo anterior.
+    from documentos.services.assinaturas import (
+        abrir_pdf_assinado,
+        assinatura_atual_para_pdf,
+        ultima_assinatura_do_objeto,
+    )
+    from documentos.services.documentos import verificar_integridade
+
+    assinatura = assinatura_atual_para_pdf(proposta, pdf_bytes)
+    if assinatura:
+        integro, _motivo_integridade = verificar_integridade(assinatura.documento_assinado)
+        if not integro:
+            messages.error(
+                request,
+                "O PDF assinado não passou na verificação de integridade e o envio foi bloqueado.",
+            )
+            return HttpResponseRedirect(reverse("pdf_proposta", args=[proposta.pk]))
+        with abrir_pdf_assinado(assinatura) as arquivo_assinado:
+            pdf_bytes = arquivo_assinado.read()
+        contexto["pdf_filename"] = (
+            contexto["pdf_filename"].rsplit(".", 1)[0] + "-assinado.pdf"
+        )
+    elif ultima_assinatura_do_objeto(proposta):
+        messages.error(
+            request,
+            "A proposta foi alterada após a assinatura digital. Assine novamente antes de enviar.",
+        )
+        return HttpResponseRedirect(reverse("pdf_proposta", args=[proposta.pk]))
+
     assunto = f"Proposta comercial {proposta.codigo} - DS Cientifica"
     corpo = (
         f"Prezados,\n\n"

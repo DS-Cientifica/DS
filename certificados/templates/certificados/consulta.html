@@ -21,6 +21,11 @@
       <dt>Data da calibração</dt><dd>{{ certificado.data_calibracao|date:"d/m/Y" }}</dd>
       <dt>Equipamento</dt><dd>{{ certificado.instrumento }}</dd>
       {% if certificado.exibir_cliente %}<dt>Cliente</dt><dd>{{ certificado.cliente }}</dd>{% endif %}
+      {% if assinatura_digital %}
+        <dt>Assinatura digital</dt><dd>{{ assinatura_digital.formato }} — integridade verificada</dd>
+        <dt>Signatário</dt><dd>{{ assinatura_digital.signatario_nome }}</dd>
+        <dt>Assinado em</dt><dd>{{ assinatura_digital.assinado_em|date:"d/m/Y H:i" }}</dd>
+      {% endif %}
       <dt>Código de verificação</dt><dd>{{ certificado.codigo_curto }}</dd>
     </dl><div class="qr">{{ qr_svg|safe }}<small>Endereço oficial desta consulta</small></div></div>
     {% if certificado.pode_baixar_publicamente %}<p><a class="acao" href="{% url 'certificados:download' certificado.uuid_publico %}">Visualizar certificado</a></p>{% endif %}

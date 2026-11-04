@@ -1,0 +1,43 @@
+{% extends "admin/base_site.html" %}
+{% block extrastyle %}{{ block.super }}
+<style>
+  :root{--azul:#071b43;--vermelho:#ed172f}
+  *{box-sizing:border-box}.acoes{margin:16px 0}.acoes button{padding:10px 18px}
+  .folha{display:grid;grid-template-columns:repeat(3,60mm);grid-auto-rows:30mm;gap:3mm;background:#fff;padding:7mm}
+  .etiqueta{width:60mm;height:30mm;border:.35mm solid var(--azul);border-radius:2.2mm;padding:1.2mm;display:grid;grid-template-columns:minmax(0,1fr) 22mm;gap:1mm;break-inside:avoid;page-break-inside:avoid;overflow:hidden;background:#fff;color:var(--azul);font-family:Arial,sans-serif;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  .dados{min-width:0;display:flex;flex-direction:column}.marca{font-weight:900;font-size:3.3mm;line-height:1;border-bottom:.35mm solid var(--vermelho);padding-bottom:.5mm;margin-bottom:.7mm}.marca small{display:block;font-size:1.25mm;font-style:italic;letter-spacing:.03mm;margin-top:.35mm}
+  .campo{margin:.35mm 0}.campo b{display:block;font-size:1.45mm;line-height:1.1;text-transform:uppercase}.linha{height:3.6mm;border:.25mm solid var(--azul);border-radius:1mm;margin-top:.35mm}.linha.numero{font-size:2.2mm;font-weight:900;line-height:3mm;padding-left:1mm;letter-spacing:.15mm}.datas{display:grid;grid-template-columns:1fr 1fr;gap:.8mm}.datas .linha{font-size:1.6mm;text-align:center;line-height:3mm}
+  .contato{margin-top:auto;font-weight:700;font-size:1.25mm;white-space:nowrap;text-align:center}
+  .consulta{border-left:.35mm solid var(--azul);padding-left:1mm;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;min-width:0}.titulo-qr{font-size:1.5mm;font-weight:900;line-height:2.6mm;text-align:center;background:var(--azul);color:#fff;border-radius:.8mm;width:100%;height:2.8mm;margin:0 0 .5mm}
+  .qr-box{width:20mm;height:20mm;display:flex;align-items:center;justify-content:center;background:#fff}.qr-box svg{display:block;width:20mm;height:20mm}
+  .codigo{font-weight:900;font-size:2.4mm;line-height:2.8mm;margin:.2mm 0 0;letter-spacing:.12mm}
+  @media print{
+    html,body,#container,#content{margin:0!important;padding:0!important;background:#fff!important}
+    #header,.breadcrumbs,.acoes{display:none!important}.folha{padding:0;gap:3mm}
+    @page{size:A4 portrait;margin:7mm}
+  }
+</style>{% endblock %}
+{% block content %}
+<div class="acoes"><button type="button" onclick="window.print()">Imprimir / salvar em PDF</button></div>
+<main class="folha">
+{% for item in etiquetas %}
+  <section class="etiqueta">
+    <div class="dados">
+      <div class="marca">DS CIENTÍFICA<small>Precisão que gera resultado.</small></div>
+      <div class="campo"><b>Certificado nº:</b><div class="linha numero">{{ item.objeto.codigo }}</div></div>
+      <div class="campo"><b>Código / identificação:</b><div class="linha"></div></div>
+      <div class="datas">
+        <div class="campo"><b>Data da calibração:</b><div class="linha">&nbsp;/&nbsp;&nbsp;/&nbsp;</div></div>
+        <div class="campo"><b>Próxima calibração:</b><div class="linha">&nbsp;/&nbsp;&nbsp;/&nbsp;</div></div>
+      </div>
+      <div class="contato">www.dscientifica.com.br · (11) 98859-9577</div>
+    </div>
+    <div class="consulta">
+      <p class="titulo-qr">ACESSE O CERTIFICADO</p>
+      <div class="qr-box">{{ item.qr_svg|safe }}</div>
+      <p class="codigo">{{ item.objeto.codigo }}</p>
+    </div>
+  </section>
+{% endfor %}
+</main>
+{% endblock %}

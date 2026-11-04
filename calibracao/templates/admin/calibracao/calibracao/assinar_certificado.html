@@ -1,0 +1,48 @@
+{% extends "admin/base_site.html" %}
+
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+  <a href="{% url 'admin:index' %}">Início</a>
+  &rsaquo; <a href="{% url 'admin:calibracao_calibracao_changelist' %}">Calibrações</a>
+  &rsaquo; <a href="{{ change_url }}">{{ original.certificado_numero }}</a>
+  &rsaquo; Assinar certificado
+</div>
+{% endblock %}
+
+{% block content %}
+<div id="content-main">
+  <div class="module" style="max-width:820px;padding:20px">
+    <h2>Assinatura digital A1 — {{ original.certificado_numero }}</h2>
+    <p>
+      Confirme primeiro que este é o PDF final aprovado para emissão. O arquivo A1 e a
+      senha são processados somente em memória e não são armazenados pelo AXION.
+    </p>
+    <p class="help">
+      O sistema verifica o período de validade do A1 e a integridade criptográfica do
+      PDF. A publicação por QR somente será liberada após a assinatura e a revisão do
+      arquivo assinado.
+    </p>
+    <p class="help">
+      Alterações no PDF antes da publicação invalidam esta assinatura. Certificados já
+      publicados somente podem ser corrigidos pelo fluxo controlado de substituição.
+    </p>
+
+    <form method="post" enctype="multipart/form-data" novalidate>
+      {% csrf_token %}
+      {{ form.non_field_errors }}
+      {% for field in form %}
+        <div class="form-row{% if field.errors %} errors{% endif %}" style="padding:12px 0">
+          {{ field.errors }}
+          {{ field.label_tag }}
+          {{ field }}
+          {% if field.help_text %}<div class="help">{{ field.help_text }}</div>{% endif %}
+        </div>
+      {% endfor %}
+      <div class="submit-row">
+        <input type="submit" value="Assinar e verificar certificado" class="default">
+        <a href="{{ change_url }}" class="button cancel-link">Cancelar</a>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

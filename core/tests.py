@@ -494,3 +494,80 @@ class PaginaInicialTests(TestCase):
         )
         self.assertEqual(calendario_response.status_code, 200)
         self.assertNotContains(calendario_response, 'id="nav-sidebar"')
+
+
+class AlertasMetrologicosTests(TestCase):
+    def test_alerta_lista_apenas_padroes_vencidos_e_link_do_sino(self):
+        from datetime import timedelta
+        from django.utils import timezone
+        from calibracao.dilution_models import PreparacaoPadrao, PreparacaoPadraoResultado
+        from calibracao.models import Padrao
+        from .home_views import _montar_alertas
+        hoje = timezone.localdate()
+        usuario = User.objects.create_superuser("alertas", "alertas@example.com", "senha")
+        vencido = Padrao.objects.create(codigo="TEST-01", descricao="Padrão atrasado", vencimento=hoje-timedelta(days=3))
+        padrao_mae = Padrao.objects.create(codigo="TEST-02", descricao="Padrão em dia", vencimento=hoje)
+        padrao_diluido = Padrao.objects.create(
+            codigo="TEST-DIL",
+            descricao="Padrão de diluição já utilizado",
+            vencimento=hoje-timedelta(days=2),
+        )
+        preparacao = PreparacaoPadrao.objects.create(
+            aplicacao="turbidez",
+            data_preparacao=hoje-timedelta(days=4),
+            validade=hoje-timedelta(days=2),
+            padrao_origem=padrao_mae,
+            unidade="NTU",
+        )
+        resultado = PreparacaoPadraoResultado.objects.create(
+            preparacao=preparacao,
+            ordem=1,
+            valor_alvo=100,
+            volume_final=100,
+        )
+        PreparacaoPadraoResultado.objects.filter(pk=resultado.pk).update(
+            padrao_gerado=padrao_diluido
+        )
+        self.client.force_login(usuario)
+        url = reverse("alerta_metrologico", args=["padroes"])
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Padrão atrasado")
+        self.assertNotContains(response, "Padrão em dia")
+        self.assertNotContains(response, "Padrão de diluição já utilizado")
+        self.assertContains(response, "3 dias")
+        self.assertContains(response, reverse("admin:calibracao_padrao_change", args=[vencido.pk]))
+        alerta = next(a for a in _montar_alertas(usuario) if a["rotulo"] == "Padrões vencidos")
+        self.assertEqual(alerta["total"], 1)
+        self.assertEqual(alerta["url"], url)
+        self.assertEqual(alerta["total"], response.context["pagina"].paginator.count)
+
+    def test_permissao_e_estado_vazio(self):
+        usuario = User.objects.create_user("restrito_alertas", password="senha", is_staff=True)
+        self.client.force_login(usuario)
+        for tipo in ("padroes", "calibracoes"):
+            self.assertEqual(self.client.get(reverse("alerta_metrologico", args=[tipo])).status_code, 403)
+        usuario.user_permissions.add(Permission.objects.get(codename="view_padrao", content_type__app_label="calibracao"))
+        response = self.client.get(reverse("alerta_metrologico", args=["padroes"]))
+        self.assertContains(response, "Nenhuma pendência nesta categoria")
+        self.assertEqual(self.client.get(reverse("alerta_metrologico", args=["calibracoes"])).status_code, 403)
+
+
+    def test_calibracoes_excluem_inativos_sem_data_e_vencimento_hoje(self):
+        from datetime import timedelta
+        from django.utils import timezone
+        from calibracao.models import Instrumento
+        from clientes.models import Cliente
+        hoje = timezone.localdate()
+        cliente = Cliente.objects.create(codigo="CLI-ALERTA", razao_social="Cliente alerta", nome_empresa="Cliente alerta", cnpj="12345678000100")
+        for codigo, ativo, data in (("VENCIDO", True, hoje-timedelta(days=2)), ("INATIVO", False, hoje-timedelta(days=2)), ("HOJE", True, hoje), ("SEM-DATA", True, None)):
+            Instrumento.objects.create(codigo=codigo, descricao=codigo, cliente=cliente, ativo=ativo, proxima_calibracao=data)
+        usuario = User.objects.create_superuser("instrumentos_alertas", "i@example.com", "senha")
+        self.client.force_login(usuario)
+        response = self.client.get(reverse("alerta_metrologico", args=["calibracoes"]))
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["pagina"].paginator.count, 1)
+        self.assertContains(response, "VENCIDO")
+        self.assertContains(response, "2 dias")
+        for codigo in ("INATIVO", "HOJE", "SEM-DATA"):
+            self.assertNotContains(response, codigo)

@@ -7,6 +7,7 @@ from datetime import timedelta
 import re
 
 from django.core.exceptions import ValidationError
+from django.core.validators import FileExtensionValidator
 from django.db import models, transaction
 from django.utils import timezone
 
@@ -618,6 +619,49 @@ class Proposta(models.Model):
     metodo = models.TextField(blank=True)
     padroes_utilizados = models.TextField(blank=True)
     observacoes = models.TextField(blank=True)
+    assinatura_imagem = models.FileField(
+        "Imagem da assinatura",
+        upload_to="propostas/assinaturas/",
+        blank=True,
+        null=True,
+        validators=[FileExtensionValidator(("png", "jpg", "jpeg"))],
+        help_text="Envie uma imagem PNG ou JPG, preferencialmente com fundo transparente.",
+    )
+    assinatura_nome = models.CharField(
+        "Nome do signatário",
+        max_length=150,
+        blank=True,
+        default="DIEGO H. A. SALDANHA",
+    )
+    assinatura_cargo = models.CharField(
+        "Cargo/função do signatário",
+        max_length=150,
+        blank=True,
+        default="DS Científica",
+    )
+    incluir_assinatura_pdf = models.BooleanField(
+        "Incluir assinatura nos PDFs",
+        default=False,
+        help_text=(
+            "Marque somente após autorizar o uso desta assinatura na proposta. "
+            "A imagem será inserida na impressão, no download e no envio por e-mail."
+        ),
+    )
+    assinatura_autorizada_por = models.ForeignKey(
+        "auth.User",
+        verbose_name="Assinatura autorizada por",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="propostas_com_assinatura_autorizada",
+        editable=False,
+    )
+    assinatura_autorizada_em = models.DateTimeField(
+        "Assinatura autorizada em",
+        null=True,
+        blank=True,
+        editable=False,
+    )
 
     def _validar_responsavel_do_cliente(self):
         if not self.cliente_id or not self.responsavel_id:
@@ -630,6 +674,10 @@ class Proposta(models.Model):
     def clean(self):
         super().clean()
         self._validar_responsavel_do_cliente()
+        if self.incluir_assinatura_pdf and not self.assinatura_imagem:
+            raise ValidationError(
+                {"assinatura_imagem": "Envie a imagem da assinatura antes de incluí-la no PDF."}
+            )
 
     def gerar_codigo(self, using=None):
         using = using or self._state.db or "default"

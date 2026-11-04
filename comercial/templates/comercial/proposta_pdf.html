@@ -435,6 +435,16 @@
             min-height: 24mm;
         }
 
+        .signature-image {
+            display: block;
+            width: auto;
+            max-width: 65mm;
+            height: auto;
+            max-height: 22mm;
+            margin: 0 auto 2mm;
+            object-fit: contain;
+        }
+
         .signature-line {
             width: 100%;
             padding-top: 4mm;
@@ -832,9 +842,13 @@
                     <div class="signature-role">Aprova&ccedil;&atilde;o do cliente</div>
                 </div>
                 <div class="signature-block">
-                    <div class="signature-space"></div>
-                    <div class="signature-line">DIEGO H. A. SALDANHA</div>
-                    <div class="signature-role">DS Cient&iacute;fica</div>
+                    <div class="signature-space">
+                        {% if proposta.incluir_assinatura_pdf and proposta.assinatura_imagem %}
+                            <img class="signature-image" src="{{ proposta.assinatura_imagem.url }}" alt="Assinatura de {{ proposta.assinatura_nome }}">
+                        {% endif %}
+                    </div>
+                    <div class="signature-line">{{ proposta.assinatura_nome|default:"DIEGO H. A. SALDANHA" }}</div>
+                    <div class="signature-role">{{ proposta.assinatura_cargo|default:"DS Científica" }}</div>
                 </div>
             </div>
 

@@ -6,13 +6,21 @@
     {% if certificado_publico and certificado_publico.publicado %}
       <li><a href="{% url 'certificados:consulta' certificado_publico.uuid_publico %}" target="_blank">Consulta pública</a></li>
       <li><a href="{% url 'admin:certificados_certificadocalibracao_etiqueta' certificado_publico.pk %}" target="_blank">Imprimir QR Code</a></li>
-    {% elif pode_publicar_certificado %}
-      <li>
-        <form method="post" action="{% url 'admin:calibracao_calibracao_publicar_certificado' original.pk %}" style="display:inline">
-          {% csrf_token %}
-          <button type="submit" class="button" onclick="return confirm('Publicar uma cópia imutável deste certificado para consulta por QR Code?')">Publicar certificado / QR</button>
-        </form>
-      </li>
+    {% else %}
+      {% if pode_assinar_certificado %}
+        <li><a href="{% url 'admin:calibracao_calibracao_assinar_certificado' original.pk %}">Assinar certificado A1</a></li>
+      {% endif %}
+      {% if assinatura_digital %}
+        <li><a href="{% url 'admin:calibracao_calibracao_download_certificado_assinado' original.pk %}">Revisar PDF assinado</a></li>
+      {% endif %}
+      {% if pode_publicar_certificado %}
+        <li>
+          <form method="post" action="{% url 'admin:calibracao_calibracao_publicar_certificado' original.pk %}" style="display:inline">
+            {% csrf_token %}
+            <button type="submit" class="button" onclick="return confirm('Confirmo que revisei o PDF assinado. Publicar o certificado e liberar a consulta por QR Code?')">Publicar certificado / QR</button>
+          </form>
+        </li>
+      {% endif %}
     {% endif %}
   {% endif %}
 {% endblock %}

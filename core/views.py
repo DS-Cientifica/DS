@@ -226,8 +226,13 @@ def dashboard(request):
         proxima_calibracao__gte=today,
         proxima_calibracao__lte=next_7_days,
     )
-    padroes_vencidos = Padrao.objects.filter(Q(vencimento__lt=today) | Q(status="vencido")).distinct()
-    padroes_7_dias = Padrao.objects.filter(vencimento__gte=today, vencimento__lte=next_7_days)
+    padroes_vencidos = Padrao.para_monitoramento().filter(
+        Q(vencimento__lt=today) | Q(status="vencido")
+    ).distinct()
+    padroes_7_dias = Padrao.para_monitoramento().filter(
+        vencimento__gte=today,
+        vencimento__lte=next_7_days,
+    )
     impostos_vencidos = Imposto.objects.filter(pago=False, vencimento__lt=today)
     tickets_urgentes = tickets_abertos.filter(prioridade="urgente")
     planejamentos_periodo = PlanejamentoServico.objects.filter(
@@ -544,7 +549,7 @@ def dashboard(request):
             proxima_calibracao__isnull=False,
             proxima_calibracao__lte=next_30_days,
         ).select_related("cliente").order_by("proxima_calibracao")[:6],
-        "padroes_vencendo": Padrao.objects.filter(
+        "padroes_vencendo": Padrao.para_monitoramento().filter(
             vencimento__lte=next_30_days,
         ).order_by("vencimento")[:6],
         "propostas_recentes": Proposta.objects.select_related("cliente").order_by("-data_emissao")[:6],
