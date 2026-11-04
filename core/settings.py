@@ -39,6 +39,7 @@ PUBLIC_CERTIFICATE_HOSTS = [
     for host in os.getenv("PUBLIC_CERTIFICATE_HOSTS", "").split(",")
     if host.strip()
 ]
+PUBLIC_CERTIFICATE_BASE_URL = os.getenv("PUBLIC_CERTIFICATE_BASE_URL", "").strip().rstrip("/")
 
 CSRF_TRUSTED_ORIGINS = [
     origin.strip()

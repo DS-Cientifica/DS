@@ -8,12 +8,12 @@
   .dados{min-width:0;display:flex;flex-direction:column}.marca{font-weight:900;font-size:3.3mm;line-height:1;border-bottom:.35mm solid var(--vermelho);padding-bottom:.5mm;margin-bottom:.7mm}.marca small{display:block;font-size:1.25mm;font-style:italic;letter-spacing:.03mm;margin-top:.35mm}
   .campo{margin:.35mm 0}.campo b{display:block;font-size:1.45mm;line-height:1.1;text-transform:uppercase}.linha{height:3.6mm;border:.25mm solid var(--azul);border-radius:1mm;margin-top:.35mm}.linha.numero{font-size:2.2mm;font-weight:900;line-height:3mm;padding-left:1mm;letter-spacing:.15mm}.datas{display:grid;grid-template-columns:1fr 1fr;gap:.8mm}.datas .linha{font-size:1.6mm;text-align:center;line-height:3mm}
   .contato{margin-top:auto;font-weight:700;font-size:1.25mm;white-space:nowrap;text-align:center}
-  .consulta{border-left:.35mm solid var(--azul);padding-left:1mm;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;min-width:0}.titulo-qr{font-size:1.5mm;font-weight:900;line-height:2.6mm;text-align:center;background:var(--azul);color:#fff;border-radius:.8mm;width:100%;height:2.8mm;margin:0 0 .5mm}
+  .consulta{border-left:.35mm solid var(--azul);padding-left:1mm;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;min-width:0}.titulo-qr{font-size:1.15mm;font-weight:900;line-height:2.6mm;text-align:center;background:var(--azul);color:#fff;border-radius:.8mm;width:100%;height:2.8mm;margin:0 0 .5mm;white-space:nowrap}
   .qr-box{width:20mm;height:20mm;display:flex;align-items:center;justify-content:center;background:#fff}.qr-box svg{display:block;width:20mm;height:20mm}
   .codigo{font-weight:900;font-size:2.4mm;line-height:2.8mm;margin:.2mm 0 0;letter-spacing:.12mm}
   @media print{
     html,body,#container,#content{margin:0!important;padding:0!important;background:#fff!important}
-    #header,.breadcrumbs,.acoes{display:none!important}.folha{padding:0;gap:3mm}
+    #header,.breadcrumbs,.acoes,#content h1{display:none!important}.folha{padding:0;gap:3mm}
     @page{size:A4 portrait;margin:7mm}
   }
 </style>{% endblock %}

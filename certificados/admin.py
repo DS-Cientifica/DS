@@ -1,5 +1,7 @@
 from io import StringIO
+from urllib.parse import urljoin
 
+from django.conf import settings
 from django.contrib import admin
 from django.contrib import messages
 from django.core.exceptions import PermissionDenied
@@ -20,6 +22,17 @@ from .models import (
     RevisaoCertificado,
 )
 from .qr import gerar_qr_svg
+
+
+def _url_publica(request, caminho):
+    base = getattr(settings, "PUBLIC_CERTIFICATE_BASE_URL", "").strip().rstrip("/")
+    if not base:
+        hosts = getattr(settings, "PUBLIC_CERTIFICATE_HOSTS", ())
+        if hosts:
+            base = f"https://{hosts[0]}"
+    if not base:
+        return request.build_absolute_uri(caminho)
+    return urljoin(f"{base}/", caminho.lstrip("/"))
 
 
 class PadraoUtilizadoInline(admin.TabularInline):
@@ -97,7 +110,7 @@ class CertificadoCalibracaoAdmin(admin.ModelAdmin):
 
     def _url_consulta(self, request, obj):
         caminho = reverse("certificados:consulta", args=[obj.uuid_publico])
-        return request.build_absolute_uri(caminho)
+        return _url_publica(request, caminho)
 
     def etiqueta_view(self, request, pk):
         certificado = get_object_or_404(CertificadoCalibracao, pk=pk)
@@ -314,7 +327,7 @@ class EtiquetaCalibracaoQRAdmin(admin.ModelAdmin):
                 "certificados:consulta_etiqueta",
                 args=[etiqueta.token_publico],
             )
-            url = request.build_absolute_uri(caminho)
+            url = _url_publica(request, caminho)
             etiquetas.append(
                 {
                     "objeto": etiqueta,

@@ -1,5 +1,6 @@
 from datetime import date
 from io import StringIO
+from unittest.mock import patch
 
 from django.contrib.contenttypes.models import ContentType
 from django.contrib.auth.models import User
@@ -98,7 +99,11 @@ class EtiquetaCalibracaoQRTests(TestCase):
             ).exists()
         )
 
-    def test_impressao_respeita_60_por_30_mm_e_qr_de_20_mm(self):
+    @override_settings(
+        PUBLIC_CERTIFICATE_BASE_URL="https://certificados.dscientifica.com.br"
+    )
+    @patch("certificados.admin.gerar_qr_svg", return_value="<svg></svg>")
+    def test_impressao_respeita_60_por_30_mm_e_qr_de_20_mm(self, gerar_qr):
         usuario = User.objects.create_superuser(
             username="admin-impressao-etiqueta",
             email="admin-impressao@example.com",
@@ -119,6 +124,11 @@ class EtiquetaCalibracaoQRTests(TestCase):
         self.assertContains(resposta, "height:20mm")
         self.assertContains(resposta, self.etiqueta.codigo)
         self.assertContains(resposta, "<svg", html=False)
+        self.assertEqual(
+            gerar_qr.call_args.args[0],
+            "https://certificados.dscientifica.com.br/etiquetas/"
+            f"{self.etiqueta.token_publico}/",
+        )
 
     def test_geracao_de_lote_exige_apply_e_e_idempotente(self):
         simulacao = StringIO()

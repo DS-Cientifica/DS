@@ -21,6 +21,8 @@ services:
         value: "https://*.onrender.com"
       - key: PUBLIC_CERTIFICATE_HOSTS
         value: "certificados.dscientifica.com.br"
+      - key: PUBLIC_CERTIFICATE_BASE_URL
+        value: "https://certificados.dscientifica.com.br"
       - key: DATABASE_URL
         sync: false
       - key: DOCUMENT_STORAGE_MODE
