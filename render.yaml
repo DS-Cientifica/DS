@@ -6,6 +6,8 @@ services:
     buildCommand: bash build.sh
     preDeployCommand: python manage.py migrate
     startCommand: gunicorn core.wsgi:application
+    domains:
+      - certificados.dscientifica.com.br
     envVars:
       - key: PYTHON_VERSION
         value: 3.12.8
@@ -14,9 +16,11 @@ services:
       - key: DEBUG
         value: "False"
       - key: ALLOWED_HOSTS
-        value: ".onrender.com"
+        value: ".onrender.com,certificados.dscientifica.com.br"
       - key: CSRF_TRUSTED_ORIGINS
         value: "https://*.onrender.com"
+      - key: PUBLIC_CERTIFICATE_HOSTS
+        value: "certificados.dscientifica.com.br"
       - key: DATABASE_URL
         sync: false
       - key: DOCUMENT_STORAGE_MODE
