@@ -3,12 +3,18 @@
 {% block extrastyle %}
   {{ block.super }}
   <style>
-    .qr-sheet{max-width:680px;margin:24px auto;background:#fff;padding:28px;border:1px solid #d8e0e5}
-    .qr-label{display:grid;grid-template-columns:230px 1fr;gap:24px;align-items:center;border:2px solid #17667b;padding:20px}
-    .qr-code svg{display:block;width:220px;height:220px}.qr-title{color:#17667b;margin-top:0}.qr-url{overflow-wrap:anywhere;font-size:12px}
-    .qr-actions{margin-top:20px}.qr-actions button{padding:10px 18px}
-    @media print{#header,.breadcrumbs,.qr-actions{display:none!important}.qr-sheet{border:0;margin:0;padding:0}.qr-label{break-inside:avoid}}
-    @media(max-width:650px){.qr-label{grid-template-columns:1fr}.qr-code svg{margin:auto}}
+    :root{--azul:#071b43;--vermelho:#ed172f}
+    *{box-sizing:border-box}.qr-sheet{margin:24px auto;width:max-content;background:#fff;padding:8mm;border:1px solid #d8e0e5}.qr-actions{margin-top:16px}.qr-actions button{padding:10px 18px}
+    .etiqueta{width:60mm;height:30mm;border:.35mm solid var(--azul);border-radius:2.2mm;padding:1.2mm;display:grid;grid-template-columns:minmax(0,1fr) 22mm;gap:1mm;overflow:hidden;background:#fff;color:var(--azul);font-family:Arial,sans-serif;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+    .dados{min-width:0;display:flex;flex-direction:column}.marca{font-weight:900;font-size:3.3mm;line-height:1;border-bottom:.35mm solid var(--vermelho);padding-bottom:.5mm;margin-bottom:.7mm}.marca small{display:block;font-size:1.25mm;font-style:italic;letter-spacing:.03mm;margin-top:.35mm}
+    .campo{margin:.35mm 0}.campo b{display:block;font-size:1.45mm;line-height:1.1;text-transform:uppercase}.linha{height:3.6mm;border:.25mm solid var(--azul);border-radius:1mm;margin-top:.35mm;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}.linha.valor{font-size:2.2mm;font-weight:900;line-height:3mm;padding:0 1mm;letter-spacing:.08mm}.datas{display:grid;grid-template-columns:1fr 1fr;gap:.8mm}.datas .linha{font-size:1.6mm;text-align:center;line-height:3mm}
+    .contato{margin-top:auto;font-weight:700;font-size:1.25mm;white-space:nowrap;text-align:center}.consulta{border-left:.35mm solid var(--azul);padding-left:1mm;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;min-width:0}.titulo-qr{font-size:1.15mm;font-weight:900;line-height:2.6mm;text-align:center;background:var(--azul);color:#fff;border-radius:.8mm;width:100%;height:2.8mm;margin:0 0 .5mm;white-space:nowrap}
+    .qr-code{width:20mm;height:20mm;display:flex;align-items:center;justify-content:center;background:#fff}.qr-code svg{display:block;width:20mm;height:20mm}.numero-qr{font-weight:900;font-size:2.4mm;line-height:2.8mm;margin:.2mm 0 0;letter-spacing:.12mm}
+    @media print{
+      @page{size:60mm 30mm;margin:0}
+      html,body,#container,#content{width:60mm!important;height:30mm!important;margin:0!important;padding:0!important;background:#fff!important}
+      #header,.breadcrumbs,.qr-actions,#content h1{display:none!important}.qr-sheet{width:60mm;height:30mm;border:0;margin:0;padding:0}.etiqueta{break-inside:avoid;page-break-inside:avoid}
+    }
   </style>
 {% endblock %}
 
@@ -16,14 +22,21 @@
 
 {% block content %}
   <main class="qr-sheet">
-    <section class="qr-label">
-      <div class="qr-code">{{ qr_svg|safe }}</div>
-      <div>
-        <h1 class="qr-title">Certificado de calibração</h1>
-        <p><strong>Número:</strong> {{ certificado.numero }}</p>
-        <p><strong>Código:</strong> {{ certificado.codigo_curto }}</p>
-        <p>Escaneie o QR Code para consultar a autenticidade, o status e a rastreabilidade metrológica.</p>
-        <p class="qr-url">{{ url_consulta }}</p>
+    <section class="etiqueta" aria-label="Etiqueta de calibração {{ certificado.numero }}">
+      <div class="dados">
+        <div class="marca">DS CIENTÍFICA<small>Precisão que gera resultado.</small></div>
+        <div class="campo"><b>Certificado nº:</b><div class="linha valor">{{ certificado.numero }}</div></div>
+        <div class="campo"><b>Código / identificação:</b><div class="linha valor">{{ certificado.instrumento.codigo }}</div></div>
+        <div class="datas">
+          <div class="campo"><b>Data da calibração:</b><div class="linha">{{ certificado.data_calibracao|date:"d/m/Y" }}</div></div>
+          <div class="campo"><b>Próxima calibração:</b><div class="linha">{{ certificado.proxima_calibracao|date:"d/m/Y"|default:"-" }}</div></div>
+        </div>
+        <div class="contato">www.dscientifica.com.br · (11) 98859-9577</div>
+      </div>
+      <div class="consulta">
+        <p class="titulo-qr">ACESSE O CERTIFICADO</p>
+        <div class="qr-code">{{ qr_svg|safe }}</div>
+        <p class="numero-qr">{{ certificado.numero }}</p>
       </div>
     </section>
     <div class="qr-actions"><button type="button" onclick="window.print()">Imprimir etiqueta</button></div>

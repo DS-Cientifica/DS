@@ -130,6 +130,43 @@ class EtiquetaCalibracaoQRTests(TestCase):
             f"{self.etiqueta.token_publico}/",
         )
 
+    @override_settings(
+        PUBLIC_CERTIFICATE_BASE_URL="https://certificados.dscientifica.com.br"
+    )
+    @patch("certificados.admin.gerar_qr_svg", return_value="<svg></svg>")
+    def test_etiqueta_individual_do_certificado_usa_layout_fisico(self, gerar_qr):
+        usuario = User.objects.create_superuser(
+            username="admin-etiqueta-individual",
+            email="admin-etiqueta-individual@example.com",
+            password="senha-teste",
+        )
+        self.client.force_login(usuario)
+        calibracao = self.criar_calibracao_reservada()
+        certificado = self.criar_certificado(calibracao)
+
+        resposta = self.client.get(
+            reverse(
+                "admin:certificados_certificadocalibracao_etiqueta",
+                args=[certificado.pk],
+            )
+        )
+
+        self.assertEqual(resposta.status_code, 200)
+        self.assertContains(resposta, "width:60mm")
+        self.assertContains(resposta, "height:30mm")
+        self.assertContains(resposta, "width:20mm")
+        self.assertContains(resposta, "height:20mm")
+        self.assertContains(resposta, "size:60mm 30mm")
+        self.assertContains(resposta, certificado.numero, count=4)
+        self.assertContains(resposta, self.instrumento.codigo)
+        self.assertNotContains(resposta, certificado.codigo_curto)
+        self.assertNotContains(resposta, "qr-url")
+        self.assertEqual(
+            gerar_qr.call_args.args[0],
+            "https://certificados.dscientifica.com.br/verificar/"
+            f"{certificado.uuid_publico}/",
+        )
+
     def test_geracao_de_lote_exige_apply_e_e_idempotente(self):
         simulacao = StringIO()
         call_command(
