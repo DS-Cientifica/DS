@@ -6,6 +6,7 @@ class PublicCertificateHostMiddleware:
     """Restringe o host público à consulta de certificados e etiquetas."""
 
     allowed_prefixes = ("/verificar/", "/etiquetas/")
+    allowed_paths = ("/static/img/logo_ds.png",)
 
     def __init__(self, get_response):
         self.get_response = get_response
@@ -18,7 +19,11 @@ class PublicCertificateHostMiddleware:
         }
         host_publico = host in hosts_publicos
 
-        if host_publico and not request.path.startswith(self.allowed_prefixes):
+        caminho_permitido = (
+            request.path in self.allowed_paths
+            or request.path.startswith(self.allowed_prefixes)
+        )
+        if host_publico and not caminho_permitido:
             return self._proteger(HttpResponseNotFound("Página não encontrada."))
 
         response = self.get_response(request)
@@ -29,7 +34,7 @@ class PublicCertificateHostMiddleware:
     @staticmethod
     def _proteger(response):
         response["Content-Security-Policy"] = (
-            "default-src 'none'; style-src 'unsafe-inline'; img-src data:; "
+            "default-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; "
             "base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
         )
         response["Referrer-Policy"] = "no-referrer"

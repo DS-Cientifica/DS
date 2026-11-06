@@ -118,6 +118,10 @@ class CertificadoPublicoTests(TestCase):
         )
         self.assertEqual(resposta.status_code, 200)
         self.assertContains(resposta, "<svg", html=False)
+        self.assertContains(resposta, "/static/img/logo_ds.png")
+        self.assertContains(resposta, "https://www.dscientifica.com.br/")
+        self.assertContains(resposta, "tel:+5511988599577")
+        self.assertContains(resposta, "https://wa.me/5511988599577")
 
     def test_publicacao_da_calibracao_legada_e_idempotente_e_imutavel(self):
         with tempfile.TemporaryDirectory() as media_root, tempfile.TemporaryDirectory() as documentos_root:

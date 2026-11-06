@@ -7,12 +7,15 @@ from django.contrib.auth.models import User
 from django.core.exceptions import ValidationError
 from django.core.management import call_command
 from django.test import TestCase, override_settings
+from django.test import RequestFactory
 from django.urls import reverse
+from django.http import HttpResponse
 
 from calibracao.models import Calibracao, Instrumento, NumeroCertificadoEmitido
 from clientes.models import Cliente
 from certificados.models import CertificadoCalibracao, EtiquetaCalibracaoQR
 from certificados.services import _vincular_etiqueta_reservada
+from core.public_certificate_middleware import PublicCertificateHostMiddleware
 
 
 class EtiquetaCalibracaoQRTests(TestCase):
@@ -383,6 +386,33 @@ class DominioPublicoCertificadosTests(TestCase):
         self.assertEqual(resposta.status_code, 200)
         self.assertIn("default-src 'none'", resposta["Content-Security-Policy"])
         self.assertEqual(resposta["Referrer-Policy"], "no-referrer")
+
+    @override_settings(
+        ALLOWED_HOSTS=["testserver", "certificados.exemplo.com.br"],
+        PUBLIC_CERTIFICATE_HOSTS=["certificados.exemplo.com.br"],
+    )
+    def test_dominio_publico_libera_somente_o_logo_institucional(self):
+        middleware = PublicCertificateHostMiddleware(
+            lambda _request: HttpResponse("arquivo-estatico", status=200)
+        )
+        factory = RequestFactory()
+
+        logo = middleware(
+            factory.get(
+                "/static/img/logo_ds.png",
+                HTTP_HOST=self.host_publico,
+            )
+        )
+        outro_arquivo = middleware(
+            factory.get(
+                "/static/css/custom.css",
+                HTTP_HOST=self.host_publico,
+            )
+        )
+
+        self.assertEqual(logo.status_code, 200)
+        self.assertIn("img-src 'self' data:", logo["Content-Security-Policy"])
+        self.assertEqual(outro_arquivo.status_code, 404)
 
     @override_settings(
         ALLOWED_HOSTS=["testserver", "certificados.exemplo.com.br"],

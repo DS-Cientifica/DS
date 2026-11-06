@@ -1,16 +1,29 @@
-<!doctype html>
+{% load static %}<!doctype html>
 <html lang="pt-BR">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Consulta de Certificado de Calibração</title>
   <style>
-    body{margin:0;background:#f3f6f8;color:#173247;font-family:Arial,sans-serif}.page{max-width:900px;margin:32px auto;padding:0 18px}.card{background:#fff;border-radius:10px;box-shadow:0 2px 12px #0001;padding:28px;margin-bottom:18px}h1,h2{color:#17667b}dl{display:grid;grid-template-columns:210px minmax(0,1fr);gap:10px;margin:0}dt{font-weight:700}dd{margin:0;min-width:0;overflow-wrap:anywhere}.status{display:inline-block;padding:7px 12px;border-radius:20px;background:#e7f1f4;font-weight:700}.alerta{border-left:5px solid #b13b3b}.padrao{border-top:1px solid #d9e2e7;padding:14px 0}.acao{display:inline-block;background:#17667b;color:#fff;padding:11px 16px;border-radius:6px;text-decoration:none}.consulta-grid{display:grid;grid-template-columns:minmax(0,1fr) 190px;gap:24px}.qr{min-width:0}.qr svg{width:180px;height:180px;display:block}.qr small{display:block;text-align:center}@media(max-width:600px){dl,.consulta-grid{grid-template-columns:1fr}.card{padding:20px}.qr svg{margin:auto}}
+    :root{--azul:#071b43;--azul-claro:#eaf1fb;--vermelho:#ed172f;--texto:#26364d;--fundo:#f3f6fb;--verde:#176c52}
+    *{box-sizing:border-box}body{margin:0;background:var(--fundo);color:var(--texto);font-family:Arial,sans-serif}.page{max-width:960px;margin:0 auto;padding:24px 18px 34px}
+    .topo{display:flex;align-items:center;gap:18px;background:#fff;border-radius:14px 14px 0 0;border-bottom:4px solid var(--vermelho);padding:18px 24px;box-shadow:0 4px 18px #071b4314}.logo{width:76px;height:76px;object-fit:contain;flex:0 0 auto}.marca strong{display:block;color:var(--azul);font-size:28px;letter-spacing:.4px}.marca span{display:block;color:#51617a;font-size:14px;font-style:italic;margin-top:3px}
+    .selo{margin-left:auto;text-align:right}.selo strong{display:block;color:var(--verde);font-size:14px}.selo span{font-size:12px;color:#627088}
+    .card{background:#fff;border-radius:10px;box-shadow:0 2px 12px #071b4314;padding:28px;margin:18px 0}h1,h2{color:var(--azul);margin-top:0}h1{font-size:28px;margin-bottom:8px}h2{font-size:21px}.subtitulo{color:#647086;margin-top:0}
+    dl{display:grid;grid-template-columns:210px minmax(0,1fr);gap:11px;margin:0}dt{font-weight:700;color:var(--azul)}dd{margin:0;min-width:0;overflow-wrap:anywhere}.status{display:inline-block;padding:7px 12px;border-radius:20px;background:var(--azul-claro);color:var(--azul);font-weight:700;margin:6px 0 22px}.alerta{border-left:5px solid #b13b3b}.padrao{border-top:1px solid #d9e2e7;padding:14px 0}.acao{display:inline-block;background:var(--azul);color:#fff;padding:12px 18px;border-radius:7px;text-decoration:none;font-weight:700;margin-top:20px}.acao:hover,.acao:focus{background:#0d3672}.consulta-grid{display:grid;grid-template-columns:minmax(0,1fr) 190px;gap:28px;align-items:start}.qr{min-width:0;background:#f8faff;border:1px solid #dce5f2;border-radius:10px;padding:8px}.qr svg{width:172px;height:172px;display:block}.qr small{display:block;text-align:center;color:#657187;font-size:11px;margin-top:4px}
+    .contato{background:var(--azul);color:#fff;border-radius:12px;padding:20px 24px}.contato h2{color:#fff;margin-bottom:6px}.contato p{margin:0 0 14px;color:#dce7fb}.contato-links{display:flex;flex-wrap:wrap;gap:10px}.contato-links a{display:inline-flex;align-items:center;min-height:42px;background:#fff;color:var(--azul);border-radius:7px;padding:10px 14px;text-decoration:none;font-weight:700}.contato-links a.telefone{background:var(--vermelho);color:#fff}.rodape{text-align:center;color:#68758b;font-size:12px;margin-top:18px}
+    @media(max-width:650px){.page{padding:10px}.topo{padding:14px;gap:12px}.logo{width:60px;height:60px}.marca strong{font-size:21px}.marca span{font-size:12px}.selo{display:none}.card{padding:20px}h1{font-size:23px}dl,.consulta-grid{grid-template-columns:1fr}.qr{width:max-content;max-width:100%;margin:auto}.qr svg{margin:auto}.contato-links{display:grid}.contato-links a{justify-content:center}}
   </style>
 </head>
 <body><main class="page">
+  <header class="topo">
+    <img class="logo" src="{% static 'img/logo_ds.png' %}" alt="Logo da DS Científica">
+    <div class="marca"><strong>DS CIENTÍFICA</strong><span>Precisão que gera resultado.</span></div>
+    <div class="selo"><strong>Consulta oficial</strong><span>Certificado de calibração</span></div>
+  </header>
   <section class="card{% if certificado.status == 'substituido' %} alerta{% endif %}">
     <h1>Consulta de Certificado de Calibração</h1>
+    <p class="subtitulo">Confira a autenticidade, o status e a rastreabilidade do documento.</p>
     <p class="status">{{ certificado.get_status_display }}</p>
     {% if certificado.status == 'substituido' %}
       <p>Este certificado foi substituído por uma nova revisão. O documento anterior está bloqueado para acesso.</p>
@@ -37,4 +50,14 @@
       <dt>Validade</dt><dd>{{ item.validade|date:"d/m/Y"|default:"Não informada" }}</dd><dt>Situação na data de uso</dt><dd>{{ item.get_situacao_na_data_display }}</dd>
     </dl></article>{% empty %}<p>Nenhum padrão foi vinculado a este certificado.</p>{% endfor %}
   </section>{% endif %}
+  <section class="contato" aria-label="Canais oficiais da DS Científica">
+    <h2>Fale com a DS Científica</h2>
+    <p>Dúvidas sobre este certificado ou sobre serviços de calibração?</p>
+    <div class="contato-links">
+      <a href="https://www.dscientifica.com.br/" target="_blank" rel="noopener noreferrer">Acessar o site</a>
+      <a class="telefone" href="tel:+5511988599577">Ligar para (11) 98859-9577</a>
+      <a href="https://wa.me/5511988599577" target="_blank" rel="noopener noreferrer">Abrir WhatsApp</a>
+    </div>
+  </section>
+  <footer class="rodape">DS Científica - consulta pública protegida de certificados.</footer>
 </main></body></html>
