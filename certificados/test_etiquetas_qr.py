@@ -106,7 +106,7 @@ class EtiquetaCalibracaoQRTests(TestCase):
         PUBLIC_CERTIFICATE_BASE_URL="https://certificados.dscientifica.com.br"
     )
     @patch("certificados.admin.gerar_qr_svg", return_value="<svg></svg>")
-    def test_impressao_respeita_60_por_30_mm_e_qr_de_15_mm(self, gerar_qr):
+    def test_impressao_respeita_60_por_30_mm_e_qr_de_20_mm(self, gerar_qr):
         usuario = User.objects.create_superuser(
             username="admin-impressao-etiqueta",
             email="admin-impressao@example.com",
@@ -123,8 +123,10 @@ class EtiquetaCalibracaoQRTests(TestCase):
         self.assertEqual(resposta.status_code, 200)
         self.assertContains(resposta, "width:60mm")
         self.assertContains(resposta, "height:30mm")
-        self.assertContains(resposta, "width:15mm")
-        self.assertContains(resposta, "height:15mm")
+        self.assertContains(resposta, "width:20mm")
+        self.assertContains(resposta, "height:20mm")
+        self.assertNotContains(resposta, "www.dscientifica.com.br")
+        self.assertContains(resposta, "(11) 98859-9577")
         self.assertContains(resposta, self.etiqueta.codigo)
         self.assertContains(resposta, "<svg", html=False)
         self.assertEqual(
@@ -157,8 +159,10 @@ class EtiquetaCalibracaoQRTests(TestCase):
         self.assertEqual(resposta.status_code, 200)
         self.assertContains(resposta, "width:60mm")
         self.assertContains(resposta, "height:30mm")
-        self.assertContains(resposta, "width:15mm")
-        self.assertContains(resposta, "height:15mm")
+        self.assertContains(resposta, "width:20mm")
+        self.assertContains(resposta, "height:20mm")
+        self.assertNotContains(resposta, "www.dscientifica.com.br")
+        self.assertContains(resposta, "(11) 98859-9577")
         self.assertContains(resposta, "size:60mm 30mm")
         self.assertContains(resposta, certificado.numero, count=4)
         self.assertContains(resposta, self.instrumento.codigo)
