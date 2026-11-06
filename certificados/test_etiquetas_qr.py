@@ -127,6 +127,8 @@ class EtiquetaCalibracaoQRTests(TestCase):
         self.assertContains(resposta, "height:20mm")
         self.assertNotContains(resposta, "www.dscientifica.com.br")
         self.assertContains(resposta, "(11) 98859-9577")
+        self.assertContains(resposta, ".datas{min-height:0;display:grid")
+        self.assertContains(resposta, ".contato-item{grid-column:2")
         self.assertContains(resposta, self.etiqueta.codigo)
         self.assertContains(resposta, "<svg", html=False)
         self.assertEqual(
@@ -163,6 +165,8 @@ class EtiquetaCalibracaoQRTests(TestCase):
         self.assertContains(resposta, "height:20mm")
         self.assertNotContains(resposta, "www.dscientifica.com.br")
         self.assertContains(resposta, "(11) 98859-9577")
+        self.assertContains(resposta, ".datas{min-height:0;display:grid")
+        self.assertContains(resposta, ".contato-item{grid-column:2")
         self.assertContains(resposta, "size:60mm 30mm")
         self.assertContains(resposta, certificado.numero, count=4)
         self.assertContains(resposta, self.instrumento.codigo)
