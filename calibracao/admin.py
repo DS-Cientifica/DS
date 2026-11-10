@@ -135,14 +135,32 @@ class EtiquetaCalibracaoQRChoiceField(forms.ModelChoiceField):
 
 
 class CalibracaoAdminForm(ThreeDecimalAdminForm):
+    modo_etiqueta_qr = forms.ChoiceField(
+        choices=(
+            ("automatico", "Seleção automática — próxima etiqueta disponível"),
+            ("manual", "Escolher uma etiqueta específica"),
+        ),
+        initial="automatico",
+        label="Forma de seleção da etiqueta QR",
+        widget=forms.RadioSelect,
+        help_text=(
+            "Na escolha manual, pesquise o código impresso na etiqueta que será utilizada."
+        ),
+    )
     etiqueta_qr_selecionada = EtiquetaCalibracaoQRChoiceField(
         queryset=None,
         required=False,
-        label="Etiqueta física QR a utilizar",
-        empty_label="Seleção automática (próxima etiqueta disponível)",
+        label="Pesquisar etiqueta física QR",
+        empty_label="Digite para pesquisar e escolha uma etiqueta",
         help_text=(
-            "Escolha o código que está impresso na etiqueta física. "
-            "Se deixar em branco, o AXION reservará a próxima etiqueta disponível."
+            "A pesquisa considera código, lote e sequência. Somente etiquetas com status "
+            "Disponível podem ser escolhidas."
+        ),
+        widget=forms.Select(
+            attrs={
+                "class": "js-etiqueta-qr-select",
+                "data-placeholder": "Pesquise pelo código, lote ou sequência",
+            }
         ),
     )
 
@@ -177,15 +195,35 @@ class CalibracaoAdminForm(ThreeDecimalAdminForm):
             ).order_by("lote", "sequencia")
             campo.initial = atual.pk
             campo.disabled = True
+            self.fields["modo_etiqueta_qr"].initial = "manual"
+            self.fields["modo_etiqueta_qr"].disabled = True
             campo.help_text = (
                 "Etiqueta já reservada para esta calibração. O vínculo não pode ser alterado."
             )
         else:
             campo.queryset = disponiveis.order_by("lote", "sequencia")
+            if self.instance and self.instance.pk and self.instance.certificado_numero:
+                self.fields["modo_etiqueta_qr"].disabled = True
+                campo.disabled = True
+                campo.help_text = (
+                    "Esta calibração já possui número de certificado. A etiqueta física deve "
+                    "ser definida durante a criação da calibração."
+                )
 
     def clean(self):
         cleaned_data = super().clean()
+        modo = cleaned_data.get("modo_etiqueta_qr") or "automatico"
         etiqueta = cleaned_data.get("etiqueta_qr_selecionada")
+        if modo == "manual" and not etiqueta and not (
+            self.instance and self.instance.pk and self.instance.certificado_numero
+        ):
+            self.add_error(
+                "etiqueta_qr_selecionada",
+                "Pesquise e escolha a etiqueta física que será utilizada.",
+            )
+        if modo != "manual":
+            etiqueta = None
+
         origem = cleaned_data.get("origem_certificado")
         if etiqueta and origem != Calibracao.OrigemCertificado.EMITIDO_DS:
             self.add_error(
@@ -206,6 +244,9 @@ class CalibracaoAdminForm(ThreeDecimalAdminForm):
 
         self.instance._etiqueta_qr_selecionada_id = etiqueta.pk if etiqueta else None
         return cleaned_data
+
+    class Media:
+        js = ("js/admin_calibracao_etiqueta_qr.js",)
 
 
 class AssinaturaCertificadoA1Form(forms.Form):
@@ -2349,6 +2390,7 @@ class CalibracaoAdmin(OrdemServicoAutomaticaAdminMixin, admin.ModelAdmin):
                 "certificado_arquivo",
                 "empresa_emissora",
                 "origem_certificado",
+                "modo_etiqueta_qr",
                 "etiqueta_qr_selecionada",
             )
         }),

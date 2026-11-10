@@ -155,9 +155,38 @@ class EtiquetaCalibracaoQRTests(TestCase):
         resposta = self.client.get(reverse("admin:calibracao_calibracao_add"))
 
         self.assertEqual(resposta.status_code, 200)
-        self.assertContains(resposta, "Etiqueta física QR a utilizar")
+        self.assertContains(resposta, "Forma de seleção da etiqueta QR")
+        self.assertContains(resposta, "Escolher uma etiqueta específica")
+        self.assertContains(resposta, "Pesquisar etiqueta física QR")
+        self.assertContains(resposta, "js-etiqueta-qr-select")
+        self.assertContains(resposta, "admin_calibracao_etiqueta_qr.js")
         self.assertContains(resposta, self.etiqueta.codigo)
         self.assertContains(resposta, self.etiqueta.lote)
+
+    def test_formulario_manual_exige_e_reserva_a_etiqueta_pesquisada(self):
+        from calibracao.admin import CalibracaoAdminForm
+
+        dados = {
+            "instrumento": str(self.instrumento.pk),
+            "data_calibracao": "04/11/2026",
+            "status": "aberta",
+            "resultado": "aprovado",
+            "local_calibracao": "laboratorio",
+            "origem_certificado": Calibracao.OrigemCertificado.EMITIDO_DS,
+            "modo_etiqueta_qr": "manual",
+        }
+        sem_etiqueta = CalibracaoAdminForm(data=dados)
+        self.assertFalse(sem_etiqueta.is_valid())
+        self.assertIn("etiqueta_qr_selecionada", sem_etiqueta.errors)
+
+        com_etiqueta = CalibracaoAdminForm(
+            data={**dados, "etiqueta_qr_selecionada": str(self.etiqueta.pk)}
+        )
+        self.assertTrue(com_etiqueta.is_valid(), com_etiqueta.errors)
+        calibracao = com_etiqueta.save()
+        self.etiqueta.refresh_from_db()
+        self.assertEqual(calibracao.certificado_numero, self.etiqueta.codigo)
+        self.assertEqual(self.etiqueta.status, EtiquetaCalibracaoQR.Status.RESERVADA)
 
     @override_settings(
         PUBLIC_CERTIFICATE_BASE_URL="https://certificados.dscientifica.com.br"
