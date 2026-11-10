@@ -137,14 +137,18 @@ class EtiquetaCalibracaoQRChoiceField(forms.ModelChoiceField):
 class CalibracaoAdminForm(ThreeDecimalAdminForm):
     modo_etiqueta_qr = forms.ChoiceField(
         choices=(
-            ("automatico", "Seleção automática — próxima etiqueta disponível"),
-            ("manual", "Escolher uma etiqueta específica"),
+            (
+                "automatico",
+                "Gerar novo número de certificado — não utiliza etiqueta reservada",
+            ),
+            ("manual", "Escolher uma etiqueta física já criada"),
         ),
         initial="automatico",
-        label="Forma de seleção da etiqueta QR",
+        label="Forma de definição do número e da etiqueta QR",
         widget=forms.RadioSelect,
         help_text=(
-            "Na escolha manual, pesquise o código impresso na etiqueta que será utilizada."
+            "Na geração automática, o AXION cria um número novo que não existe na lista "
+            "de etiquetas. Somente a escolha manual utiliza uma etiqueta física já criada."
         ),
     )
     etiqueta_qr_selecionada = EtiquetaCalibracaoQRChoiceField(

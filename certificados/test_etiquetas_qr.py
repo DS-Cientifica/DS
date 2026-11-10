@@ -37,11 +37,13 @@ class EtiquetaCalibracaoQRTests(TestCase):
         )
 
     def criar_calibracao_reservada(self):
-        calibracao = Calibracao.objects.create(
+        calibracao = Calibracao(
             instrumento=self.instrumento,
             data_calibracao=date(2026, 11, 4),
             origem_certificado=Calibracao.OrigemCertificado.EMITIDO_DS,
         )
+        calibracao._etiqueta_qr_selecionada_id = self.etiqueta.pk
+        calibracao.save()
         self.etiqueta.refresh_from_db()
         return calibracao
 
@@ -89,15 +91,21 @@ class EtiquetaCalibracaoQRTests(TestCase):
         with self.assertRaisesMessage(ValidationError, "Somente certificados publicados"):
             self.etiqueta.full_clean()
 
-    def test_nova_calibracao_consome_codigo_aleatorio_da_etiqueta(self):
-        calibracao = self.criar_calibracao_reservada()
-        self.assertEqual(calibracao.certificado_numero, self.etiqueta.codigo)
-        self.assertEqual(self.etiqueta.status, EtiquetaCalibracaoQR.Status.RESERVADA)
-        self.assertEqual(self.etiqueta.calibracao_object_id, str(calibracao.pk))
-        self.assertEqual(self.etiqueta.calibracao, calibracao)
+    def test_selecao_automatica_gera_numero_novo_sem_consumir_etiqueta(self):
+        calibracao = Calibracao.objects.create(
+            instrumento=self.instrumento,
+            data_calibracao=date(2026, 11, 4),
+            origem_certificado=Calibracao.OrigemCertificado.EMITIDO_DS,
+        )
+        self.etiqueta.refresh_from_db()
+        self.assertNotEqual(calibracao.certificado_numero, self.etiqueta.codigo)
+        self.assertRegex(calibracao.certificado_numero, r"^[A-Z0-9]{6}$")
+        self.assertEqual(self.etiqueta.status, EtiquetaCalibracaoQR.Status.DISPONIVEL)
+        self.assertIsNone(self.etiqueta.calibracao_object_id)
+        self.assertIsNone(self.etiqueta.calibracao_content_type_id)
         self.assertTrue(
             NumeroCertificadoEmitido.objects.filter(
-                codigo=self.etiqueta.codigo,
+                codigo=calibracao.certificado_numero,
                 objeto_id=str(calibracao.pk),
             ).exists()
         )
@@ -155,8 +163,9 @@ class EtiquetaCalibracaoQRTests(TestCase):
         resposta = self.client.get(reverse("admin:calibracao_calibracao_add"))
 
         self.assertEqual(resposta.status_code, 200)
-        self.assertContains(resposta, "Forma de seleção da etiqueta QR")
-        self.assertContains(resposta, "Escolher uma etiqueta específica")
+        self.assertContains(resposta, "Forma de definição do número e da etiqueta QR")
+        self.assertContains(resposta, "Gerar novo número de certificado")
+        self.assertContains(resposta, "Escolher uma etiqueta física já criada")
         self.assertContains(resposta, "Pesquisar etiqueta física QR")
         self.assertContains(resposta, "js-etiqueta-qr-select")
         self.assertContains(resposta, "admin_calibracao_etiqueta_qr.js")
@@ -187,6 +196,28 @@ class EtiquetaCalibracaoQRTests(TestCase):
         self.etiqueta.refresh_from_db()
         self.assertEqual(calibracao.certificado_numero, self.etiqueta.codigo)
         self.assertEqual(self.etiqueta.status, EtiquetaCalibracaoQR.Status.RESERVADA)
+
+    def test_formulario_automatico_ignora_etiqueta_enviada_e_gera_numero_novo(self):
+        from calibracao.admin import CalibracaoAdminForm
+
+        formulario = CalibracaoAdminForm(
+            data={
+                "instrumento": str(self.instrumento.pk),
+                "data_calibracao": "04/11/2026",
+                "status": "aberta",
+                "resultado": "aprovado",
+                "local_calibracao": "laboratorio",
+                "origem_certificado": Calibracao.OrigemCertificado.EMITIDO_DS,
+                "modo_etiqueta_qr": "automatico",
+                "etiqueta_qr_selecionada": str(self.etiqueta.pk),
+            }
+        )
+
+        self.assertTrue(formulario.is_valid(), formulario.errors)
+        calibracao = formulario.save()
+        self.etiqueta.refresh_from_db()
+        self.assertNotEqual(calibracao.certificado_numero, self.etiqueta.codigo)
+        self.assertEqual(self.etiqueta.status, EtiquetaCalibracaoQR.Status.DISPONIVEL)
 
     @override_settings(
         PUBLIC_CERTIFICATE_BASE_URL="https://certificados.dscientifica.com.br"
@@ -332,7 +363,7 @@ class EtiquetaCalibracaoQRTests(TestCase):
             5,
         )
 
-    def test_lote_nao_e_consumido_antes_da_ativacao(self):
+    def test_lote_ativado_so_e_consumido_por_escolha_manual(self):
         self.etiqueta.status = EtiquetaCalibracaoQR.Status.AGUARDANDO_IMPRESSAO
         self.etiqueta.save(update_fields=("status", "atualizado_em"))
         call_command(
@@ -360,12 +391,29 @@ class EtiquetaCalibracaoQRTests(TestCase):
             apply=True,
             stdout=StringIO(),
         )
-        calibracao_com_lote = Calibracao.objects.create(
+        etiqueta_escolhida = EtiquetaCalibracaoQR.objects.filter(
+            lote="LOTE-INATIVO",
+            status=EtiquetaCalibracaoQR.Status.DISPONIVEL,
+        ).order_by("sequencia").first()
+        calibracao_automatica = Calibracao.objects.create(
             instrumento=self.instrumento,
             data_calibracao=date(2026, 11, 5),
             origem_certificado=Calibracao.OrigemCertificado.EMITIDO_DS,
         )
-        self.assertIn(calibracao_com_lote.certificado_numero, codigos_lote)
+        self.assertNotIn(calibracao_automatica.certificado_numero, codigos_lote)
+        etiqueta_escolhida.refresh_from_db()
+        self.assertEqual(etiqueta_escolhida.status, EtiquetaCalibracaoQR.Status.DISPONIVEL)
+
+        calibracao_manual = Calibracao(
+            instrumento=self.instrumento,
+            data_calibracao=date(2026, 11, 6),
+            origem_certificado=Calibracao.OrigemCertificado.EMITIDO_DS,
+        )
+        calibracao_manual._etiqueta_qr_selecionada_id = etiqueta_escolhida.pk
+        calibracao_manual.save()
+        etiqueta_escolhida.refresh_from_db()
+        self.assertEqual(calibracao_manual.certificado_numero, etiqueta_escolhida.codigo)
+        self.assertEqual(etiqueta_escolhida.status, EtiquetaCalibracaoQR.Status.RESERVADA)
 
     def test_certificado_de_terceiro_nao_consume_etiqueta_ds(self):
         calibracao = Calibracao.objects.create(

@@ -110,7 +110,7 @@ def _numero_certificado_padronizado(numero):
 
 
 def _reservar_etiqueta_disponivel(instance, using):
-    """Consome atomicamente um número pré-impresso, quando houver lote ativo."""
+    """Reserva somente a etiqueta física escolhida explicitamente no formulário."""
     # Etiquetas DS não podem ser consumidas por certificados de terceiros ou
     # por registros ainda não classificados quanto à responsabilidade de emissão.
     if getattr(instance, "origem_certificado", None) != "emitido_ds":
@@ -123,21 +123,18 @@ def _reservar_etiqueta_disponivel(instance, using):
         .filter(status=EtiquetaCalibracaoQR.Status.DISPONIVEL)
     )
     etiqueta_selecionada_id = getattr(instance, "_etiqueta_qr_selecionada_id", None)
-    if etiqueta_selecionada_id:
-        etiqueta = etiquetas_disponiveis.filter(pk=etiqueta_selecionada_id).first()
-        if not etiqueta:
-            raise ValidationError(
-                {
-                    "certificado_numero": (
-                        "A etiqueta QR selecionada não está mais disponível. "
-                        "Atualize a página e escolha outro código."
-                    )
-                }
-            )
-    else:
-        etiqueta = etiquetas_disponiveis.order_by("lote", "sequencia").first()
-    if not etiqueta:
+    if not etiqueta_selecionada_id:
         return None
+    etiqueta = etiquetas_disponiveis.filter(pk=etiqueta_selecionada_id).first()
+    if not etiqueta:
+        raise ValidationError(
+            {
+                "certificado_numero": (
+                    "A etiqueta QR selecionada não está mais disponível. "
+                    "Atualize a página e escolha outro código."
+                )
+            }
+        )
 
     codigo = etiqueta.codigo.strip().upper()
     variantes = _variantes_numero_certificado(codigo)
