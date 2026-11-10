@@ -102,6 +102,63 @@ class EtiquetaCalibracaoQRTests(TestCase):
             ).exists()
         )
 
+    def test_calibracao_reserva_exatamente_a_etiqueta_escolhida(self):
+        outra_etiqueta = EtiquetaCalibracaoQR.objects.create(
+            codigo="Z9Y8X7",
+            lote="PILOTO-2026-01",
+            sequencia=2,
+        )
+        calibracao = Calibracao(
+            instrumento=self.instrumento,
+            data_calibracao=date(2026, 11, 5),
+            origem_certificado=Calibracao.OrigemCertificado.EMITIDO_DS,
+        )
+        calibracao._etiqueta_qr_selecionada_id = outra_etiqueta.pk
+        calibracao.save()
+
+        self.etiqueta.refresh_from_db()
+        outra_etiqueta.refresh_from_db()
+        self.assertEqual(calibracao.certificado_numero, outra_etiqueta.codigo)
+        self.assertEqual(self.etiqueta.status, EtiquetaCalibracaoQR.Status.DISPONIVEL)
+        self.assertEqual(outra_etiqueta.status, EtiquetaCalibracaoQR.Status.RESERVADA)
+        self.assertEqual(outra_etiqueta.calibracao_object_id, str(calibracao.pk))
+
+    def test_calibracao_nao_substitui_etiqueta_escolhida_indisponivel(self):
+        outra_etiqueta = EtiquetaCalibracaoQR.objects.create(
+            codigo="Q1W2E3",
+            lote="PILOTO-2026-01",
+            sequencia=2,
+            status=EtiquetaCalibracaoQR.Status.AGUARDANDO_IMPRESSAO,
+        )
+        calibracao = Calibracao(
+            instrumento=self.instrumento,
+            data_calibracao=date(2026, 11, 5),
+            origem_certificado=Calibracao.OrigemCertificado.EMITIDO_DS,
+        )
+        calibracao._etiqueta_qr_selecionada_id = outra_etiqueta.pk
+
+        with self.assertRaisesMessage(ValidationError, "não está mais disponível"):
+            calibracao.save()
+
+        self.etiqueta.refresh_from_db()
+        self.assertEqual(self.etiqueta.status, EtiquetaCalibracaoQR.Status.DISPONIVEL)
+        self.assertFalse(Calibracao.objects.filter(pk=calibracao.pk).exists())
+
+    def test_admin_calibracao_exibe_selecao_da_etiqueta_fisica(self):
+        usuario = User.objects.create_superuser(
+            username="admin-selecao-etiqueta",
+            email="admin-selecao-etiqueta@example.com",
+            password="senha-teste",
+        )
+        self.client.force_login(usuario)
+
+        resposta = self.client.get(reverse("admin:calibracao_calibracao_add"))
+
+        self.assertEqual(resposta.status_code, 200)
+        self.assertContains(resposta, "Etiqueta física QR a utilizar")
+        self.assertContains(resposta, self.etiqueta.codigo)
+        self.assertContains(resposta, self.etiqueta.lote)
+
     @override_settings(
         PUBLIC_CERTIFICATE_BASE_URL="https://certificados.dscientifica.com.br"
     )

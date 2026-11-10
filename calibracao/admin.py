@@ -7,7 +7,7 @@ from django import forms
 from django.contrib import admin, messages
 from django.core.exceptions import ObjectDoesNotExist, ValidationError
 from django.core.exceptions import PermissionDenied
-from django.db import connection, transaction
+from django.db import connection, models, transaction
 from django.http import FileResponse, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils.html import format_html, format_html_join
@@ -129,7 +129,83 @@ class OrdemServicoNumeroFilter(admin.SimpleListFilter):
         return queryset
 
 
-CalibracaoAdminForm = build_three_decimal_form(Calibracao)
+class EtiquetaCalibracaoQRChoiceField(forms.ModelChoiceField):
+    def label_from_instance(self, obj):
+        return f"{obj.codigo} — lote {obj.lote} — etiqueta {obj.sequencia}"
+
+
+class CalibracaoAdminForm(ThreeDecimalAdminForm):
+    etiqueta_qr_selecionada = EtiquetaCalibracaoQRChoiceField(
+        queryset=None,
+        required=False,
+        label="Etiqueta física QR a utilizar",
+        empty_label="Seleção automática (próxima etiqueta disponível)",
+        help_text=(
+            "Escolha o código que está impresso na etiqueta física. "
+            "Se deixar em branco, o AXION reservará a próxima etiqueta disponível."
+        ),
+    )
+
+    class Meta:
+        model = Calibracao
+        fields = "__all__"
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        from django.contrib.contenttypes.models import ContentType
+        from certificados.models import EtiquetaCalibracaoQR
+
+        campo = self.fields["etiqueta_qr_selecionada"]
+        disponiveis = EtiquetaCalibracaoQR.objects.filter(
+            status=EtiquetaCalibracaoQR.Status.DISPONIVEL
+        )
+        atual = None
+        if self.instance and self.instance.pk:
+            content_type = ContentType.objects.get_for_model(
+                self.instance,
+                for_concrete_model=False,
+            )
+            atual = EtiquetaCalibracaoQR.objects.filter(
+                calibracao_content_type=content_type,
+                calibracao_object_id=str(self.instance.pk),
+            ).first()
+
+        if atual:
+            campo.queryset = EtiquetaCalibracaoQR.objects.filter(
+                models.Q(status=EtiquetaCalibracaoQR.Status.DISPONIVEL)
+                | models.Q(pk=atual.pk)
+            ).order_by("lote", "sequencia")
+            campo.initial = atual.pk
+            campo.disabled = True
+            campo.help_text = (
+                "Etiqueta já reservada para esta calibração. O vínculo não pode ser alterado."
+            )
+        else:
+            campo.queryset = disponiveis.order_by("lote", "sequencia")
+
+    def clean(self):
+        cleaned_data = super().clean()
+        etiqueta = cleaned_data.get("etiqueta_qr_selecionada")
+        origem = cleaned_data.get("origem_certificado")
+        if etiqueta and origem != Calibracao.OrigemCertificado.EMITIDO_DS:
+            self.add_error(
+                "etiqueta_qr_selecionada",
+                "Etiquetas DS só podem ser usadas em certificados emitidos pela DS Científica.",
+            )
+            etiqueta = None
+
+        numero_atual = (
+            getattr(self.instance, "certificado_numero", "") or ""
+        ).strip().upper()
+        if etiqueta and numero_atual and numero_atual != etiqueta.codigo.strip().upper():
+            self.add_error(
+                "etiqueta_qr_selecionada",
+                "Esta calibração já possui outro número de certificado reservado.",
+            )
+            etiqueta = None
+
+        self.instance._etiqueta_qr_selecionada_id = etiqueta.pk if etiqueta else None
+        return cleaned_data
 
 
 class AssinaturaCertificadoA1Form(forms.Form):
@@ -2273,6 +2349,7 @@ class CalibracaoAdmin(OrdemServicoAutomaticaAdminMixin, admin.ModelAdmin):
                 "certificado_arquivo",
                 "empresa_emissora",
                 "origem_certificado",
+                "etiqueta_qr_selecionada",
             )
         }),
 

@@ -117,13 +117,25 @@ def _reservar_etiqueta_disponivel(instance, using):
         return None
     from certificados.models import EtiquetaCalibracaoQR
 
-    etiqueta = (
+    etiquetas_disponiveis = (
         EtiquetaCalibracaoQR.objects.using(using)
         .select_for_update()
         .filter(status=EtiquetaCalibracaoQR.Status.DISPONIVEL)
-        .order_by("lote", "sequencia")
-        .first()
     )
+    etiqueta_selecionada_id = getattr(instance, "_etiqueta_qr_selecionada_id", None)
+    if etiqueta_selecionada_id:
+        etiqueta = etiquetas_disponiveis.filter(pk=etiqueta_selecionada_id).first()
+        if not etiqueta:
+            raise ValidationError(
+                {
+                    "certificado_numero": (
+                        "A etiqueta QR selecionada não está mais disponível. "
+                        "Atualize a página e escolha outro código."
+                    )
+                }
+            )
+    else:
+        etiqueta = etiquetas_disponiveis.order_by("lote", "sequencia").first()
     if not etiqueta:
         return None
 
